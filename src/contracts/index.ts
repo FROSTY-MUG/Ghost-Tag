@@ -13,3 +13,5 @@ export * from './vault';
 export * from './recovery';
 export * from './tags';
 export * from './states';
+export * from './bulkEnvelope';
+export * from './bulkVault';

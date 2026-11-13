@@ -79,6 +79,26 @@ const MIME_TYPE_LENGTH = ENVELOPE_MIME_TYPE.length; // 28 bytes
 const SHORT_RECORD_MIME_OVERHEAD = 1 + 1 + 1 + MIME_TYPE_LENGTH; // 31 bytes
 const LONG_RECORD_MIME_OVERHEAD = 1 + 1 + 4 + MIME_TYPE_LENGTH; // 34 bytes
 
+const BULK_MIME_TYPE_LENGTH = 26; // 'application/vnd.ghost.bulk'.length
+const SHORT_BULK_MIME_OVERHEAD = 1 + 1 + 1 + BULK_MIME_TYPE_LENGTH; // 29 bytes
+const LONG_BULK_MIME_OVERHEAD = 1 + 1 + 4 + BULK_MIME_TYPE_LENGTH; // 32 bytes
+const BULK_ENVELOPE_OVERHEAD = 134;
+
+/**
+ * Bulk Tag capacity calculation breakdown.
+ */
+export interface BulkTagCapacity {
+  readonly family: SupportedTagFamily | 'UNKNOWN';
+  readonly rawUserMemoryBytes: number;
+  readonly usableNdefBytes: number;
+  readonly ndefTlvOverheadBytes: number;
+  readonly mimeRecordOverheadBytes: number;
+  readonly bulkEnvelopeOverheadBytes: number;
+  readonly totalOverheadBytes: number;
+  readonly maxChunkBytes: number;
+  readonly usableChunkBytes: number;
+}
+
 /**
  * Service class for identifying NFC tags and calculating exact capacity limits.
  */
@@ -344,6 +364,91 @@ export class TagInfo {
       isLocked: false,
       uidLength: tag.id ? tag.id.length / 2 : 7,
       uid: tag.id,
+    };
+  }
+
+  /**
+   * Calculates granular memory capacity available for a bulk encrypted chunk (v2).
+   *
+   * Formula:
+   * usable_capacity_per_tag = actual_tag_user_memory - NDEF_TLV_overhead (7B) - NDEF_record_overhead (29B/32B) - bulk_envelope_overhead (134B)
+   */
+  public calculateBulkChunkCapacity(tag: NfcTag): BulkTagCapacity {
+    const ident = this.identifyTag(tag);
+
+    if (!ident.isSupported || ident.family === 'UNKNOWN') {
+      return {
+        family: 'UNKNOWN',
+        rawUserMemoryBytes: 0,
+        usableNdefBytes: 0,
+        ndefTlvOverheadBytes: 0,
+        mimeRecordOverheadBytes: SHORT_BULK_MIME_OVERHEAD,
+        bulkEnvelopeOverheadBytes: BULK_ENVELOPE_OVERHEAD,
+        totalOverheadBytes: SHORT_BULK_MIME_OVERHEAD + BULK_ENVELOPE_OVERHEAD,
+        maxChunkBytes: -(SHORT_BULK_MIME_OVERHEAD + BULK_ENVELOPE_OVERHEAD),
+        usableChunkBytes: 0,
+      };
+    }
+
+    const family = ident.family as SupportedTagFamily;
+    const profile = TAG_CAPACITIES[family];
+
+    const rawUserMemoryBytes = profile.rawUserMemoryBytes;
+    const usableNdefBytes = profile.usableNdefBytes;
+
+    const ndefTlvOverheadBytes = Math.max(0, rawUserMemoryBytes - usableNdefBytes);
+    const mimeRecordOverheadBytes =
+      usableNdefBytes >= 255 ? LONG_BULK_MIME_OVERHEAD : SHORT_BULK_MIME_OVERHEAD;
+
+    const bulkEnvelopeOverheadBytes = BULK_ENVELOPE_OVERHEAD; // 134 bytes
+    const totalOverheadBytes =
+      ndefTlvOverheadBytes + mimeRecordOverheadBytes + bulkEnvelopeOverheadBytes;
+
+    const maxChunkBytes = rawUserMemoryBytes - totalOverheadBytes;
+    const usableChunkBytes = Math.max(0, maxChunkBytes);
+
+    return {
+      family,
+      rawUserMemoryBytes,
+      usableNdefBytes,
+      ndefTlvOverheadBytes,
+      mimeRecordOverheadBytes,
+      bulkEnvelopeOverheadBytes,
+      totalOverheadBytes,
+      maxChunkBytes,
+      usableChunkBytes,
+    };
+  }
+
+  /**
+   * Calculates the exact number of NFC tags required to store files.
+   *
+   * @param totalFileSizeBytes Total size in bytes of files to store (including encryption packaging).
+   * @param usableChunkBytesPerTag Usable payload capacity per tag from calculateBulkChunkCapacity().
+   * @param redundancyM Number of Reed-Solomon recovery chunks to generate (M >= 0).
+   * @returns Breakdown of required tags, data chunks K, and recovery chunks M.
+   */
+  public calculateRequiredTags(
+    totalFileSizeBytes: number,
+    usableChunkBytesPerTag: number,
+    redundancyM: number = 0
+  ): {
+    requiredTags: number;
+    dataChunksK: number;
+    recoveryChunksM: number;
+  } {
+    if (usableChunkBytesPerTag <= 0) {
+      throw new Error(`Invalid usable chunk capacity: ${usableChunkBytesPerTag}`);
+    }
+
+    const dataChunksK = Math.max(1, Math.ceil(totalFileSizeBytes / usableChunkBytesPerTag));
+    const recoveryChunksM = Math.max(0, redundancyM);
+    const requiredTags = dataChunksK + recoveryChunksM;
+
+    return {
+      requiredTags,
+      dataChunksK,
+      recoveryChunksM,
     };
   }
 }

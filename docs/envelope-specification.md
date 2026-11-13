@@ -79,3 +79,41 @@ $$\text{Usable Payload Space} = \text{Tag User Capacity} - \text{NDEF TLV Overhe
 Example on NTAG215 (504 bytes user memory):
 $$\text{Usable Space} = 504 - 7 - 31 - 54 = 412\text{ bytes of plaintext}$$
 Any write exceeding available space is rejected with `PAYLOAD_TOO_LARGE` prior to RF transmission.
+
+---
+
+## 5. Bulk Chunk Binary Envelope Layout (v2)
+
+For multi-tag distributed file vaults (Bulk Scanning v2), Ghost-Tag defines a 134-byte fixed-overhead binary wire layout with MIME media type `application/vnd.ghost.bulk`:
+
+```
+Offset (Bytes)   Field Name                 Size (Bytes)   Description
+--------------------------------------------------------------------------------------------------
+00 .. 03         MAGIC                      4 bytes        ASCII "GTAG" (0x47, 0x54, 0x41, 0x47)
+04               FORMAT_VERSION             1 byte         0x02 (Bulk Distributed Envelope)
+05               RECORD_TYPE                1 byte         0x10 (BULK_CHUNK)
+06 .. 21         VAULT_ID                   16 bytes       128-bit Bulk Vault unique identifier
+22 .. 37         FILE_ID                    16 bytes       128-bit unique file identifier
+38 .. 53         KEY_ID                     16 bytes       128-bit Data Encryption Key (DEK) ID
+54 .. 57         GLOBAL_CHUNK_INDEX         4 bytes        uint32 LE, global chunk position in vault
+58 .. 61         TOTAL_VAULT_CHUNKS         4 bytes        uint32 LE, total chunks in vault
+62 .. 65         FILE_CHUNK_INDEX           4 bytes        uint32 LE, chunk index within file
+66 .. 69         TOTAL_FILE_CHUNKS          4 bytes        uint32 LE, total chunks for this file
+70 .. 73         CHUNK_CIPHERTEXT_LENGTH    4 bytes        uint32 LE, length of chunk ciphertext (N)
+74 .. 105        CHUNK_HASH                 32 bytes       SHA-256 digest of chunk ciphertext
+106 .. 117       NONCE                      12 bytes       AES-256-GCM Initialization Vector
+118 .. (118+N-1) CHUNK_CIPHERTEXT           N bytes        AES-256-GCM encrypted chunk payload
+(118+N)..(133+N) GCM_TAG                    16 bytes       128-bit AES-256-GCM authentication tag
+--------------------------------------------------------------------------------------------------
+Fixed Overhead: 134 bytes
+Total Envelope Length: N + 134 bytes
+```
+
+### 5.1 Authenticated Additional Data (AAD) for Bulk Chunks
+Bulk envelopes bind 74 bytes of Additional Authenticated Data into the AES-256-GCM tag:
+$$\text{AAD} = \text{MAGIC (4B)} \parallel \text{VERSION (1B)} \parallel \text{RECORD\_TYPE (1B)} \parallel \text{VAULT\_ID (16B)} \parallel \text{FILE\_ID (16B)} \parallel \text{KEY\_ID (16B)} \parallel \text{GLOBAL\_INDEX (4B LE)} \parallel \text{TOTAL\_VAULT\_CHUNKS (4B LE)} \parallel \text{FILE\_CHUNK\_INDEX (4B LE)} \parallel \text{TOTAL\_FILE\_CHUNKS (4B LE)} \parallel \text{CHUNK\_CIPHERTEXT\_LENGTH (4B LE)}$$
+
+This guarantees that:
+- Chunks cannot be swapped across different vaults (`CHUNK_WRONG_VAULT`).
+- Chunks cannot be reordered or substituted across files or indices (`CHUNK_INDEX_INVALID` / `GCM_AUTH_FAILED`).
+- Chunk lengths cannot be maliciously truncated or expanded (`INVALID_ENVELOPE`).

@@ -9,33 +9,42 @@ Ghost-Tag/
 │       └── AndroidManifest.xml # NFC permissions and intent filter declarations
 ├── ios/                        # iOS platform scaffolding (deferred target)
 ├── docs/                       # Exhaustive project documentation
+│   ├── bulk-scanning-v2.md     # Bulk distributed vault & Cauchy erasure coding
 │   ├── architecture.md         # Subsystem architecture & interaction diagrams
 │   ├── cryptography.md         # Argon2id, AES-GCM, and key wrapping specs
-│   ├── envelope-specification.md # Canonical 54B binary envelope format
+│   ├── envelope-specification.md # Canonical binary envelope formats (v1 & v2)
 │   ├── nfc-tag-matrix.md       # Type 2 tag hardware matrix & memory maps
 │   ├── user-flow.md            # Step-by-step UX & backend flow walkthroughs
 │   └── code-structure.md       # This file
 ├── src/                        # Core TypeScript source code
-│   ├── contracts/              # Phase 1: Shared types, enums, specifications
-│   │   ├── envelope.ts         # Binary envelope constants, offsets, and interfaces
-│   │   ├── errors.ts           # 26 error codes, severity tiers, GhostTagError class
+│   ├── contracts/              # Shared types, enums, specifications
+│   │   ├── envelope.ts         # Single-payload envelope constants and interfaces
+│   │   ├── bulkEnvelope.ts     # 134-byte bulk chunk binary wire layout & AAD
+│   │   ├── bulkVault.ts        # Bulk multi-file manifest, journals, and cache schemas
+│   │   ├── errors.ts           # 33 canonical error codes, severity tiers, GhostTagError
 │   │   ├── keyHierarchy.ts     # KEK, DEK, WrappedDEK, and KDF parameter types
 │   │   ├── recovery.ts         # BIP39 recovery envelope and state definitions
 │   │   ├── states.ts           # FSM states for Scan, Write, and Wipe workflows
 │   │   ├── tags.ts             # Supported tag matrix and capacity lookup tables
 │   │   ├── vault.ts            # Persistent vault schema and audit definitions
 │   │   └── index.ts            # Barrel export
-│   ├── crypto/                 # Phase 2: Cryptographic core
+│   ├── crypto/                 # Cryptographic core
 │   │   ├── random.ts           # CSPRNG wrappers (generateNonce, generateDEK)
 │   │   ├── argon2.ts           # Argon2id KDF derivation and device tier calibration
 │   │   ├── aesGcm.ts           # AES-256-GCM authenticated encryption/decryption
-│   │   ├── envelope.ts         # Little-endian envelope serializer and parser
+│   │   ├── envelope.ts         # v1 Little-endian envelope serializer and parser
+│   │   ├── bulkEnvelope.ts     # v2 134-byte chunk serializer, parser, validator, AAD
+│   │   ├── erasureCoding.ts    # Cauchy-Vandermonde Reed-Solomon over GF(2^8)
+│   │   ├── fileEncryption.ts   # Arbitrary binary file encryption, splitting, reassembly
 │   │   ├── keyWrap.ts          # NIST SP 800-38D AES-GCM key wrapping routines
 │   │   ├── secureMemory.ts     # In-place buffer zeroization helpers
 │   │   └── index.ts            # Barrel export
-│   ├── vault/                  # Phase 3: Encrypted local storage and keys
+│   ├── vault/                  # Encrypted local storage and keys
 │   │   ├── database.ts         # Encrypted MMKV key-value storage adapter
-│   │   ├── vaultManager.ts     # Primary vault lifecycle & session manager
+│   │   ├── vaultManager.ts     # Primary single-payload vault manager
+│   │   ├── bulkVaultManager.ts # Multi-file vault manager & private tag mapping
+│   │   ├── chunkCache.ts       # 72-hour temporary encrypted chunk cache with TTL
+│   │   ├── journalManager.ts   # Persistent write & scan session journal recovery
 │   │   ├── session.ts          # In-memory ephemeral KEK lifecycle with auto-lock
 │   │   ├── dekManager.ts       # 256-bit DEK generation, storage, and rotation
 │   │   ├── recoveryManager.ts  # 24-word BIP39 phrase generation and restoration
@@ -43,32 +52,40 @@ Ghost-Tag/
 │   │   ├── auditLog.ts         # Tamper-evident hash-chained operational log
 │   │   ├── wordlist.ts         # Canonical 2048-word BIP39 English dictionary
 │   │   └── index.ts            # Barrel export
-│   ├── nfc/                    # Phase 4: NFC hardware abstraction layer
+│   ├── nfc/                    # NFC hardware abstraction layer
 │   │   ├── nfcManager.ts       # Android foreground dispatch and adapter lifecycle
 │   │   ├── tagReader.ts        # NDEF reader and envelope extractor
 │   │   ├── tagWriter.ts        # Atomic NDEF writer with read-back verification
-│   │   ├── tagInfo.ts          # Type 2 tag identification and capacity calculator
+│   │   ├── tagInfo.ts          # Type 2 tag identification & bulk capacity calculation
 │   │   ├── tagWiper.ts         # Destructive multi-pass page sanitization
-│   │   ├── ndefBuilder.ts      # MIME Media NDEF record encoder/decoder
+│   │   ├── ndefBuilder.ts      # Single-envelope MIME record encoder/decoder
+│   │   ├── bulkNdefBuilder.ts  # Bulk chunk MIME (application/vnd.ghost.bulk) builder
 │   │   ├── errors.ts           # Native Android NFC error mapper
 │   │   └── index.ts            # Barrel export
-│   ├── operations/             # Phase 5: Workflow orchestration engine
-│   │   ├── scanOperation.ts    # Tag scan, NDEF parse, DEK resolve, and decrypt
-│   │   ├── writeOperation.ts   # Capacity check, DEK assign, encrypt, and verify
+│   ├── operations/             # Workflow orchestration engine
+│   │   ├── scanOperation.ts    # Single-tag scan, NDEF parse, and decrypt
+│   │   ├── writeOperation.ts   # Single-tag capacity check, encrypt, and verify
+│   │   ├── bulkWriteOperation.ts # Multi-tag chunk write with extra-tag exclusion
+│   │   ├── bulkScanOperation.ts  # Random-order tag scanning & duplicate suppression
+│   │   ├── reconstructionEngine.ts # Erasure decode, ciphertext join, full decryption
+│   │   ├── fileViewerAndExporter.ts # SAF file export & disposable zeroization
 │   │   ├── wipeOperation.ts    # Destructive page overwrite and honesty checks
 │   │   ├── verifyOperation.ts  # Passive envelope validation without decryption
 │   │   ├── repairOperation.ts  # Re-encryption and key rotation pipeline
 │   │   ├── diagnosticsExporter.ts # Scrubbed system health and audit export
 │   │   ├── operationCoordinator.ts # Central facade connecting all subsystems
 │   │   └── index.ts            # Barrel export
-│   ├── ui/                     # Phase 6: Terminal-style user interface
+│   ├── ui/                     # Monospace terminal-style user interface
 │   │   ├── components/         # StatusLine, TerminalOutput, ActionButton
-│   │   ├── screens/            # Scanner, Write, Wipe, Keys, Settings, etc.
+│   │   ├── screens/            # Scanner, Write, Wipe, BulkVault, BulkScan, etc.
 │   │   ├── navigation/         # React Navigation stack & RootNavigator
 │   │   └── theme/              # High-contrast monospace terminal color palette
 │   ├── utils/                  # Polyfills and cross-platform helpers
 │   │   └── polyfills.ts        # Buffer attachment to globalThis
-│   └── __tests__/              # Automated test suites
+│   └── __tests__/              # Automated test suites (160 tests passing, 100%)
+│       ├── bulkEnvelope.test.ts # v2 134B binary envelope layout & fuzzing
+│       ├── fileEncryptionAndErasure.test.ts # Multi-type file encryption & RS decoding
+│       ├── bulkOperations.test.ts # End-to-end bulk write, scan, cache, reconstruction
 │       ├── nfc.test.ts         # 37 NFC hardware abstraction tests
 │       ├── vault.test.ts       # 12 vault and recovery subsystem tests
 │       └── operations.test.ts  # 11 tag operations workflow tests

@@ -13,4 +13,5 @@ export * from './tagWriter';
 export * from './tagInfo';
 export * from './tagWiper';
 export * from './ndefBuilder';
+export * from './bulkNdefBuilder';
 export * from './errors';

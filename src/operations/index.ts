@@ -10,3 +10,7 @@ export * from './verifyOperation';
 export * from './repairOperation';
 export * from './diagnosticsExporter';
 export * from './operationCoordinator';
+export * from './bulkWriteOperation';
+export * from './bulkScanOperation';
+export * from './reconstructionEngine';
+export * from './fileViewerAndExporter';

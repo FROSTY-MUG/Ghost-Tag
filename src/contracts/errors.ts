@@ -128,6 +128,36 @@ export const enum GhostTagErrorCode {
 
   /** Tag is blank or formatted with a proprietary non-NDEF structure. */
   TAG_NOT_NDEF_FORMATTED = 'TAG_NOT_NDEF_FORMATTED',
+
+  /** Tag has already received a chunk during the current bulk write session. */
+  CHUNK_ALREADY_WRITTEN = 'CHUNK_ALREADY_WRITTEN',
+
+  /** Chunk envelope failed cryptographic authentication, framing, or parsing. */
+  CHUNK_CORRUPT = 'CHUNK_CORRUPT',
+
+  /** Chunk with identical global index has already been cached in this scan session. */
+  CHUNK_ALREADY_CACHED = 'CHUNK_ALREADY_CACHED',
+
+  /** Scanned chunk envelope belongs to a different vault identifier than current session. */
+  CHUNK_WRONG_VAULT = 'CHUNK_WRONG_VAULT',
+
+  /** Chunk index exceeds declared total chunks or violates monotonic bounds. */
+  CHUNK_INDEX_INVALID = 'CHUNK_INDEX_INVALID',
+
+  /** SHA-256 digest of decrypted or cached chunk ciphertext does not match envelope header. */
+  CHUNK_HASH_MISMATCH = 'CHUNK_HASH_MISMATCH',
+
+  /** SHA-256 digest of reassembled full-file ciphertext does not match vault manifest. */
+  FILE_HASH_MISMATCH = 'FILE_HASH_MISMATCH',
+
+  /** Cached chunk records have exceeded the 72-hour time-to-live and were purged. */
+  CACHE_EXPIRED = 'CACHE_EXPIRED',
+
+  /** Insufficient valid chunks collected to complete reconstruction or Reed-Solomon decode. */
+  INSUFFICIENT_CHUNKS = 'INSUFFICIENT_CHUNKS',
+
+  /** Extra tags beyond required count were excluded from write session. */
+  EXTRA_TAGS_EXCLUDED = 'EXTRA_TAGS_EXCLUDED',
 }
 
 // ---------------------------------------------------------------------------

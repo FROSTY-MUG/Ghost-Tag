@@ -13,4 +13,7 @@ export * from './aesGcm';
 export * from './envelope';
 export * from './keyWrap';
 export * from './secureMemory';
+export * from './bulkEnvelope';
+export * from './erasureCoding';
+export * from './fileEncryption';
 

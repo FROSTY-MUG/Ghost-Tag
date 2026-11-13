@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 [![Platform: Android](https://img.shields.io/badge/Platform-Android%20(API%2026%2B)-black.svg)](https://developer.android.com)
 [![Crypto: AES--256--GCM](https://img.shields.io/badge/Crypto-AES--256--GCM%20%2B%20Argon2id-blue.svg)](./docs/cryptography.md)
-[![Tests: 139 Passing](https://img.shields.io/badge/Tests-139%20Passing%20(100%25)-brightgreen.svg)](./src/__tests__/)
+[![Tests: 160 Passing](https://img.shields.io/badge/Tests-160%20Passing%20(100%25)-brightgreen.svg)](./src/__tests__/)
 
 ---
 
@@ -157,14 +157,35 @@ Ghost-Tag supports standard **NFC Forum Type 2** tags (NXP NTAG21x and MIFARE Ul
 
 ---
 
-## 7. Installation, Build & Testing
+## 7. Bulk Scanning v2: Distributed NFC File-Vault
 
-### 7.1 Prerequisites
+Ghost-Tag Bulk Scanning v2 partitions arbitrary large or multi-file payloads across collections of physical NFC tags.
+
+### 7.1 Core User Promise
+> **"Ghost-Tag splits your encrypted files into pieces and stores one piece on each NFC tag. You can scan the tags in any order later. Ghost-Tag identifies each piece, verifies it, and reassembles your files when enough valid pieces are collected."**
+
+### 7.2 Core Limitation
+> **"A lost, damaged, or missing tag may prevent reconstruction. Enable redundancy to tolerate lost tags. Ghost-Tag does not prevent tag cloning, deletion, or replay."**
+
+### 7.3 Key Features
+- **Arbitrary File Support**: Documents (`.pdf`, `.docx`), Images (`.png`, `.jpg`), Videos (`.mp4`, `.mov`), Archives (`.zip`, `.7z`), or any binary payload selected via Android's Storage Access Framework (`ACTION_OPEN_DOCUMENT`). Zero broad storage permissions requested.
+- **Random-Order Physical Scanning**: Users can tap NFC tags in any random physical sequence. The app verifies each chunk's 74-byte AAD binding and AES-256-GCM auth tag, caching valid chunks in local encrypted storage.
+- **134-Byte Binary Envelope Overhead**: Compact Little-Endian wire format storing chunk indices, vault UUID, file UUID, SHA-256 chunk hash, 12B nonce, and 16B GCM tag under `application/vnd.ghost.bulk`.
+- **Fault-Tolerant Erasure Coding**: Optional Cauchy-Vandermonde Reed-Solomon erasure coding over $\text{GF}(2^8)$ generates $M$ parity tags, enabling complete file reconstruction from any $K$ chunks even if tags are physically lost or damaged.
+- **72-Hour Encrypted Chunk Cache**: Scanned chunks are cached offline with a 72-hour TTL and visual countdown, allowing asynchronous tag scanning across multiple days.
+- **Strict Extra-Tag Exclusion**: If 86 tags are needed out of 100 presented, Ghost-Tag explicitly instructs the user to set aside the 14 surplus tags and refuses to write to them.
+- **Private Physical Tag Mapping**: Physical NFC tags store zero plaintext labels or file references. Tag hardware UIDs are mapped to chunk coordinates exclusively inside the user's private, encrypted local vault manifest.
+
+---
+
+## 8. Installation, Build & Testing
+
+### 8.1 Prerequisites
 - Node.js >= 18.x and npm
 - Android Studio with Android SDK API 26+ installed
 - Physical Android phone with NFC hardware support
 
-### 7.2 Setup & Dependencies
+### 8.2 Setup & Dependencies
 ```bash
 # Clone the repository
 git clone https://github.com/FROSTY-MUG/Ghost-Tag.git
@@ -174,23 +195,26 @@ cd Ghost-Tag
 npm install
 ```
 
-### 7.3 Running the Test Suite
-The project includes automated Jest unit and integration test suites covering contracts, crypto core, vault storage, NFC abstraction, and workflow engines:
+### 8.3 Running the Test Suite
+The project includes automated Jest unit and integration test suites covering contracts, crypto core, vault storage, NFC abstraction, bulk scanning, erasure coding, and workflow engines:
 
 ```bash
 # Run all test suites
 npm test
 
 # Run specific test modules
+npm test -- bulkEnvelope.test.ts
+npm test -- fileEncryptionAndErasure.test.ts
+npm test -- bulkOperations.test.ts
 npm test -- crypto.test.ts
 npm test -- vault.test.ts
 npm test -- nfc.test.ts
 npm test -- operations.test.ts
 ```
 
-All 6 test suites and **139 tests pass with 100% success rate**.
+All 9 test suites and **160 tests pass with 100% success rate**.
 
-### 7.4 Running on an Android Device
+### 8.4 Running on an Android Device
 ```bash
 # Connect physical Android device with USB debugging enabled
 npm run android
@@ -198,10 +222,11 @@ npm run android
 
 ---
 
-## 8. Detailed Documentation Index
+## 9. Detailed Documentation Index
 
 For in-depth technical specifications, consult the `docs/` folder:
 
+- [**Bulk Scanning v2 Specification**](./docs/bulk-scanning-v2.md): Distributed vault architecture, 134-byte binary layout, Cauchy erasure coding, and 72-hour cache.
 - [**System Architecture**](./docs/architecture.md): Subsystem breakdown, responsibilities, and dependency graph.
 - [**Cryptographic Core**](./docs/cryptography.md): RFC 9106 Argon2id parameters, AES-GCM formulas, and key wrapping.
 - [**Envelope Specification**](./docs/envelope-specification.md): Complete Little-Endian binary layout and AAD binding.
@@ -213,7 +238,7 @@ For in-depth technical specifications, consult the `docs/` folder:
 
 ---
 
-## 9. Contact & Contributing
+## 10. Contact & Contributing
 
 Ghost-Tag is maintained by **Aryan Arora**.
 - **Contact & Suggestions**: [aryanarora26110@gmail.com](mailto:aryanarora26110@gmail.com)

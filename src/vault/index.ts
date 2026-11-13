@@ -21,4 +21,7 @@ export * from './recoveryManager';
 export * from './manifest';
 export * from './auditLog';
 export * from './wordlist';
+export * from './chunkCache';
+export * from './journalManager';
+export * from './bulkVaultManager';
 

@@ -27,7 +27,9 @@ import {
 } from '../contracts/errors';
 import { generateSalt } from './random';
 import { bytesToHex, hexToBytes } from './keyWrap';
-import { zeroize } from './secureMemory';
+import { zeroize, secureWipeBuffer } from './secureMemory';
+import { assertDeviceIntegrity } from '../security/deviceIntegrity';
+import { sanitizeError } from '../security/antiLeak';
 
 /**
  * Type alias conforming to contract specifications.
@@ -221,6 +223,9 @@ export async function deriveKEK(
   salt: Uint8Array,
   params: KDFParams
 ): Promise<Uint8Array> {
+  // Enforce strict device integrity before deriving any key material
+  await assertDeviceIntegrity(salt);
+
   if (typeof passphrase !== 'string' || passphrase.length === 0) {
     throw new GhostTagError({
       code: GhostTagErrorCode.PASSPHRASE_REQUIRED,
@@ -262,7 +267,7 @@ export async function deriveKEK(
       userMessage: 'Argon2id key derivation failed.',
       category: ErrorCategory.CRYPTO,
       severity: ErrorSeverity.ERROR,
-      cause: err,
+      cause: sanitizeError(err),
     });
   }
 

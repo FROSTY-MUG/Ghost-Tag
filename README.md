@@ -178,14 +178,36 @@ Ghost-Tag Bulk Scanning v2 partitions arbitrary large or multi-file payloads acr
 
 ---
 
-## 8. Installation, Build & Testing
+## 8. Strict Multi-Language Security Hardening
 
-### 8.1 Prerequisites
+Ghost-Tag implements defense-in-depth across **C++17, Kotlin/Java, and TypeScript** to prevent reverse engineering, dynamic instrumentation (Frida, Xposed), memory dumping, and key/hash leakage:
+
+- **C++ Native Anti-Reverse Engineering Core (`libghosttag_security.so`)**:
+  - `ptrace(PTRACE_TRACEME)` anti-debugging check; detects GDB, LLDB, and IDA Pro attachment.
+  - Inspects `/proc/self/status` for active `TracerPid` and `/proc/self/wchan` for tracer wait states.
+  - Scans `/proc/self/maps` for injected dynamic instrumentation agents (`frida-agent.so`, `frida-gadget`, `XposedBridge`, `sandhook`, `libsubstrate`).
+  - Probes for Frida default server listening port (27042) and system `su` privilege escalation binaries.
+- **Native Memory Protection & Anti-Dumping**:
+  - Memory page locking via `mlock()` prevents physical RAM containing passphrases or KEKs from being swapped or paged to disk/flash storage.
+  - 4-pass volatile memory wiping (`0xAA`, `0x55`, CSPRNG, `0x00`) with compiler memory barriers (`asm volatile("" : : "r"(ptr) : "memory")`) defeats dead-store elimination.
+  - Constant-time memory comparison (`timingSafeEqual`) eliminates side-channel timing attacks.
+- **Android Platform Hardening**:
+  - `WindowManager.LayoutParams.FLAG_SECURE` blocks screen recording, screenshots, and recent-app task switcher leaks.
+  - Hardware-backed Android KeyStore master key (TEE / StrongBox Keymaster) encapsulates local database encryption keys.
+  - ProGuard / R8 aggressive optimization and package namespace flattening (`com.ghosttag.obf`).
+- **Fail-Closed Gate**:
+  - Any detected tampering or integrity violation triggers an immediate panic wipe of all in-memory keys and halts operations (`DEVICE_INTEGRITY_COMPROMISED`).
+
+---
+
+## 9. Installation, Build & Testing
+
+### 9.1 Prerequisites
 - Node.js >= 18.x and npm
-- Android Studio with Android SDK API 26+ installed
+- Android Studio with Android SDK API 26+ and NDK (version 27+)
 - Physical Android phone with NFC hardware support
 
-### 8.2 Setup & Dependencies
+### 9.2 Setup & Dependencies
 ```bash
 # Clone the repository
 git clone https://github.com/FROSTY-MUG/Ghost-Tag.git
@@ -195,14 +217,15 @@ cd Ghost-Tag
 npm install
 ```
 
-### 8.3 Running the Test Suite
-The project includes automated Jest unit and integration test suites covering contracts, crypto core, vault storage, NFC abstraction, bulk scanning, erasure coding, and workflow engines:
+### 9.3 Running the Test Suite
+The project includes automated Jest unit and integration test suites covering contracts, crypto core, vault storage, NFC abstraction, bulk scanning, erasure coding, security hardening, and workflow engines:
 
 ```bash
 # Run all test suites
 npm test
 
 # Run specific test modules
+npm test -- security.test.ts
 npm test -- bulkEnvelope.test.ts
 npm test -- fileEncryptionAndErasure.test.ts
 npm test -- bulkOperations.test.ts
@@ -212,9 +235,9 @@ npm test -- nfc.test.ts
 npm test -- operations.test.ts
 ```
 
-All 9 test suites and **160 tests pass with 100% success rate**.
+All 10 test suites and **178 tests pass with 100% success rate**.
 
-### 8.4 Running on an Android Device
+### 9.4 Running on an Android Device
 ```bash
 # Connect physical Android device with USB debugging enabled
 npm run android
@@ -222,10 +245,11 @@ npm run android
 
 ---
 
-## 9. Detailed Documentation Index
+## 10. Detailed Documentation Index
 
 For in-depth technical specifications, consult the `docs/` folder:
 
+- [**Security Hardening Specification**](./docs/security-hardening.md): Multi-language anti-reverse engineering, kernel page locking, anti-leak, and R8 obfuscation.
 - [**Bulk Scanning v2 Specification**](./docs/bulk-scanning-v2.md): Distributed vault architecture, 134-byte binary layout, Cauchy erasure coding, and 72-hour cache.
 - [**System Architecture**](./docs/architecture.md): Subsystem breakdown, responsibilities, and dependency graph.
 - [**Cryptographic Core**](./docs/cryptography.md): RFC 9106 Argon2id parameters, AES-GCM formulas, and key wrapping.
@@ -238,7 +262,7 @@ For in-depth technical specifications, consult the `docs/` folder:
 
 ---
 
-## 10. Contact & Contributing
+## 11. Contact & Contributing
 
 Ghost-Tag is maintained by **Aryan Arora**.
 - **Contact & Suggestions**: [aryanarora26110@gmail.com](mailto:aryanarora26110@gmail.com)

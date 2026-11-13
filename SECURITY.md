@@ -47,3 +47,30 @@ Ghost-Tag defines explicit adversarial capabilities and cryptographic boundaries
 5. **Zero-Secrets Policy**:
    - Passphrases, KEKs, raw DEKs, and unencrypted payloads are strictly forbidden from logs, analytics, crash dumps, and database persistence.
    - Volatile buffers are zeroized immediately following cryptographic operations.
+
+---
+
+## 4. Strict Multi-Language Security Hardening
+
+Ghost-Tag employs a multi-tiered, multi-language defense architecture to prevent reverse engineering, dynamic instrumentation, memory dumping, and key leaking:
+
+1. **C++ Native Anti-Reverse Engineering Core (`libghosttag_security.so`)**:
+   - **Anti-Debugging**: Enforces `ptrace(PTRACE_TRACEME, 0, 1, 0)` to detect GDB/LLDB attachment, checks `/proc/self/status` for `TracerPid != 0`, and monitors `/proc/self/wchan`.
+   - **Anti-Hooking**: Scans `/proc/self/maps` for Frida (`frida-agent.so`, `frida-gadget`, `gum-js-loop`), Xposed (`libxposed`, `XposedBridge`), and Substrate modules. Detects active Frida servers on loopback port 27042.
+   - **Root Detection**: Probes filesystem for `su` binaries and checks build properties (`ro.debuggable`, `ro.secure`).
+
+2. **Native Memory Protection & Anti-Dumping**:
+   - **Kernel Page Locking (`mlock`)**: Pins sensitive key memory into physical RAM to forbid the Linux kernel from writing it to flash or swap.
+   - **4-Pass Volatile Zeroization**: Wipes memory using `0xAA`, `0x55`, CSPRNG bytes, and `0x00`, combined with compiler clobber barriers (`asm volatile("" : : "r"(addr) : "memory")`) to defeat dead-store elimination.
+   - **Constant-Time Verification**: Uses `timingSafeEqual()` (bitwise XOR accumulator) to eliminate timing side-channel attacks against MACs, KEKs, or hash values.
+
+3. **Android Platform Controls (Kotlin/Java)**:
+   - **Window `FLAG_SECURE`**: Blocks screenshots, screen recordings, and recent-app thumbnail leakage in `MainActivity.kt`.
+   - **Hardware-Backed KeyStore (TEE / StrongBox)**: Generates hardware-isolated AES-256-GCM master keys via `AndroidKeyStore`.
+
+4. **Bytecode Obfuscation (ProGuard / R8)**:
+   - Collapses package namespaces (`-repackageclasses 'com.ghosttag.obf'`), strips line numbers and symbols, and eliminates all debug logging statements from release binaries.
+
+5. **Fail-Closed Security Policy**:
+   - If any integrity anomaly is detected, `assertDeviceIntegrity()` immediately executes a panic zeroization of all active in-memory keys and terminates vault operations with a fatal error.
+

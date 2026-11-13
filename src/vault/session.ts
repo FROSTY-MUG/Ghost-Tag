@@ -14,9 +14,10 @@ import {
   ErrorCategory,
   ErrorSeverity,
 } from '../contracts/errors';
-import { zeroize } from '../crypto/secureMemory';
+import { zeroize, secureWipeBuffer } from '../crypto/secureMemory';
 import { generateSecureRandom } from '../crypto/random';
 import { bytesToHex } from '../crypto/keyWrap';
+import { assertDeviceIntegrity } from '../security/deviceIntegrity';
 
 /** Default session auto-lock timeout: 5 minutes in milliseconds. */
 export const DEFAULT_AUTO_LOCK_TIMEOUT_MS = 5 * 60 * 1000; // 300,000 ms
@@ -83,6 +84,9 @@ export class VaultSession {
    * @throws {GhostTagError} If passphrase verification or KEK derivation fails.
    */
   public async unlock(passphrase: string): Promise<void> {
+    // Enforce strict device integrity before processing any master passphrase
+    await assertDeviceIntegrity();
+
     if (this._isUnlocked && this.kek) {
       this.resetAutoLockTimer();
       return;
@@ -108,9 +112,9 @@ export class VaultSession {
         });
       }
 
-      // If a previous KEK existed, zeroize it before overwriting
+      // If a previous KEK existed, secure wipe it before overwriting
       if (this.kek) {
-        zeroize(this.kek);
+        secureWipeBuffer(this.kek);
       }
 
       this.kek = new Uint8Array(derivedKek.length);
@@ -138,7 +142,7 @@ export class VaultSession {
    */
   public lock(): void {
     if (this.kek) {
-      zeroize(this.kek);
+      secureWipeBuffer(this.kek);
       this.kek = null;
     }
 

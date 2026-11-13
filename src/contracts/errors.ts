@@ -24,6 +24,8 @@ export enum ErrorCategory {
   ENVELOPE = 'ENVELOPE',
   /** Higher-level application lifecycle, scan/write, or user operations. */
   OPERATION = 'OPERATION',
+  /** Hardware integrity, anti-tampering, anti-debugging, or reverse-engineering violations. */
+  SECURITY = 'SECURITY',
 }
 
 /**
@@ -158,6 +160,21 @@ export const enum GhostTagErrorCode {
 
   /** Extra tags beyond required count were excluded from write session. */
   EXTRA_TAGS_EXCLUDED = 'EXTRA_TAGS_EXCLUDED',
+
+  /** Host device integrity check failed; environment is compromised or untrusted. */
+  DEVICE_INTEGRITY_COMPROMISED = 'DEVICE_INTEGRITY_COMPROMISED',
+
+  /** Active native or runtime debugger detected attaching to the process. */
+  DEBUGGER_DETECTED = 'DEBUGGER_DETECTED',
+
+  /** Dynamic instrumentation or hooking framework (Frida, Xposed, Substrate) detected. */
+  HOOKING_DETECTED = 'HOOKING_DETECTED',
+
+  /** Elevated privileges, su binary, or root management tools detected on device. */
+  ROOT_DETECTED = 'ROOT_DETECTED',
+
+  /** Code tampering, signature mismatch, or unauthorized binary modification detected. */
+  TAMPERING_DETECTED = 'TAMPERING_DETECTED',
 }
 
 // ---------------------------------------------------------------------------

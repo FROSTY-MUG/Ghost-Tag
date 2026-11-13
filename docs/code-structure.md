@@ -5,10 +5,24 @@ This document provides a comprehensive directory and file tour of the entire Gho
 ```
 Ghost-Tag/
 ├── android/                    # Android native project files & Gradle build
+│   ├── app/src/main/cpp/       # C++17 Native Security & Anti-Reverse Engineering Core
+│   │   ├── CMakeLists.txt      # Native build definition for libghosttag_security.so
+│   │   ├── security_core.h/cpp # ptrace, /proc/self/status, /proc/self/maps, Frida/Xposed/su checks
+│   │   ├── secure_memory.h/cpp # mlock page locking, volatile zeroize, timingSafeCompare
+│   │   └── jni_bridge.cpp      # JNI bridge exports to Kotlin SecurityBridgeModule
+│   ├── app/src/main/java/com/ghosttag/
+│   │   ├── MainActivity.kt     # Enforces window FLAG_SECURE against screen capture/task switcher
+│   │   ├── MainApplication.kt # Registers SecurityPackage and React Native hosts
+│   │   └── security/           # Kotlin security bridge & hardware KeyStore wrapper
+│   │       ├── SecurityBridgeModule.kt # React Native module exposing native C++ checks
+│   │       ├── SecurityPackage.kt      # Native package registration
+│   │       └── KeyStoreMasterKey.kt    # Android KeyStore TEE/StrongBox AES-GCM master key
 │   └── app/src/main/
-│       └── AndroidManifest.xml # NFC permissions and intent filter declarations
+│       ├── AndroidManifest.xml # Permissions, network security config, allowBackup=false
+│       └── res/xml/network_security_config.xml # Cleartext traffic rejection
 ├── ios/                        # iOS platform scaffolding (deferred target)
 ├── docs/                       # Exhaustive project documentation
+│   ├── security-hardening.md   # Multi-language anti-reverse engineering, memory locking & anti-leak
 │   ├── bulk-scanning-v2.md     # Bulk distributed vault & Cauchy erasure coding
 │   ├── architecture.md         # Subsystem architecture & interaction diagrams
 │   ├── cryptography.md         # Argon2id, AES-GCM, and key wrapping specs
@@ -17,6 +31,11 @@ Ghost-Tag/
 │   ├── user-flow.md            # Step-by-step UX & backend flow walkthroughs
 │   └── code-structure.md       # This file
 ├── src/                        # Core TypeScript source code
+│   ├── security/               # Hardened Security & Anti-Leak Application Layer
+│   │   ├── deviceIntegrity.ts  # Fail-closed integrity coordinator & anti-tamper enforcement
+│   │   ├── secureWipe.ts       # 4-pass memory overwrite (0xAA, 0x55, random, 0x00) & object scrub
+│   │   ├── antiLeak.ts         # Constant-time comparison, secret redaction, sanitized logger
+│   │   └── index.ts            # Barrel export
 │   ├── contracts/              # Shared types, enums, specifications
 │   │   ├── envelope.ts         # Single-payload envelope constants and interfaces
 │   │   ├── bulkEnvelope.ts     # 134-byte bulk chunk binary wire layout & AAD

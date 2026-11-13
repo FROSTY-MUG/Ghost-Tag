@@ -37,7 +37,8 @@ import {
 } from '../crypto/argon2';
 import { generateSecureRandom } from '../crypto/random';
 import { bytesToHex, hexToBytes, unwrapDEK } from '../crypto/keyWrap';
-import { zeroize } from '../crypto/secureMemory';
+import { zeroize, secureWipeBuffer } from '../crypto/secureMemory';
+import { assertDeviceIntegrity } from '../security/deviceIntegrity';
 import { VaultDatabase } from './database';
 import { VaultSession } from './session';
 import { DEKManager } from './dekManager';
@@ -165,6 +166,8 @@ export class VaultManager {
    * @throws {GhostTagError} If passphrase is empty or vault is already initialized.
    */
   public async createVault(passphrase: string): Promise<VaultCreationResult> {
+    await assertDeviceIntegrity();
+
     if (typeof passphrase !== 'string' || passphrase.trim().length === 0) {
       throw new GhostTagError({
         code: GhostTagErrorCode.PASSPHRASE_REQUIRED,
@@ -271,6 +274,8 @@ export class VaultManager {
    * @throws {GhostTagError} If vault is not initialized or passphrase is invalid.
    */
   public async openVault(passphrase: string): Promise<VaultSession> {
+    await assertDeviceIntegrity();
+
     if (typeof passphrase !== 'string' || passphrase.trim().length === 0) {
       throw new GhostTagError({
         code: GhostTagErrorCode.PASSPHRASE_REQUIRED,

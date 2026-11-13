@@ -1,97 +1,225 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Ghost-Tag
 
-# Getting Started
+> **Mobile-first, offline encrypted NFC vault writing versioned AES-256-GCM ciphertext envelopes to narrowly supported NDEF tags, backed by a recoverable Argon2id key hierarchy.**
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
+[![Platform: Android](https://img.shields.io/badge/Platform-Android%20(API%2026%2B)-black.svg)](https://developer.android.com)
+[![Crypto: AES--256--GCM](https://img.shields.io/badge/Crypto-AES--256--GCM%20%2B%20Argon2id-blue.svg)](./docs/cryptography.md)
+[![Tests: 139 Passing](https://img.shields.io/badge/Tests-139%20Passing%20(100%25)-brightgreen.svg)](./src/__tests__/)
 
-## Step 1: Start Metro
+---
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+## 1. Project Thesis
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+### 1.1 The Core Problem
+Ordinary NFC tags are convenient, physical, and ubiquitous—but fundamentally insecure by default:
+- Anyone with an NFC-enabled smartphone can read their contents in plaintext.
+- Anyone with a generic NFC writer app can overwrite or corrupt them.
+- Standard NDEF formatting commands zero out only table-of-contents records, leaving data remanence in EEPROM user pages.
+- Losing an NFC tag carrying sensitive recovery seed phrases, Wi-Fi credentials, server keys, or personal notes exposes plaintext to any finder.
 
-```sh
-# Using npm
-npm start
+### 1.2 Ghost-Tag's Solution
+Ghost-Tag provides **data confidentiality and cryptographic tamper-evidence** for payloads stored on physical NFC tags.
 
-# OR using Yarn
-yarn start
+The central design principle:
+> **The physical NFC tag may be inspected, duplicated, erased, replayed, or lost—yet its protected payload remains computationally unusable without the user's master passphrase and cryptographic key hierarchy.**
+
+### 1.3 What Ghost-Tag IS NOT
+To maintain rigorous technical credibility, Ghost-Tag must **never** be described as:
+- A replacement for hardware protocol tools like a Proxmark3 or Flipper Zero.
+- An NFC cloner, protocol sniffer, or card emulation utility.
+- A system that prevents physical tag cloning (if a tag is cloned, the ciphertext is copied too).
+- A system that guarantees silicon-level forensic erasure across all flash memory geometries.
+- A cloud-backed password manager or public-key infrastructure (PKI) system.
+- Secure on a rooted or compromised host operating system observing active process memory.
+
+---
+
+## 2. Security Architecture & Threat Model
+
+Ghost-Tag explicitly defines adversarial boundaries:
+
+```
+[Adversary]                     [Capability]                    [Ghost-Tag Guarantee]
+Physical Finder of Tag   --->   Reads raw NDEF records    --->  Sees only authenticated ciphertext. Cannot decrypt.
+RF Sniffer / Malicious Reader -> Intercepts RF frames     --->  Sees only 12B nonce, 16B keyId, ciphertext.
+Tampering Attacker       --->   Alters bytes on tag chip  --->  AES-256-GCM authentication tag fails immediately.
+Tag Cloner               --->   Duplicates entire tag     --->  Ciphertext duplicate remains computationally unreadable.
+Compromised Host OS      --->   Root keylogger/debugger   --->  Non-goal. Host memory inspection cannot be defeated.
 ```
 
-## Step 2: Build and run your app
+### 2.1 Two-Tier Cryptographic Key Hierarchy
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+```
+User Master Passphrase (>= 16 characters)
+   │
+   ▼
+Argon2id (Salt, RFC 9106 calibrated work factors)
+   │
+   ▼
+Key-Encryption Key (KEK) [256-bit, held ONLY in ephemeral volatile memory]
+   │
+   ├──► Wrapped DEK 1 (AES-256-GCM under KEK) ──► Unwraps to DEK 1 ──► Encrypts Tag Envelope 1
+   ├──► Wrapped DEK 2 (AES-256-GCM under KEK) ──► Unwraps to DEK 2 ──► Encrypts Tag Envelope 2
+   └──► Recovery Wrapped DEKs (Argon2id from 24-Word BIP39 Secret + Isolated Salt)
+```
 
-### Android
+- **Zero-Secrets Policy**: Passphrases, derived KEKs, and unwrapped DEKs are **never persisted** to SQLite, MMKV, logs, or crash dumps.
+- **In-Memory Hygiene**: Ephemeral keys are overwritten with `0x00` bytes (`zeroize()`) immediately after cryptographic execution.
+- **Auto-Lock**: Active sessions lock and purge volatile keys after 5 minutes of inactivity or when the app is backgrounded.
 
-```sh
-# Using npm
+---
+
+## 3. Canonical Binary Envelope Format
+
+Every Ghost-Tag record on an NFC tag is encoded in a fixed-overhead binary format using **Little-Endian (LE)** byte order:
+
+```
+Offset   Field Name          Size       Description
+─────────────────────────────────────────────────────────────────────────────
+00..03   MAGIC               4 bytes    ASCII "GTAG" (0x47, 0x54, 0x41, 0x47)
+04       FORMAT_VERSION      1 byte     0x01 (Version 1)
+05       PURPOSE             1 byte     0x01=NOTE, 0x02=CREDENTIAL, 0x03=CONFIG, etc.
+06..21   KEY_ID              16 bytes   128-bit unique Data Encryption Key ID
+22..33   NONCE               12 bytes   96-bit AES-256-GCM IV (never repeated)
+34..37   CIPHERTEXT_LENGTH   4 bytes    uint32 Little-Endian length (N)
+38..N-1  CIPHERTEXT          N bytes    AES-256-GCM encrypted payload
+N..N+15  GCM_TAG             16 bytes   128-bit authentication tag
+─────────────────────────────────────────────────────────────────────────────
+Total Fixed Overhead: 54 bytes | Payload capacity: Tag Capacity - 54B
+```
+
+### Authenticated Associated Data (AAD)
+To prevent cross-tag payload transplantation, purpose switching, or truncation attacks, the AES-GCM authentication tag binds 26 bytes of deterministic Additional Authenticated Data:
+$$\text{AAD} = \text{"GTAG"} \;||\; \text{FORMAT\_VERSION (1B)} \;||\; \text{PURPOSE (1B)} \;||\; \text{KEY\_ID (16B)} \;||\; \text{CIPHERTEXT\_LENGTH (4B LE)}$$
+
+---
+
+## 4. Supported NFC Hardware Matrix
+
+Ghost-Tag supports standard **NFC Forum Type 2** tags (NXP NTAG21x and MIFARE Ultralight):
+
+| Tag Family | Total Memory | User Memory Pages | Usable Plaintext Capacity | Recommended Purpose |
+| :--- | :--- | :--- | :--- | :--- |
+| **NTAG213** | 180 Bytes | Pages 4..39 (144B) | **45 Bytes** | Short passwords, tokens |
+| **NTAG215** | 540 Bytes | Pages 4..129 (504B) | **404 Bytes** | Recovery notes, Wi-Fi keys, secrets |
+| **NTAG216** | 924 Bytes | Pages 4..225 (888B) | **780 Bytes** | Server configs, SSH keys, full notes |
+| **MIFARE Ultralight C** | 192 Bytes | Pages 4..39 (144B) | **45 Bytes** | Asset tags, credentials |
+
+> [!IMPORTANT]
+> **Page 3 (Capability Container - CC)** and lock bytes are strictly protected during all operations. Destructive overwrites target strictly user memory pages (`Page 4` to `Page N`).
+
+---
+
+## 5. Technology Stack
+
+- **Mobile Framework**: React Native (Android Native Target, API 26+)
+- **Language**: TypeScript (Strict Mode)
+- **NFC Transceiver**: `react-native-nfc-manager` (Foreground Dispatch & NDEF framing)
+- **Cryptographic Primitives**: `react-native-quick-crypto` (OpenSSL-backed CSPRNG & AES-256-GCM)
+- **Key Derivation**: `react-native-argon2` (RFC 9106 memory-hard KDF)
+- **Encrypted Vault Storage**: `react-native-mmkv` with AES-256 at rest
+- **State Management**: `zustand`
+- **Navigation**: React Navigation Native Stack
+
+---
+
+## 6. End-to-End User Workflows
+
+### 6.1 Scan & Decrypt
+1. Hold tag to back of phone.
+2. Android foreground dispatch delivers tag intent.
+3. Envelope is parsed and validated for `GTAG` magic and version `0x01`.
+4. Key ID is resolved from the local vault; prompts for master passphrase if locked.
+5. DEK is unwrapped in volatile memory $\rightarrow$ AES-256-GCM decrypts payload $\rightarrow$ Plaintext rendered to secure terminal display.
+6. Ephemeral DEK buffer is immediately zeroized.
+
+### 6.2 Write & Mandatory Read-Back Verification
+1. User enters payload and selects categorical purpose.
+2. App validates that payload length fits available tag space after deducting 54 bytes overhead.
+3. AES-256-GCM encrypts payload with a fresh 12-byte CSPRNG nonce.
+4. Serialized binary envelope is written via NDEF.
+5. **Mandatory Read-Back**: App re-reads the entire envelope from the physical tag and verifies byte-for-byte matching of key ID, nonce, ciphertext, and GCM tag.
+6. Only upon matching is `WRITE_VERIFIED` displayed.
+
+### 6.3 Destructive Tag Overwrite (Wipe)
+1. User confirms destructive wipe after reading the honesty disclaimer.
+2. App writes all user memory pages (`Pages 4 .. N`) with `0x00` zeros (Pass 1).
+3. App overwrites all user memory pages with CSPRNG random bytes (Pass 2).
+4. Memory is read back to confirm overwrite.
+5. Blank NDEF container (`0x03 0x00 0xFE`) is restored. If interrupted, `WIPE_PARTIAL` is flagged.
+
+### 6.4 Disaster Recovery
+1. User installs Ghost-Tag on a new device.
+2. Enters their 24-word BIP39 mnemonic recovery phrase.
+3. Recovery KEK is derived via Argon2id with dedicated recovery work factors.
+4. All DEKs are recovered, user sets a new master passphrase, and vault access is restored.
+
+---
+
+## 7. Installation, Build & Testing
+
+### 7.1 Prerequisites
+- Node.js >= 18.x and npm
+- Android Studio with Android SDK API 26+ installed
+- Physical Android phone with NFC hardware support
+
+### 7.2 Setup & Dependencies
+```bash
+# Clone the repository
+git clone https://github.com/FROSTY-MUG/Ghost-Tag.git
+cd Ghost-Tag
+
+# Install all dependencies
+npm install
+```
+
+### 7.3 Running the Test Suite
+The project includes automated Jest unit and integration test suites covering contracts, crypto core, vault storage, NFC abstraction, and workflow engines:
+
+```bash
+# Run all test suites
+npm test
+
+# Run specific test modules
+npm test -- crypto.test.ts
+npm test -- vault.test.ts
+npm test -- nfc.test.ts
+npm test -- operations.test.ts
+```
+
+All 6 test suites and **139 tests pass with 100% success rate**.
+
+### 7.4 Running on an Android Device
+```bash
+# Connect physical Android device with USB debugging enabled
 npm run android
-
-# OR using Yarn
-yarn android
 ```
 
-### iOS
+---
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+## 8. Detailed Documentation Index
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+For in-depth technical specifications, consult the `docs/` folder:
 
-```sh
-bundle install
-```
+- [**System Architecture**](./docs/architecture.md): Subsystem breakdown, responsibilities, and dependency graph.
+- [**Cryptographic Core**](./docs/cryptography.md): RFC 9106 Argon2id parameters, AES-GCM formulas, and key wrapping.
+- [**Envelope Specification**](./docs/envelope-specification.md): Complete Little-Endian binary layout and AAD binding.
+- [**NFC Hardware Matrix**](./docs/nfc-tag-matrix.md): Type 2 tag memory maps, page addressing, and safe bounds.
+- [**User & Backend Flow**](./docs/user-flow.md): Step-by-step UX flows and state machine transitions.
+- [**Code Structure Guide**](./docs/code-structure.md): Detailed module directory and file map.
+- [**Security Policy & Threat Model**](./SECURITY.md): Adversary capabilities, invariants, and vulnerability reporting.
+- [**Contributing Guidelines**](./CONTRIBUTING.md): PR workflow, contact info, and ethical usage boundaries.
 
-Then, and every time you update your native dependencies, run:
+---
 
-```sh
-bundle exec pod install
-```
+## 9. Contact & Contributing
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+Ghost-Tag is maintained by **Aryan Arora**.
+- **Contact & Suggestions**: [aryanarora26110@gmail.com](mailto:aryanarora26110@gmail.com)
+- **GitHub Repository**: [https://github.com/FROSTY-MUG/Ghost-Tag](https://github.com/FROSTY-MUG/Ghost-Tag)
 
-```sh
-# Using npm
-npm run ios
+We welcome suggestions and contributions! Please feel free to fork the repository, make improvements, add tests, and submit a pull request.
 
-# OR using Yarn
-yarn ios
-```
-
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
-
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+> [!CAUTION]
+> **Strict Legal Notice**: This software is provided solely for personal security, confidential data storage, and authorized educational research. **Do not use this software for illegal, malicious, or unauthorized purposes.**

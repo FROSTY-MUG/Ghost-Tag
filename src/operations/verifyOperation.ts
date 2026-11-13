@@ -61,7 +61,7 @@ export class VerifyOperation {
         };
       }
 
-      const envelope = parseEnvelope(readResult.envelopeBytes);
+      const envelope = parseEnvelope(readResult.envelopeBytes || readResult.rawEnvelope);
       const keyIdHex = bytesToHex(envelope.header.keyId);
 
       // Check if DEK exists in local vault without needing unlock

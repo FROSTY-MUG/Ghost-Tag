@@ -3,6 +3,7 @@
  * @summary Unit and Integration Tests for Ghost-Tag Phase 3 Vault Subsystem.
  */
 
+import { Buffer } from 'buffer';
 import {
   VaultDatabase,
   VaultManager,

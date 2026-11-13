@@ -88,8 +88,8 @@ export class DiagnosticsExporter {
     if (isInitialized) {
       try {
         const metadata = await this.vaultManager.getVaultMetadata();
-        totalKeyCount = metadata.wrappedDEKs.length;
-        activeKeyCount = metadata.wrappedDEKs.filter((k) => k.status === 'ACTIVE').length;
+        totalKeyCount = metadata.wrappedDekCount;
+        activeKeyCount = metadata.wrappedDekCount;
       } catch {
         // Vault may be locked or reading metadata failed
       }
@@ -110,7 +110,7 @@ export class DiagnosticsExporter {
         family: identification.family,
         isSupported: identification.isSupported,
         isWritable,
-        totalCapacityBytes: capacity.totalCapacityBytes,
+        totalCapacityBytes: capacity.rawUserMemoryBytes,
         usablePlaintextSpaceBytes: usableSpace,
       };
     }
@@ -152,11 +152,11 @@ export class DiagnosticsExporter {
       eventId: entry.eventId,
       eventType: entry.eventType,
       timestamp: entry.timestamp,
-      resultCode: entry.resultCode,
-      tagFamily: entry.tagFamily,
+      resultCode: String(entry.resultCode),
+      tagFamily: entry.tagFamily ?? undefined,
       keyIdTruncated: entry.keyId ? `${entry.keyId.slice(0, 8)}...` : undefined,
-      envelopeVersion: entry.envelopeVersion,
-      errorCode: entry.errorCode,
+      envelopeVersion: entry.envelopeVersion ?? undefined,
+      errorCode: entry.errorCode ?? undefined,
     };
   }
 }

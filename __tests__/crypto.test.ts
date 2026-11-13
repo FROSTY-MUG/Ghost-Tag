@@ -622,7 +622,7 @@ describe('Ghost-Tag Cryptographic Core Suite', () => {
     it('derives a 32-byte KEK deterministically', async () => {
       const salt = generateSalt();
       const params = getDefaultParams(DeviceTier.STANDARD);
-      params.salt = salt;
+      (params as any).salt = salt;
 
       const kek1 = await deriveKEK('master-passphrase-alpha', salt, params);
       const kek2 = await deriveKEK('master-passphrase-alpha', salt, params);
@@ -652,7 +652,7 @@ describe('Ghost-Tag Cryptographic Core Suite', () => {
       const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
       const salt = generateSalt();
       const params = getDefaultParams(DeviceTier.LOW_END);
-      params.salt = salt;
+      (params as any).salt = salt;
 
       await deriveKEK('quick-pass', salt, params);
       expect(warnSpy).toHaveBeenCalledWith(

@@ -15,6 +15,7 @@ import { constructAAD, serializeEnvelope } from '../crypto/envelope';
 import { generateNonce } from '../crypto/random';
 import { bytesToHex, hexToBytes } from '../crypto/keyWrap';
 import { zeroize } from '../crypto/secureMemory';
+import { Buffer } from 'buffer';
 import { TagWriter } from '../nfc/tagWriter';
 import { TagInfo } from '../nfc/tagInfo';
 import { VaultManager } from '../vault/vaultManager';
@@ -64,10 +65,18 @@ export class WriteOperation {
     try {
       // 1. Convert plaintext input
       if (typeof options.plaintext === 'string') {
-        const encoder = new TextEncoder();
-        plaintextBytes = encoder.encode(options.plaintext);
+        plaintextBytes = new Uint8Array(Buffer.from(options.plaintext, 'utf-8'));
       } else {
         plaintextBytes = new Uint8Array(options.plaintext);
+      }
+
+      if (!plaintextBytes || plaintextBytes.length === 0) {
+        throw new GhostTagError({
+          code: GhostTagErrorCode.PAYLOAD_TOO_LARGE,
+          userMessage: 'Payload cannot be empty.',
+          category: ErrorCategory.OPERATION,
+          severity: ErrorSeverity.ERROR,
+        });
       }
 
       // 2. Validate Tag Technology & Capacity

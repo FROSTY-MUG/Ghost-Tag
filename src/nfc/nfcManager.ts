@@ -19,6 +19,7 @@ import {
   createTagNotDetectedError,
 } from './errors';
 import { GhostTagError, GhostTagErrorCode, ErrorCategory, ErrorSeverity } from '../contracts/errors';
+export type { NfcTag } from './tagInfo';
 
 /**
  * Discovery callback invoked when an NFC tag enters the antenna RF field.

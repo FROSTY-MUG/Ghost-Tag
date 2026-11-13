@@ -43,7 +43,7 @@ describe('Ghost-Tag Tag Operations Engine Suite', () => {
 
   const testPassphrase = 'correct-horse-battery-staple-ghost-tag-2026';
 
-  const sampleTag: NfcTag = {
+  const sampleTag: any = {
     id: '04A1B2C3D4E5F6',
     techList: ['android.nfc.tech.NfcA', 'android.nfc.tech.Ndef'],
     maxSize: 504, // NTAG215
@@ -123,8 +123,9 @@ describe('Ghost-Tag Tag Operations Engine Suite', () => {
       mockReader.readTag.mockResolvedValueOnce({
         success: true,
         envelopeBytes,
+        rawEnvelope: envelopeBytes,
         isGhostTag: true,
-      });
+      } as any);
 
       const scanOp = new ScanOperation(vaultManager, mockReader, tagInfo);
       const stateHistory: ScanState[] = [];
@@ -145,7 +146,7 @@ describe('Ghost-Tag Tag Operations Engine Suite', () => {
     });
 
     it('rejects unsupported tag technology', async () => {
-      const unsupportedTag: NfcTag = {
+      const unsupportedTag: any = {
         id: '01020304',
         techList: ['android.nfc.tech.MifareClassic'],
       };
@@ -178,8 +179,9 @@ describe('Ghost-Tag Tag Operations Engine Suite', () => {
       mockReader.readTag.mockResolvedValueOnce({
         success: true,
         envelopeBytes: fakeEnvelopeBytes,
+        rawEnvelope: fakeEnvelopeBytes,
         isGhostTag: true,
-      });
+      } as any);
 
       const scanOp = new ScanOperation(vaultManager, mockReader, tagInfo);
       const result = await scanOp.execute(sampleTag);
@@ -196,7 +198,7 @@ describe('Ghost-Tag Tag Operations Engine Suite', () => {
       mockWriter.writeAndVerify.mockResolvedValueOnce({
         success: true,
         state: WriteState.WRITE_VERIFIED,
-      });
+      } as any);
 
       const writeOp = new WriteOperation(vaultManager, mockWriter, tagInfo);
       const stateHistory: WriteState[] = [];
@@ -239,7 +241,7 @@ describe('Ghost-Tag Tag Operations Engine Suite', () => {
       mockWriter.writeAndVerify.mockResolvedValueOnce({
         success: false,
         state: WriteState.WRITE_UNVERIFIED,
-      });
+      } as any);
 
       const writeOp = new WriteOperation(vaultManager, mockWriter, tagInfo);
       const result = await writeOp.execute(sampleTag, { plaintext: 'Important data' });
@@ -255,7 +257,7 @@ describe('Ghost-Tag Tag Operations Engine Suite', () => {
       mockWiper.wipeTag.mockResolvedValueOnce({
         success: true,
         state: WipeState.WIPE_COMPLETE,
-      });
+      } as any);
 
       const wipeOp = new WipeOperation(mockWiper, tagInfo);
       const stateHistory: WipeState[] = [];
@@ -272,7 +274,7 @@ describe('Ghost-Tag Tag Operations Engine Suite', () => {
       mockWiper.wipeTag.mockResolvedValueOnce({
         success: false,
         state: WipeState.WIPE_PARTIAL,
-      });
+      } as any);
 
       const wipeOp = new WipeOperation(mockWiper, tagInfo);
       const result = await wipeOp.execute(sampleTag);
@@ -307,8 +309,9 @@ describe('Ghost-Tag Tag Operations Engine Suite', () => {
       mockReader.readTag.mockResolvedValueOnce({
         success: true,
         envelopeBytes: fakeEnvelopeBytes,
+        rawEnvelope: fakeEnvelopeBytes,
         isGhostTag: true,
-      });
+      } as any);
 
       const verifyOp = new VerifyOperation(vaultManager, mockReader, tagInfo);
       const result = await verifyOp.execute(sampleTag);

@@ -16,6 +16,7 @@
 import NfcManager from 'react-native-nfc-manager';
 import { NfcTag, tagInfo } from './tagInfo';
 import { NdefMessage, GhostTagRecord, extractGhostTagPayload } from './ndefBuilder';
+export type { GhostTagRecord };
 import {
   mapNfcError,
   createTagNotDetectedError,
@@ -48,6 +49,8 @@ export interface TagReadSuccess {
   readonly ghostTagRecord: GhostTagRecord;
   /** Raw binary envelope bytes ready for envelope parsing and decryption. */
   readonly rawEnvelope: Uint8Array;
+  /** Alias for rawEnvelope for backward compatibility. */
+  readonly envelopeBytes: Uint8Array;
   /** State machine milestone. */
   readonly state: ScanState.NDEF_READ_COMPLETE;
 }
@@ -176,6 +179,7 @@ export class TagReader {
         message,
         ghostTagRecord: ghostRecord,
         rawEnvelope: envelope,
+        envelopeBytes: envelope,
         state: ScanState.NDEF_READ_COMPLETE,
       };
     } catch (error) {

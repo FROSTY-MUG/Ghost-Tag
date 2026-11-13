@@ -15,6 +15,7 @@ import { decrypt } from '../crypto/aesGcm';
 import { constructAAD } from '../crypto/envelope';
 import { bytesToHex } from '../crypto/keyWrap';
 import { zeroize } from '../crypto/secureMemory';
+import { Buffer } from 'buffer';
 import { TagReader, GhostTagRecord } from '../nfc/tagReader';
 import { TagInfo, TagIdentification } from '../nfc/tagInfo';
 import { VaultManager } from '../vault/vaultManager';
@@ -66,7 +67,7 @@ export class ScanOperation {
       if (!identification.isSupported) {
         throw new GhostTagError({
           code: GhostTagErrorCode.TAG_UNSUPPORTED,
-          userMessage: `Unsupported tag architecture: ${identification.details}. Ghost-Tag only supports NTAG21x and MIFARE Ultralight Type 2 tags.`,
+          userMessage: `Unsupported tag architecture: ${identification.family}. Ghost-Tag only supports NTAG21x and MIFARE Ultralight Type 2 tags.`,
           category: ErrorCategory.NFC,
           severity: ErrorSeverity.ERROR,
         });
@@ -81,10 +82,11 @@ export class ScanOperation {
         throw readResult.error;
       }
 
+      const envelopeData = readResult.envelopeBytes || readResult.rawEnvelope;
       currentContext = {
         ...currentContext,
         state: ScanState.NDEF_READ_COMPLETE,
-        rawNdefBytes: readResult.envelopeBytes,
+        rawNdefBytes: envelopeData,
       };
       this.notify(currentContext, onStateChange);
 
@@ -92,7 +94,7 @@ export class ScanOperation {
       currentContext = { ...currentContext, state: ScanState.ENVELOPE_PARSING };
       this.notify(currentContext, onStateChange);
 
-      const envelope = parseEnvelope(readResult.envelopeBytes);
+      const envelope = parseEnvelope(envelopeData);
       const keyIdHex = bytesToHex(envelope.header.keyId);
 
       currentContext = {
@@ -181,8 +183,7 @@ export class ScanOperation {
       this.notify(currentContext, onStateChange);
 
       // 7. Decode Display Plaintext
-      const decoder = new TextDecoder('utf-8');
-      const plaintextString = decoder.decode(plaintextBytes);
+      const plaintextString = Buffer.from(plaintextBytes).toString('utf-8');
 
       currentContext = {
         ...currentContext,

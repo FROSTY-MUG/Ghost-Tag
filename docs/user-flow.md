@@ -130,4 +130,65 @@ When launching Ghost-Tag for the first time:
 5. Argon2id derives the dedicated Recovery KEK using the recovery envelope parameters.
 6. Recovery copies of all DEKs are unwrapped.
 7. User sets a new master passphrase.
-8. All DEKs are re-wrapped under the new primary KEK, and full access is restored.
+---
+
+## 7. Bulk Scanning v2: Multi-File Creation & Extra-Tag Exclusion Flow
+
+```
+[Terminal Status Progression]
+[VAULT] Creating Bulk Vault: "Ops-Offline-Archive"
+[FILES] 3 files selected via SAF (1 PDF, 1 Video, 1 JSON) - Total: 3.8 MB
+[CALC] Encrypted size: 3,984,812 bytes
+[TAGS] Tag family: NTAG215 (Usable chunk payload: 370B)
+[ERASURE] Adding 10% Reed-Solomon redundancy (K=108, M=11)
+[REQUIREMENT] Total tags required: 119 physical NFC tags
+[PROMPT] "Only 119 tags are required. Please set aside any surplus tags."
+[WRITE-SEQ] Tag 1/119 written & verified -> Tag 2/119 -> ... -> Tag 119/119
+[RESULT] BULK_VAULT_READY
+```
+
+1. **File Selection**: User selects one or more arbitrary files (documents, images, videos, archives) using Android's Storage Access Framework (`ACTION_OPEN_DOCUMENT`).
+2. **Encrypted Size & Tag Calculation**:
+   - Total encrypted bytes are calculated including envelope overhead (134 bytes per chunk).
+   - Ghost-Tag computes the required number of physical tags based on target tag family (e.g., NTAG215).
+3. **Extra-Tag Exclusion Rule**:
+   - If the user possesses 130 tags but only 119 are needed, the app instructs: *"Only 119 tags are required. Please set aside the other 11 tags. Scan the 119 required tags one by one."*
+   - Ghost-Tag strictly refuses to write to surplus tags.
+4. **Sequential Write Phase**:
+   - The user taps blank compatible tags one by one.
+   - For each tag: writes bulk envelope (`application/vnd.ghost.bulk`), immediately executes read-back verification, and logs progress to the crash-resilient write journal.
+   - Once all required tags are written, the vault transitions to ready state.
+
+---
+
+## 8. Bulk Scanning v2: Random-Order Tag Scanning, 72h Cache & Reconstruction
+
+```
+[Terminal Status Progression]
+[SCAN] Tag detected: Chunk #42 of 119 (File: recovery.pdf, 370B)
+[CACHE] Chunk #42 authenticated & cached in offline MMKV storage
+[COUNTDOWN] Cache TTL: 71h 59m remaining (Auto-purge on expiry)
+[PROGRESS] Collected 94 of 108 required data chunks (87%)
+...
+[SCAN] Tag detected: Chunk #112 (Parity M-4) -> Solves missing chunk #14!
+[RECON] All K=108 chunks available (102 original + 6 RS reconstructed)
+[CRYPTO] Concatenating ciphertext -> SHA-256 matches manifest!
+[DECRYPT] AES-256-GCM full-file decryption complete.
+[SAF] Exported to Download/recovery.pdf -> In-memory buffers wiped.
+```
+
+1. **Random-Order Scanning**:
+   - User scans physical tags in any random, arbitrary order.
+   - Ghost-Tag extracts the chunk envelope, authenticates the 74-byte AAD, and checks for duplicates.
+   - Duplicate tags are rejected without state mutation.
+2. **72-Hour Encrypted Offline Cache**:
+   - Chunks are stored in local encrypted MMKV storage with a strict 72-hour Time-To-Live (TTL).
+   - Real-time countdown timer is displayed; if 72 hours elapse without completion, cached chunks are purged (`CACHE_EXPIRED`).
+3. **Reconstruction Engine**:
+   - Once at least $K$ valid chunks are collected for a file, Cauchy Reed-Solomon decoding solves for any missing or damaged tags using parity chunks.
+   - Ciphertext chunks are concatenated and verified against the file's SHA-256 manifest hash.
+   - Full file is decrypted via AES-256-GCM under the vault DEK.
+4. **SAF Export & Disposable Zeroization**:
+   - Original file is saved via Android Storage Access Framework (`ACTION_CREATE_DOCUMENT`).
+   - Plaintext memory buffers are immediately scrubbed using 4-pass `secureWipeBuffer()`.
+

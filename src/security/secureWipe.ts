@@ -104,3 +104,4 @@ export function zeroize(buffer?: Uint8Array | null): void {
 export function zeroizeAll(...buffers: (Uint8Array | null | undefined)[]): void {
   secureWipeBuffers(...buffers);
 }
+

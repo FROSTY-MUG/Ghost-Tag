@@ -84,3 +84,4 @@ Java_com_ghosttag_security_SecurityBridgeModule_nativeWipeBuffer(
 }
 
 } // extern "C"
+

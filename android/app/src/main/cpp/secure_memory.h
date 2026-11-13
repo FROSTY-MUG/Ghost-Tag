@@ -44,3 +44,4 @@ public:
 } // namespace ghosttag
 
 #endif // GHOSTTAG_SECURE_MEMORY_H
+

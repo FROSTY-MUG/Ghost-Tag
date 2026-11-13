@@ -64,3 +64,4 @@ int SecureMemory::timingSafeCompare(const void* a, const void* b, size_t len) {
 }
 
 } // namespace ghosttag
+

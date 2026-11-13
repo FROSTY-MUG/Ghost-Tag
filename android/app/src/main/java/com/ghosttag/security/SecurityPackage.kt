@@ -19,3 +19,4 @@ class SecurityPackage : ReactPackage {
         return emptyList()
     }
 }
+

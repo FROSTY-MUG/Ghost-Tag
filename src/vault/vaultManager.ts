@@ -241,7 +241,7 @@ export class VaultManager {
       );
 
       this.activeSession.onLock(() => {
-        this.logAuditEvent(AuditEventType.VAULT_LOCKED, 0, null).catch(() => {});
+        this.logAuditEvent(AuditEventType.VAULT_LOCKED, 0, null).catch(() => { });
       });
 
       // 7. Audit creation events
@@ -311,7 +311,7 @@ export class VaultManager {
       );
 
       this.activeSession.onLock(() => {
-        this.logAuditEvent(AuditEventType.VAULT_LOCKED, 0, null).catch(() => {});
+        this.logAuditEvent(AuditEventType.VAULT_LOCKED, 0, null).catch(() => { });
       });
 
       await this.logAuditEvent(AuditEventType.VAULT_UNLOCKED, 0, null);

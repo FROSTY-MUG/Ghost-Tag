@@ -249,6 +249,8 @@ npm run android
 
 For in-depth technical specifications, consult the `docs/` folder:
 
+- [**Documentation Portal & Reading Roadmap**](./docs/README.md): Master index, reading sequences by persona (Security Auditor, Embedded Engineer, Contributor), and subsystem matrix.
+- [**Code Structure Guide**](./docs/code-structure.md): Comprehensive module directory, complete file inventory, and architectural dependency rules.
 - [**Security Hardening Specification**](./docs/security-hardening.md): Multi-language anti-reverse engineering, kernel page locking, anti-leak, and R8 obfuscation.
 - [**Bulk Scanning v2 Specification**](./docs/bulk-scanning-v2.md): Distributed vault architecture, 134-byte binary layout, Cauchy erasure coding, and 72-hour cache.
 - [**System Architecture**](./docs/architecture.md): Subsystem breakdown, responsibilities, and dependency graph.
@@ -256,7 +258,6 @@ For in-depth technical specifications, consult the `docs/` folder:
 - [**Envelope Specification**](./docs/envelope-specification.md): Complete Little-Endian binary layout and AAD binding.
 - [**NFC Hardware Matrix**](./docs/nfc-tag-matrix.md): Type 2 tag memory maps, page addressing, and safe bounds.
 - [**User & Backend Flow**](./docs/user-flow.md): Step-by-step UX flows and state machine transitions.
-- [**Code Structure Guide**](./docs/code-structure.md): Detailed module directory and file map.
 - [**Security Policy & Threat Model**](./SECURITY.md): Adversary capabilities, invariants, and vulnerability reporting.
 - [**Contributing Guidelines**](./CONTRIBUTING.md): PR workflow, contact info, and ethical usage boundaries.
 

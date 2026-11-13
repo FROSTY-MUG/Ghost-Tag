@@ -66,3 +66,4 @@ private:
 } // namespace ghosttag
 
 #endif // GHOSTTAG_SECURITY_CORE_H
+

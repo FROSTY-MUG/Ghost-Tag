@@ -25,3 +25,4 @@ target_link_libraries(
     ghosttag_security
     ${log-lib}
 )
+

@@ -149,3 +149,4 @@ class SecurityBridgeModule(private val reactContext: ReactApplicationContext) :
         }
     }
 }
+

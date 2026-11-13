@@ -265,3 +265,4 @@ bool SecurityCore::isEmulatorDetected() {
 }
 
 } // namespace ghosttag
+

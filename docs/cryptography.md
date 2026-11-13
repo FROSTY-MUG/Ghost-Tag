@@ -130,9 +130,67 @@ To ensure recoverability when a device is lost or replaced:
 
 ---
 
-## 6. Memory Zeroization
+---
 
-Ghost-Tag implements defense-in-depth buffer sanitization:
-- Ephemeral KEKs, unwrapped DEKs, and plaintext buffers are actively overwritten with `0x00` bytes immediately upon completion of cryptographic tasks (`zeroize()`).
-- The application automatically locks and zeroizes in-memory session keys when backgrounded or inactive.
-- *Notice*: While JavaScript garbage collectors may hold unreachable string remnants in heap memory, typed `Uint8Array` byte buffers are scrubbed in place.
+## 6. Bulk File Encryption & 74-Byte AAD Specification
+
+For multi-file distributed storage across physical NFC tags (Ghost-Tag Bulk Scanning v2):
+
+### 6.1 Whole-File Encryption:
+Prior to chunking, each arbitrary file (opaque binary stream) is encrypted as a single atomic unit using AES-256-GCM under the vault DEK:
+$$\text{FullCiphertext} = \text{AES-256-GCM}_{\text{DEK}}(\text{IV} = \text{random 12B}, \text{Plaintext} = \text{FileBytes}, \text{AAD} = \text{FileId (16B)})$$
+
+### 6.2 Chunk Framing & 74-Byte AAD Binding:
+The encrypted binary stream is split into $K$ data chunks. Each chunk is framed into a 134-byte binary envelope (`application/vnd.ghost.bulk`) with **74 bytes of Additional Authenticated Data (AAD)**:
+
+$$\text{ChunkAAD} = \text{"GTBK"} \;||\; \text{VERSION (1B)} \;||\; \text{FLAGS (1B)} \;||\; \text{VAULT\_ID (16B)} \;||\; \text{FILE\_ID (16B)} \;||\; \text{GLOBAL\_INDEX (4B LE)} \;||\; \text{FILE\_CHUNK\_INDEX (4B LE)} \;||\; \text{TOTAL\_FILE\_CHUNKS (4B LE)} \;||\; \text{TOTAL\_VAULT\_CHUNKS (4B LE)} \;||\; \text{PAYLOAD\_LENGTH (4B LE)} \;||\; \text{CHUNK\_SHA256 (16B truncated)}$$
+
+Binding all 74 bytes of topological and identity metadata guarantees that an attacker cannot:
+1. Replay a chunk from Vault A into Vault B.
+2. Swap chunks between different positions or files.
+3. Alter payload length without invalidating the 128-bit authentication tag.
+
+---
+
+## 7. Cauchy-Vandermonde Reed-Solomon Erasure Coding ($\text{GF}(2^8)$)
+
+Ghost-Tag Bulk Scanning v2 implements Cauchy-Vandermonde erasure coding over the finite Galois Field $\text{GF}(2^8)$ defined by the irreducible generator polynomial:
+$$P(x) = x^8 + x^4 + x^3 + x^2 + 1 \quad (\text{0x11D})$$
+
+### 7.1 Encoding:
+Given $K$ data chunks and $M$ parity/recovery chunks:
+- A Cauchy generator matrix $\mathbf{C} \in \text{GF}(2^8)^{(K+M) \times K}$ is constructed:
+$$C_{i,j} = \frac{1}{X_i \oplus Y_j}$$
+where $X = \{0, 1, \dots, K+M-1\}$ and $Y = \{K+M, K+M+1, \dots, 2K+M-1\}$ are disjoint sets in $\text{GF}(2^8)$.
+- The first $K$ rows form the systematic identity matrix $\mathbf{I}_K$.
+- The lower $M$ rows compute the parity chunks:
+$$\mathbf{P} = \mathbf{C}_{\text{parity}} \cdot \mathbf{D}$$
+
+### 7.2 Fault Tolerance & Reconstruction:
+- **Maximum Distance Separable (MDS) Property**: Any $K$ distinct chunks out of the $K + M$ total chunks are mathematically sufficient to reconstruct the entire file.
+- Even if up to $M$ physical NFC tags are permanently lost, broken, or stolen, Ghost-Tag solves the linear system $\mathbf{C}_{\text{sub}} \cdot \mathbf{D} = \mathbf{Chunks}_{\text{received}}$ via Gaussian elimination over $\text{GF}(2^8)$ to fully recover the original ciphertext.
+
+---
+
+## 8. Memory Protection, Page Locking & Volatile Scrubbing
+
+Ghost-Tag enforces hardware and kernel-level memory defense:
+
+1. **Kernel Page Locking (`mlock`)**:
+   - In the native C++ layer (`libghosttag_security.so`), key and passphrase buffers are locked into physical RAM via `mlock()`.
+   - The Linux kernel is forbidden from paging or swapping these memory pages out to flash storage or zRAM, eliminating permanent storage remanence across reboots.
+
+2. **4-Pass Volatile Memory Scrubbing**:
+   - To defeat compiler dead-store elimination (where Clang/LLVM removes zeroing code if a buffer is about to be deallocated):
+     - **Pass 1**: Fill buffer with alternating bit pattern `0xAA` (`10101010`).
+     - **Memory Barrier**: `asm volatile("" : : "r"(addr) : "memory")` forces the compiler to execute the stores.
+     - **Pass 2**: Fill buffer with inverted bit pattern `0x55` (`01010101`).
+     - **Memory Barrier**: Second clobber barrier.
+     - **Pass 3**: Fill buffer with cryptographically secure random bytes.
+     - **Pass 4**: Complete zeroization `0x00`.
+
+3. **Constant-Time Verification (`timingSafeEqual`)**:
+   - All byte buffer comparisons (GCM authentication tags, SHA-256 chunk digests, and HMAC manifest signatures) are performed in strict constant time using a bitwise XOR accumulator:
+   $$\text{diff} = \bigvee_{i=0}^{N-1} (A_i \oplus B_i) == 0$$
+   - Prevents side-channel timing attacks that infer key bytes from comparison early-exit latency.
+

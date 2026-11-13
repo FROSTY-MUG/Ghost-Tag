@@ -3,3 +3,4 @@
     <!-- Strictly disallow all cleartext / plaintext HTTP traffic -->
     <base-config cleartextTrafficPermitted="false" />
 </network-security-config>
+

@@ -365,3 +365,4 @@ export function parseBulkEnvelope(buffer: Uint8Array): BulkChunkEnvelope {
     gcmTag,
   };
 }
+

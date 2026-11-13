@@ -186,3 +186,4 @@ describe('Galois Field GF(2^8) and Erasure Coding Engine', () => {
     }).toThrow(expect.objectContaining({ code: GhostTagErrorCode.INSUFFICIENT_CHUNKS }));
   });
 });
+

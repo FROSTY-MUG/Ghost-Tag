@@ -106,3 +106,4 @@ When storing files across tags:
    If the user accidentally presents a tag that has already received a chunk in the current session, Ghost-Tag rejects it with `CHUNK_ALREADY_WRITTEN`.
 4. **Mandatory Read-Back**:
    Every written tag is immediately read back and verified against the source SHA-256 chunk hash and GCM authentication tag before marking the chunk complete.
+

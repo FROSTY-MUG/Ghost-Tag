@@ -177,3 +177,4 @@ describe('Bulk Binary Envelope Specification (v2)', () => {
     expect(Array.from(extracted)).toEqual(Array.from(serialized));
   });
 });
+

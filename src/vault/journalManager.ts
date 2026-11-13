@@ -173,3 +173,4 @@ export class JournalManager {
     return this.scanJournals.get(sessionId) ?? null;
   }
 }
+

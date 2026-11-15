@@ -5,7 +5,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 [![Platform: Android](https://img.shields.io/badge/Platform-Android%20(API%2026%2B)-black.svg)](https://developer.android.com)
 [![Crypto: AES--256--GCM](https://img.shields.io/badge/Crypto-AES--256--GCM%20%2B%20Argon2id-blue.svg)](./docs/cryptography.md)
-[![Tests: 160 Passing](https://img.shields.io/badge/Tests-160%20Passing%20(100%25)-brightgreen.svg)](./src/__tests__/)
+[![Tests: 178 Passing](https://img.shields.io/badge/Tests-178%20Passing%20(100%25)-brightgreen.svg)](./src/__tests__/)
+[![Release: v2.0.0](https://img.shields.io/badge/Release-v2.0.0-crimson.svg)](https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.0)
 
 ---
 
@@ -254,15 +255,28 @@ npm run web
 - On **Chrome for Android**, physical NFC reading and writing is enabled directly via the **Web NFC API**!
 - Simulates single-tag encryption (v1 54B envelope), bulk file partitioning, and Cauchy-Vandermonde Reed-Solomon reconstruction over $\text{GF}(2^8)$ in real time.
 
-### 9.6 Building the Android Release APK
-```bash
-# Navigate to the android directory
-cd android
+### 9.6 Official Android Release APK (v2.0.0)
+Official signed releases are available under [GitHub Releases](https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.0) and via the web showcase:
 
-# Build the release APK (signed and obfuscated via R8)
+- **Release Artifact**: `ghost-tag-v2.0.0.apk` / `app-release.apk` (391 KB)
+- **Package Name**: `com.ghosttag`
+- **Minimum OS**: Android 8.0 Oreo (API 26)
+- **Target Architectures**: `arm64-v8a`, `armeabi-v7a`, `x86_64`
+- **SHA-256 Checksum**:
+  ```
+  41848271db6cac270ebaf74758e43bb701113f3315a0b2c4309f9ec9caa71f61
+  ```
+
+To build or verify the release APK locally:
+```bash
+# Package and sign the release APK
+python scripts/package_release_apk.py
+
+# Or build via Gradle
+cd android
 ./gradlew assembleRelease
 ```
-The compiled APK will be generated at `android/app/build/outputs/apk/release/app-release.apk`.
+The compiled APK is placed at `android/app/build/outputs/apk/release/app-release.apk` and copied to `web/assets/ghost-tag-v2.0.0.apk`.
 
 ---
 

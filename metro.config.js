@@ -9,8 +9,13 @@ const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
  */
 const config = {
   resolver: {
-    extraNodeModules: {
-      '@ghost-tag': path.resolve(__dirname, 'src'),
+    resolveRequest: (context, moduleName, platform) => {
+      if (moduleName.startsWith('@ghost-tag/')) {
+        const subPath = moduleName.replace('@ghost-tag/', '');
+        const targetPath = path.resolve(__dirname, 'src', subPath);
+        return context.resolveRequest(context, targetPath, platform);
+      }
+      return context.resolveRequest(context, moduleName, platform);
     },
   },
 };

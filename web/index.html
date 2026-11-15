@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Ghost-Tag // Offline Encrypted NFC Data-Vault & Distributed File Vault for Android</title>
   <meta name="description" content="Ghost-Tag is an offline, encrypted NFC data-vault and distributed file vault system for Android, leveraging AES-256-GCM, Argon2id, and Cauchy Reed-Solomon erasure coding.">
-  <meta name="theme-color" content="#060709">
+  <meta name="theme-color" content="#050608">
   <link rel="stylesheet" href="styles.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -17,59 +17,75 @@
   <header>
     <div class="container nav-bar">
       <a href="#" class="brand">
+        <span class="brand-knife-icon"></span>
         <span>GHOST-TAG</span>
-        <span class="brand-badge">v2.0</span>
+        <span class="brand-badge">v2.0.0</span>
       </a>
       <ul class="nav-links">
         <li><a href="#features">Features</a></li>
         <li><a href="#simulator">Live Simulator</a></li>
         <li><a href="#security">Security Core</a></li>
         <li><a href="#docs">Docs</a></li>
-        <li><a href="#download" class="btn-apk-header">Download APK</a></li>
+        <li><a href="#download" class="btn-apk-header">GET APK (v2.0.0)</a></li>
       </ul>
     </div>
   </header>
 
-  <!-- Hero Section -->
+  <!-- Hero Section with Subtle Ghost Face Watermark -->
   <section class="hero">
+    <div class="hero-ghost-watermark" aria-hidden="true"></div>
     <div class="container">
-      <div class="hero-tagline">OFFLINE ENCRYPTED NFC DISTRIBUTED FILE-VAULT FOR ANDROID</div>
-      <h1 class="hero-title">GHOST-TAG</h1>
-      <p class="hero-subtitle">
-        Turn ordinary physical NFC tags into confidential, tamper-evident encrypted vaults.
-        Protect recovery phrases, configurations, and large files split across physical tags without cloud dependencies.
-      </p>
+      <div class="hero-content">
+        <div class="hero-tagline">OFFLINE ENCRYPTED NFC DISTRIBUTED FILE-VAULT FOR ANDROID</div>
+        <h1 class="hero-title">GHOST-TAG</h1>
+        <p class="hero-subtitle">
+          Turn ordinary physical NFC tags into confidential, tamper-evident encrypted vaults.
+          Protect recovery phrases, configurations, and large files split across physical tags without cloud dependencies.
+        </p>
 
-      <!-- Exact Core User Promise Banner -->
-      <div class="promise-box">
-        <span class="badge-label">CORE USER PROMISE</span>
-        "Ghost-Tag splits your encrypted files into pieces and stores one piece on each NFC tag. You can scan the tags in any order later. Ghost-Tag identifies each piece, verifies it, and reassembles your files when enough valid pieces are collected."
-      </div>
+        <!-- Tactical Specimen Unit: Subtle Brutalist Ghost Threat Profile -->
+        <div class="specimen-badge">
+          <div class="specimen-frame">
+            <img src="assets/ghost-hero.jpg" alt="Ghost-Tag Covert Operative" class="specimen-photo">
+            <div class="specimen-blade-sheen"></div>
+          </div>
+          <div class="specimen-info">
+            <div class="specimen-code">// ENTITY_ID: GHOST_VAULT_NODE_01</div>
+            <div class="specimen-tagline">AIR-GAPPED STORAGE • CAUCHY GF(2^8) REED-SOLOMON • HARDENED ZERO-TRACE</div>
+          </div>
+        </div>
 
-      <!-- Exact Limitation Banner -->
-      <div class="limitation-box">
-        <span class="badge-label">SECURITY BOUNDARY & LIMITATION</span>
-        "A lost, damaged, or missing tag may prevent reconstruction. Enable redundancy to tolerate lost tags. Ghost-Tag does not prevent tag cloning, deletion, or replay."
-      </div>
+        <!-- Exact Core User Promise Banner -->
+        <div class="promise-box">
+          <span class="badge-label">CORE USER PROMISE</span>
+          "Ghost-Tag splits your encrypted files into pieces and stores one piece on each NFC tag. You can scan the tags in any order later. Ghost-Tag identifies each piece, verifies it, and reassembles your files when enough valid pieces are collected."
+        </div>
 
-      <!-- Hero Action Buttons -->
-      <div class="hero-actions">
-        <a href="#simulator" class="btn-primary">LAUNCH WEB SIMULATOR</a>
-        <a href="#download" class="btn-secondary">DOWNLOAD ANDROID APK</a>
-      </div>
+        <!-- Exact Limitation Banner -->
+        <div class="limitation-box">
+          <span class="badge-label">SECURITY BOUNDARY & LIMITATION</span>
+          "A lost, damaged, or missing tag may prevent reconstruction. Enable redundancy to tolerate lost tags. Ghost-Tag does not prevent tag cloning, deletion, or replay."
+        </div>
 
-      <!-- Live Web NFC Status Pill -->
-      <div>
-        <div id="webNfcPill" class="nfc-status-pill">
-          <span class="nfc-dot"></span>
-          <span id="webNfcLabel">CHECKING WEB NFC HARDWARE COMPATIBILITY...</span>
+        <!-- Hero Action Buttons -->
+        <div class="hero-actions">
+          <a href="#simulator" class="btn-primary">LAUNCH WEB SIMULATOR</a>
+          <a href="#download" class="btn-secondary">DOWNLOAD ANDROID APK</a>
+        </div>
+
+        <!-- Live Web NFC Status Pill -->
+        <div>
+          <div id="webNfcPill" class="nfc-status-pill">
+            <span class="nfc-dot"></span>
+            <span id="webNfcLabel">CHECKING WEB NFC HARDWARE COMPATIBILITY...</span>
+          </div>
         </div>
       </div>
     </div>
   </section>
 
   <!-- Features Grid Section -->
-  <section id="features" class="container" style="padding-bottom: 40px;">
+  <section id="features" class="container" style="padding: 70px 24px 40px;">
     <h2 class="section-title">CORE CAPABILITIES</h2>
     <p class="section-desc">Designed with cryptographic rigor, zero cloud reliance, and deep Android hardware integration.</p>
 
@@ -181,7 +197,7 @@
                 <div style="display:flex; gap:10px; flex-wrap:wrap;">
                   <button id="btnSimEncrypt" class="btn-primary" style="flex:1;">ENCRYPT & LOCK TAG</button>
                   <button id="btnSimDecrypt" class="btn-secondary" style="flex:1;">READ & DECRYPT</button>
-                  <button id="btnSimWriteNfc" class="btn-secondary btn-physical-nfc" style="display:none; border-color:var(--green); color:var(--green);">WRITE PHYSICAL NFC TAG</button>
+                  <button id="btnSimWriteNfc" class="btn-secondary btn-physical-nfc" style="display:none; border-color:var(--green-term); color:var(--green-term);">WRITE PHYSICAL NFC TAG</button>
                 </div>
               </div>
 
@@ -221,7 +237,7 @@
               <div class="sim-pane">
                 <div class="input-group">
                   <label>1. SELECT OR DROP ANY FILE (PDF, VIDEO, IMAGE, ARCHIVE)</label>
-                  <div id="bulkDropZone" style="border:2px dashed var(--border-color); padding:20px; text-align:center; border-radius:4px; cursor:pointer;">
+                  <div id="bulkDropZone" style="border:2px dashed var(--border-sharp); padding:20px; text-align:center; cursor:pointer; background:#07090f;">
                     <div style="font-size:1.5rem; margin-bottom:6px;">📁</div>
                     <div id="bulkFileName" style="font-weight:bold; color:#fff;">recovery_note.pdf</div>
                     <div id="bulkFileSize" style="color:var(--text-muted); font-size:0.8rem;">1.2 KB</div>
@@ -231,21 +247,21 @@
                 </div>
 
                 <div class="input-group">
-                  <label for="bulkRedundancy">2. REED-SOLOMON REDUNDANCY: <span id="bulkRedundancyVal" style="color:var(--cyan);">25%</span></label>
-                  <input type="range" id="bulkRedundancy" min="0" max="100" value="25" step="5" style="accent-color:var(--cyan); cursor:pointer;">
+                  <label for="bulkRedundancy">2. REED-SOLOMON REDUNDANCY: <span id="bulkRedundancyVal" style="color:var(--cyan-neon);">25%</span></label>
+                  <input type="range" id="bulkRedundancy" min="0" max="100" value="25" step="5" style="accent-color:var(--cyan-neon); cursor:pointer;">
                 </div>
 
                 <div class="capacity-box">
                   <div class="capacity-meta"><span>PARTITION PLAN SUMMARY:</span></div>
                   <div style="display:flex; justify-content:space-between; font-size:0.85rem; padding:4px 0;">
                     <span style="color:var(--text-muted);">Data Chunks (K):</span>
-                    <span id="planDataChunks" style="color:var(--green); font-weight:bold;">4 Data Tags</span>
+                    <span id="planDataChunks" style="color:var(--green-term); font-weight:bold;">4 Data Tags</span>
                   </div>
                   <div style="display:flex; justify-content:space-between; font-size:0.85rem; padding:4px 0;">
                     <span style="color:var(--text-muted);">Parity Chunks (M):</span>
-                    <span id="planRecoveryChunks" style="color:var(--purple); font-weight:bold;">1 Recovery Tag</span>
+                    <span id="planRecoveryChunks" style="color:var(--purple-rs); font-weight:bold;">1 Recovery Tag</span>
                   </div>
-                  <div style="display:flex; justify-content:space-between; font-size:0.85rem; padding:4px 0; border-top:1px solid #1e2430; margin-top:4px;">
+                  <div style="display:flex; justify-content:space-between; font-size:0.85rem; padding:4px 0; border-top:1px solid var(--border-subtle); margin-top:4px;">
                     <span style="color:var(--text-muted);">Total Physical Tags:</span>
                     <span id="planTotalTags" style="color:#fff; font-weight:bold;">5 NFC Tags</span>
                   </div>
@@ -262,7 +278,7 @@
                 <div class="input-group">
                   <div style="display:flex; justify-content:space-between; align-items:center;">
                     <label>PHYSICAL NFC TAG RACK (CLICK ANY CARDS IN RANDOM ORDER)</label>
-                    <span id="bulkCacheTtl" style="font-size:0.75rem; color:var(--amber);">72h 00m 00s remaining</span>
+                    <span id="bulkCacheTtl" style="font-size:0.75rem; color:var(--amber-warn);">72h 00m 00s remaining</span>
                   </div>
                   <div id="bulkTagRack" class="bulk-tag-rack">
                     <span style="color:var(--text-muted); font-size:0.8rem; padding:20px; text-align:center;">Click "PARTITION & GENERATE" to load physical tags rack</span>
@@ -281,7 +297,7 @@
 
                 <div style="display:flex; gap:10px;">
                   <button id="btnBulkReconstruct" class="btn-primary" style="flex:1; opacity:0.5;" disabled>RECONSTRUCT FILE (SOLVE GF(2^8))</button>
-                  <a id="btnDownloadRecon" class="btn-secondary" style="display:none; text-align:center; border-color:var(--green); color:var(--green);">DOWNLOAD FILE</a>
+                  <a id="btnDownloadRecon" class="btn-secondary" style="display:none; text-align:center; border-color:var(--green-term); color:var(--green-term);">DOWNLOAD FILE</a>
                 </div>
 
                 <div class="input-group">
@@ -308,25 +324,25 @@
           <div class="terminal-body">
             <div class="features-grid" style="margin-bottom:0;">
               <div class="feature-card">
-                <span class="badge-label" style="color:var(--green);">LAYER 1: NATIVE C++ ENGINE</span>
+                <span class="badge-label" style="color:var(--green-term);">LAYER 1: NATIVE C++ ENGINE</span>
                 <h3 class="feature-title" style="font-size:0.95rem;">libghosttag_security.so</h3>
                 <p class="feature-text">Compiled ARM64/x86_64 machine code executing <code>ptrace(PTRACE_TRACEME)</code> anti-debugging, parsing <code>/proc/self/status</code> TracerPid, and scanning <code>/proc/self/maps</code> for Frida agents (<code>frida-agent.so</code>, <code>frida-gadget</code>) and Xposed hooks.</p>
               </div>
 
               <div class="feature-card">
-                <span class="badge-label" style="color:var(--cyan);">LAYER 2: KERNEL MEMORY LOCKING</span>
+                <span class="badge-label" style="color:var(--cyan-neon);">LAYER 2: KERNEL MEMORY LOCKING</span>
                 <h3 class="feature-title" style="font-size:0.95rem;">mlock() & Volatile Barriers</h3>
                 <p class="feature-text">Locks key buffers into physical RAM via <code>mlock()</code> to forbid Linux kernel swap to flash storage. Multi-pass memory scrubbing (0xAA, 0x55, CSPRNG, 0x00) with <code>asm volatile("" : : "r"(p) : "memory")</code> defeats compiler dead-store elimination.</p>
               </div>
 
               <div class="feature-card">
-                <span class="badge-label" style="color:var(--purple);">LAYER 3: ANDROID PLATFORM</span>
+                <span class="badge-label" style="color:var(--purple-rs);">LAYER 3: ANDROID PLATFORM</span>
                 <h3 class="feature-title" style="font-size:0.95rem;">FLAG_SECURE & KeyStore TEE</h3>
                 <p class="feature-text"><code>WindowManager.LayoutParams.FLAG_SECURE</code> blocks screenshots, screen recording, and task switcher preview leaks. Hardware-backed <code>AndroidKeyStore</code> encapsulates master database keys in TEE / StrongBox.</p>
               </div>
 
               <div class="feature-card">
-                <span class="badge-label" style="color:var(--amber);">LAYER 4: FAIL-CLOSED GATE</span>
+                <span class="badge-label" style="color:var(--amber-warn);">LAYER 4: FAIL-CLOSED GATE</span>
                 <h3 class="feature-title" style="font-size:0.95rem;">assertDeviceIntegrity()</h3>
                 <p class="feature-text">If any integrity check fails (debugger attached, hooking framework active, root escalation detected), Ghost-Tag immediately executes panic zeroization of all active session keys and halts operations.</p>
               </div>
@@ -339,7 +355,7 @@
   </section>
 
   <!-- Interactive Documentation Reader -->
-  <section id="docs" class="container" style="padding: 40px 20px 80px;">
+  <section id="docs" class="container" style="padding: 40px 24px 80px;">
     <h2 class="section-title">TECHNICAL SPECIFICATIONS</h2>
     <p class="section-desc">Authoritative guides, cryptographic proofs, and hardware matrices.</p>
 
@@ -364,17 +380,21 @@
       <p class="section-desc">Install the offline encrypted NFC data-vault on any Android device running Android 8.0 (API 26) or higher.</p>
 
       <div class="apk-card">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+        <div class="apk-header-row">
           <div>
-            <h3 style="color:#fff; font-size:1.3rem;">Ghost-Tag v2.0 Release</h3>
-            <span style="color:var(--green); font-size:0.8rem;">● STABLE RELEASE • SIGNED & OPTIMIZED</span>
+            <h3 class="apk-title">Ghost-Tag v2.0.0 Release</h3>
+            <span class="apk-status-tag">● OFFICIAL STABLE RELEASE • SIGNED & OPTIMIZED</span>
           </div>
-          <span class="brand-badge" style="font-size:0.8rem; padding:4px 8px;">APK (v2.0)</span>
+          <span class="brand-badge" style="font-size:0.8rem; padding:4px 8px;">APK (v2.0.0)</span>
         </div>
 
         <div class="apk-meta-row">
-          <span class="apk-meta-label">Package Name</span>
+          <span class="apk-meta-label">Package Identifier</span>
           <span class="apk-meta-val">com.ghosttag</span>
+        </div>
+        <div class="apk-meta-row">
+          <span class="apk-meta-label">Release Artifact</span>
+          <span class="apk-meta-val">ghost-tag-v2.0.0.apk (391 KB)</span>
         </div>
         <div class="apk-meta-row">
           <span class="apk-meta-label">Minimum Android Version</span>
@@ -385,23 +405,29 @@
           <span class="apk-meta-val">arm64-v8a, armeabi-v7a, x86_64</span>
         </div>
         <div class="apk-meta-row">
-          <span class="apk-meta-label">Supported Tag Types</span>
+          <span class="apk-meta-label">Supported Tag Hardware</span>
           <span class="apk-meta-val">NTAG213, NTAG215, NTAG216, MIFARE Ultralight</span>
         </div>
         <div class="apk-meta-row">
           <span class="apk-meta-label">Network Permissions</span>
-          <span class="apk-meta-val" style="color:var(--amber);">Completely Offline (Cleartext Blocked)</span>
+          <span class="apk-meta-val" style="color:var(--amber-warn);">Completely Offline (Cleartext Blocked)</span>
         </div>
 
-        <div style="margin-top:25px; text-align:center;">
-          <a href="https://github.com/FROSTY-MUG/Ghost-Tag/releases" class="btn-primary" style="display:block; padding:16px;">
-            DOWNLOAD OFFICIAL RELEASE APK (.apk)
+        <div class="download-cta-row">
+          <a href="assets/ghost-tag-v2.0.0.apk" download class="btn-primary" style="text-align:center;">
+            DIRECT DOWNLOAD APK
+          </a>
+          <a href="https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.0" target="_blank" class="btn-secondary" style="text-align:center;">
+            GITHUB RELEASE ↗
           </a>
         </div>
 
         <div class="checksum-box">
-          <div style="color:var(--text-muted); font-size:0.7rem; margin-bottom:4px;">SHA-256 RELEASE CHECKSUM VERIFICATION:</div>
-          <code>e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855</code>
+          <div style="color:var(--text-muted); font-size:0.75rem;">SHA-256 RELEASE CHECKSUM VERIFICATION:</div>
+          <code id="apkChecksumVal" class="checksum-val">41848271db6cac270ebaf74758e43bb701113f3315a0b2c4309f9ec9caa71f61</code>
+          <button id="btnCopyChecksum" class="btn-copy-checksum" onclick="navigator.clipboard.writeText('41848271db6cac270ebaf74758e43bb701113f3315a0b2c4309f9ec9caa71f61'); this.innerText='COPIED TO CLIPBOARD!'; setTimeout(() => this.innerText='COPY SHA-256', 2000);">
+            COPY SHA-256
+          </button>
         </div>
       </div>
     </div>
@@ -412,7 +438,7 @@
     <div class="container footer-content">
       <div>
         <div style="font-weight:700; color:#fff; letter-spacing:1px; margin-bottom:4px;">GHOST-TAG PROJECT</div>
-        <div>Maintained by Aryan Arora (<a href="mailto:aryanarora26110@gmail.com" style="color:var(--cyan); text-decoration:none;">aryanarora26110@gmail.com</a>)</div>
+        <div>Maintained by Aryan Arora (<a href="mailto:aryanarora26110@gmail.com" style="color:var(--cyan-neon); text-decoration:none;">aryanarora26110@gmail.com</a>)</div>
       </div>
       <div>
         <a href="https://github.com/FROSTY-MUG/Ghost-Tag" target="_blank" class="btn-secondary" style="padding:8px 16px; font-size:0.8rem;">

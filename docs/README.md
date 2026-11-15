@@ -8,6 +8,7 @@ Welcome to the **Ghost-Tag** technical documentation repository. This directory 
 
 | Document | Primary Focus | Key Topics |
 | :--- | :--- | :--- |
+| [**System & Fallback Manual**](./GHOST_TAG_SYSTEM_MANUAL.md) | **Master Architectural Guide** | Cross-platform rules, universal interchange format, Android/Web/iOS/Desktop specs, data flows. |
 | [**Architecture Guide**](./architecture.md) | System Decomposition | 6 decoupled subsystems, unidirectional dependency graph, contract-first design. |
 | [**Codebase Structure**](./code-structure.md) | File & Directory Tour | Comprehensive map of every file across C++, Kotlin, and TypeScript. |
 | [**Security Hardening**](./security-hardening.md) | Defense-in-Depth | C++ anti-debugging (`ptrace`), anti-hooking (`/proc/self/maps`), `mlock()`, `FLAG_SECURE`, R8 obfuscation. |

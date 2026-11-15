@@ -73,7 +73,7 @@ class SecurityBridgeModule(private val reactContext: ReactApplicationContext) :
     fun enableSecureWindow(promise: Promise) {
         Handler(Looper.getMainLooper()).post {
             try {
-                currentActivity?.window?.setFlags(
+                reactContext.currentActivity?.window?.setFlags(
                     WindowManager.LayoutParams.FLAG_SECURE,
                     WindowManager.LayoutParams.FLAG_SECURE
                 )
@@ -88,7 +88,7 @@ class SecurityBridgeModule(private val reactContext: ReactApplicationContext) :
     fun disableSecureWindow(promise: Promise) {
         Handler(Looper.getMainLooper()).post {
             try {
-                currentActivity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                reactContext.currentActivity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
                 promise.resolve(true)
             } catch (e: Exception) {
                 promise.reject("SECURE_WINDOW_ERROR", e.message, e)

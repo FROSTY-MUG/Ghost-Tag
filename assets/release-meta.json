@@ -1,7 +1,14 @@
 {
   "version": "2.0.0",
+  "name": "Ghost-Tag Bulk Scanning v2",
   "file": "ghost-tag-v2.0.0.apk",
   "sha256": "28a2e3d85ec803a733b62cdd5f55f1077d7b5a990a256b656262009d096e71ea",
   "sizeBytes": 399136,
-  "sizeFormatted": "0.38 MB"
+  "sizeFormatted": "399 KB",
+  "releaseDate": "2026-11-15",
+  "minSdkVersion": 26,
+  "minAndroidVersion": "Android 8.0 Oreo",
+  "package": "com.ghosttag",
+  "abiSupport": ["arm64-v8a", "armeabi-v7a", "x86_64"],
+  "tagSupport": ["NTAG213", "NTAG215", "NTAG216", "MIFARE Ultralight"]
 }

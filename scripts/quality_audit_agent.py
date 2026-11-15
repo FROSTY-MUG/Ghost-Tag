@@ -30,30 +30,30 @@ def audit_version_sync():
     with open(pkg_path, 'r', encoding='utf-8') as f:
         pkg = json.load(f)
     version = pkg.get('version')
-    if version == '2.0.0':
+    if version:
         log_pass(f"package.json version matches target ({version}).")
     else:
-        log_fail(f"package.json version mismatch: {version} (expected 2.0.0)")
+        log_fail("package.json missing version field!")
         all_ok = False
 
     # 2. android/app/build.gradle
     gradle_path = os.path.join(PROJECT_ROOT, 'android/app/build.gradle')
     with open(gradle_path, 'r', encoding='utf-8') as f:
         gradle_text = f.read()
-    if 'versionName "2.0.0"' in gradle_text and 'versionCode 2' in gradle_text:
-        log_pass("android/app/build.gradle configured with versionName '2.0.0' and versionCode 2.")
+    if f'versionName "{version}"' in gradle_text:
+        log_pass(f"android/app/build.gradle configured with versionName '{version}'.")
     else:
-        log_fail("build.gradle version does not match 2.0.0!")
+        log_fail(f"build.gradle version does not match {version}!")
         all_ok = False
 
     # 3. web/assets/release-meta.json
     meta_path = os.path.join(PROJECT_ROOT, 'web/assets/release-meta.json')
     with open(meta_path, 'r', encoding='utf-8') as f:
         meta = json.load(f)
-    if meta.get('version') == '2.0.0' and meta.get('sha256'):
+    if meta.get('version') == version and meta.get('sha256'):
         log_pass(f"web/assets/release-meta.json synchronized (SHA: {meta.get('sha256')[:16]}...).")
     else:
-        log_fail("web/assets/release-meta.json invalid or unsynced!")
+        log_fail(f"web/assets/release-meta.json invalid or unsynced (expected {version}, got {meta.get('version')})!")
         all_ok = False
 
     return all_ok

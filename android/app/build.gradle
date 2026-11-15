@@ -82,8 +82,8 @@ android {
         applicationId "com.ghosttag"
         minSdkVersion 26
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
-        versionName "2.0.0"
+        versionCode 5
+        versionName "2.0.5"
 
         externalNativeBuild {
             cmake {

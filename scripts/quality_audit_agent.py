@@ -60,7 +60,7 @@ def audit_version_sync():
 
 def audit_typecheck():
     log_info("Executing Automated Type-Safety Verification...")
-    cmd = ["npx", "tsc", "--noEmit"]
+    cmd = "npx tsc --noEmit"
     res = subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True, text=True, shell=True)
     if res.returncode == 0:
         log_pass("TypeScript compilation passed with 0 errors (Strict Mode).")
@@ -72,7 +72,7 @@ def audit_typecheck():
 
 def audit_test_suite():
     log_info("Executing Automated Test Suite Gate...")
-    cmd = ["npm", "test", "--", "--ci", "--maxWorkers=2"]
+    cmd = "npm test -- --ci --maxWorkers=2"
     res = subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True, text=True, shell=True)
     if res.returncode == 0:
         log_pass("All Jest test suites passed (100% pass rate).")

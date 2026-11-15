@@ -28,6 +28,8 @@ jobs:
 
       - name: Setup Android SDK Tools
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
 
       - name: Setup Node.js Environment
         uses: actions/setup-node@v4

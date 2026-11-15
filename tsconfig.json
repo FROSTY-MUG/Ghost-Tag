@@ -6,6 +6,6 @@
       "@ghost-tag/*": ["./src/*"]
     }
   },
-  "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["**/node_modules", "**/Pods"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "__mocks__/**/*.ts"],
+  "exclude": ["**/node_modules", "**/Pods", "web"]
 }

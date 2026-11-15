@@ -6,6 +6,7 @@
 import {
   deriveAccountIdFromPhrase,
   configureSupabase,
+  resetSupabaseConfig,
   getSupabaseConfig,
   uploadEncryptedVaultMetadata,
   downloadEncryptedVaultMetadata
@@ -16,6 +17,10 @@ describe('Ghost-Tag Supabase Anonymous Sync', () => {
     'abandon', 'ability', 'able', 'about', 'above', 'absent',
     'absorb', 'abstract', 'absurd', 'abuse', 'access', 'accident'
   ];
+
+  beforeEach(() => {
+    resetSupabaseConfig();
+  });
 
   test('derives a deterministic RFC 4122 v4 UUID from 12-word BIP-39 phrase', async () => {
     const accountId1 = await deriveAccountIdFromPhrase(TEST_PHRASE);

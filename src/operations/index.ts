@@ -14,3 +14,4 @@ export * from './bulkWriteOperation';
 export * from './bulkScanOperation';
 export * from './reconstructionEngine';
 export * from './fileViewerAndExporter';
+export * from './deleteEntryOperation';

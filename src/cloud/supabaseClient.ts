@@ -40,6 +40,10 @@ export function configureSupabase(url: string, anonKey: string): SupabaseConfig 
   return activeConfig;
 }
 
+export function resetSupabaseConfig(): void {
+  activeConfig = { ...DEFAULT_CONFIG };
+}
+
 export function getSupabaseConfig(): SupabaseConfig {
   return { ...activeConfig };
 }
@@ -84,6 +88,8 @@ export async function uploadEncryptedVaultMetadata(
   }
 
   try {
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeoutId = controller ? setTimeout(() => controller.abort(), 1000) : null;
     const resp = await fetch(`${activeConfig.url}/rest/v1/ghost_vaults`, {
       method: 'POST',
       headers: {
@@ -98,7 +104,9 @@ export async function uploadEncryptedVaultMetadata(
         encrypted_vault_blob: encryptedBlobBase64,
         vault_version: vaultVersion,
       }),
+      signal: controller?.signal,
     });
+    if (timeoutId) clearTimeout(timeoutId);
 
     if (!resp.ok) {
       throw new Error(`HTTP ${resp.status}`);
@@ -114,6 +122,8 @@ export async function downloadEncryptedVaultMetadata(
 ): Promise<EncryptedVaultRecord | null> {
   if (activeConfig.isConfigured) {
     try {
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timeoutId = controller ? setTimeout(() => controller.abort(), 1000) : null;
       const resp = await fetch(
         `${activeConfig.url}/rest/v1/ghost_vaults?account_id=eq.${accountId}&select=*`,
         {
@@ -122,8 +132,10 @@ export async function downloadEncryptedVaultMetadata(
             Authorization: `Bearer ${activeConfig.anonKey}`,
             Accept: 'application/json',
           },
+          signal: controller?.signal,
         }
       );
+      if (timeoutId) clearTimeout(timeoutId);
       if (resp.ok) {
         const rows = await resp.json();
         if (Array.isArray(rows) && rows.length > 0) {

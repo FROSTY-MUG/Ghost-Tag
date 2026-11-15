@@ -25,7 +25,7 @@ Ghost-Tag defines explicit adversarial capabilities and cryptographic boundaries
 | **Tampering / Active Modifier** | Can alter bits on the NFC tag chip or swap payloads. | Modifying ciphertext or header triggers immediate GCM authentication failure (`GCM_AUTH_FAILED`). |
 | **Tag Cloner** | Can duplicate the exact byte contents of a tag to a secondary blank tag. | Ciphertext remains secure. Ghost-Tag verifies cryptographic authenticity but explicitly cannot prevent physical cloning of static data. |
 | **Compromised Unlocked Phone** | Malware with root/screen capture running on active host OS. | **Non-goal**. Ghost-Tag cannot defend against a root-compromised host OS observing active process memory. |
-| **Device Replacement / Loss** | User replaces their phone or deletes local vault. | Recoverable via 24-word BIP39 recovery phrase through dedicated recovery envelope derivation. |
+| **Device Replacement / Loss** | User replaces their phone or deletes local vault. | Recoverable via 12-word BIP-39 recovery phrase through dedicated recovery envelope derivation. |
 
 ---
 
@@ -47,6 +47,10 @@ Ghost-Tag defines explicit adversarial capabilities and cryptographic boundaries
 5. **Zero-Secrets Policy**:
    - Passphrases, KEKs, raw DEKs, and unencrypted payloads are strictly forbidden from logs, analytics, crash dumps, and database persistence.
    - Volatile buffers are zeroized immediately following cryptographic operations.
+6. **Zero-Knowledge Cloud Sync (Optional)**:
+   - When optional Supabase sync is configured, it stores strictly an authenticated, encrypted vault metadata blob.
+   - The cloud relay never receives or stores passphrases, recovery phrases, KEKs, DEKs, plaintext files, plaintext URLs, or NFC contents.
+   - Encryption, decryption, and tag workflows remain 100% functional offline without cloud connectivity.
 
 ---
 

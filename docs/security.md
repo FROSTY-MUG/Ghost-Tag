@@ -6,7 +6,7 @@ Ghost-Tag is engineered around a zero-trust, zero-telemetry, offline-first secur
 
 ## 1. Zero-Secrets Policy
 
-1. **No Cloud Sync or Remote Storage**: Ghost-Tag never makes outbound network connections. Plaintext and encryption keys are strictly held in volatile client memory and never transmitted.
+1. **Local-First & Zero-Knowledge Architecture**: Ghost-Tag operates offline by default and never requires network connectivity. When optional Supabase cloud sync is configured, it stores strictly an authenticated, encrypted vault metadata blob. Passphrases, recovery phrases, keys, unencrypted files, and NFC payloads are never transmitted.
 2. **Volatile Key Lifecycle**: Key-Encryption Keys (KEKs) and Data-Encryption Keys (DEKs) are instantiated in ephemeral runtime memory and wiped upon vault locking or session termination.
 3. **No Unencrypted Persistence**: Local vault metadata (stored in browser `localStorage` or Android MMKV) holds only salts, wrapped keys, and nonces. A lost or inspected host device reveals no plaintext without the master passphrase.
 
@@ -52,10 +52,9 @@ Ghost-Tag is engineered around a zero-trust, zero-telemetry, offline-first secur
 
 ---
 
-## 4. Client-Side Cache Expiration
+## 4. Elimination of Scanned-Chunk Cache
 
-Ghost-Tag incorporates a client-side 72-hour ephemeral cache in browser IndexedDB (`GhostVaultCacheDB_v2`).
-- Chunks scanned during bulk operations are timestamped with an `expiresAt` epoch ($t_{\text{scan}} + 72\,\text{hours}$).
-- Chunks older than 72 hours are automatically culled upon database open or cache check.
-- Users can manually purge the cache at any time using the `Clear Cache` action.
-- Cached chunks allow users to pause and resume scanning without having to rescan physical tags, but do not replace missing tags during final file reconstruction.
+In accordance with Ghost-Tag security invariants, scanned chunks reside exclusively in volatile session memory during an active read/decrypt session:
+- No chunks or plaintext fragments are persisted to IndexedDB, MMKV, `localStorage`, or disk caches.
+- Volatile session memory is scrubbed immediately upon session completion or when the user invokes `Clear Temporary Data`.
+- The elimination of persistent chunk caching prevents physical forensics or shared browser profiles from recovering historical ciphertext fragments.

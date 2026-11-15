@@ -18,7 +18,7 @@
 [![Platform: Android](https://img.shields.io/badge/Platform-Android%20(API%2026%2B)-black.svg)](https://developer.android.com)
 [![Web Client: Live](https://img.shields.io/badge/Web%20Client-GitHub%20Pages-blue.svg)](https://frosty-mug.github.io/Ghost-Tag/)
 [![Crypto: AES--256--GCM](https://img.shields.io/badge/Crypto-AES--256--GCM%20%2B%20PBKDF2-blueviolet.svg)](./docs/security.md)
-[![Tests: 130 Passing](https://img.shields.io/badge/Tests-130%20Passing%20(100%25)-brightgreen.svg)](./docs/testing.md)
+[![Tests: 140 Passing](https://img.shields.io/badge/Tests-140%20Passing%20(100%25)-brightgreen.svg)](./docs/testing.md)
 [![TypeScript: Strict](https://img.shields.io/badge/TypeScript-0%20Errors-blue.svg)](./tsconfig.json)
 [![Release: v2.0.5](https://img.shields.io/badge/Release-v2.0.5-crimson.svg)](https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.5)
 
@@ -46,7 +46,7 @@ Ghost-Tag provides **data confidentiality and cryptographic tamper-evidence** fo
 
 ### 1.3 What Ghost-Tag IS NOT
 - **Not a Proxmark3 or Flipper Zero replacement**: Ghost-Tag does not clone chips, perform raw RF sniffing, or bypass proprietary chip auth.
-- **Not a PKI or cloud vault**: Ghost-Tag is completely offline. It never communicates with remote servers or cloud backends.
+- **Not a centralized cloud vault or key escrow**: Ghost-Tag is local-first and offline-by-default. All cryptographic operations and NFC read/write workflows execute strictly on the client without remote dependencies. An optional, zero-knowledge Supabase cloud sync mode exists purely for encrypted vault metadata backup—it never receives or stores passphrases, recovery phrases, encryption keys, or NFC data.
 - **Not an anti-cloning token**: If an attacker copies an NFC tag byte-for-byte, they duplicate the ciphertext; they still cannot decrypt it without the key hierarchy.
 
 ---
@@ -172,7 +172,7 @@ flowchart LR
 
     subgraph Reconstruction["Reconstruction Engine"]
         ScanLoop["Scan Tags in Any Order"]
-        Cache["72-Hour IndexedDB Cache"]
+        VolatileSession["Volatile In-Memory Session<br/>(Zero Persistent Disk Cache)"]
         DecryptAction["Tap Decrypt Now"]
         Reassemble["Order Chunks by Index & Reassemble"]
         RecoveredFile["Recovered Original Files"]
@@ -188,8 +188,8 @@ flowchart LR
     TagN --> ScanLoop
     Tag2 --> ScanLoop
 
-    ScanLoop --> Cache
-    Cache --> DecryptAction
+    ScanLoop --> VolatileSession
+    VolatileSession --> DecryptAction
     DecryptAction --> Reassemble
     Reassemble --> RecoveredFile
 ```
@@ -262,9 +262,9 @@ flowchart LR
 | **BIP-39 12-Word Recovery** | Yes | Yes | Yes | Yes |
 | **Single-Tag Vault** | Yes | Yes | Read-only with native app | Simulated |
 | **Bulk Multi-Tag Vault** | Yes | Yes | Read-only with native app | Simulated |
-| **72-Hour Cache Engine** | Yes (MMKV) | Yes (IndexedDB) | Yes (IndexedDB) | Yes (IndexedDB) |
+| **In-Memory Volatile Session** | Enforced (Zero Disk Cache) | Enforced (Zero Disk Cache) | Enforced (Zero Disk Cache) | Enforced (Zero Disk Cache) |
 | **Stop & Pause Controls** | Yes | Yes | Yes | Yes |
-| **Zero Network Permissions** | Enforced | Enforced | Enforced | Enforced |
+| **Network Connectivity** | Offline-First (Optional Opt-In Sync) | Offline-First (Optional Opt-In Sync) | Offline-First (Optional Opt-In Sync) | Offline-First (Optional Opt-In Sync) |
 
 ---
 
@@ -285,7 +285,7 @@ Ghost-Tag automatically detects tag geometry and computes usable Ghost storage:
 Ghost-Tag maintains 100% test passing rates across all cryptographic and hardware simulation suites:
 
 ```bash
-# Run unit & integration tests (130 passing)
+# Run unit & integration tests (140 passing)
 npm test
 
 # Static type verification (0 errors)

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.6] - 2026-11-15
+
+### Fixed
+- **Architectural Documentation Alignment**: Clarified in `README.md` and `SECURITY.md` that Ghost-Tag is local-first and offline-by-default, and that Supabase sync is strictly an opt-in, zero-knowledge encrypted metadata backup relay that never receives passphrases, keys, recovery phrases, or NFC payloads.
+- **BIP-39 Recovery Phrase Consistency**: Resolved 12-word vs 24-word discrepancy in `SECURITY.md` Section 2 threat model table to align with the canonical 12-word BIP-39 standard (128-bit entropy + 4-bit checksum) implemented across Android and Web clients.
+- **Scanned-Chunk Cache Elimination**: Updated `README.md` and `docs/security.md` diagrams and capability tables to reflect the removal of the 72-hour persistent cache in favor of purely volatile, in-memory session reconstruction.
+- **Verification Snippet Formatting**: Corrected newline formatting in `README.md` Section 9 verification code block.
+
+### Added
+- **Option 1 Cloud Sync Architecture**: Added `web/.env.example` and `web/.env.local` configuration for Vite, single client factory in `web/src/supabaseClient.ts`, and dynamic Settings status indicators (`Offline-first` vs `Connected` vs `Cloud Sync Unavailable` with automatic offline fallback).
+- **Android Entry Deletion & Corruption Warnings**: Implemented `src/operations/deleteEntryOperation.ts` and `DeleteEntryModal.tsx` enforcing safe full rewrite flows and explicit corruption warning dialogs.
+- **Complete GitHub Wiki Suite**: Added 15 comprehensive documentation pages under `docs/wiki/` covering installation, recovery phrases, encryption/decryption, security invariants, and technical envelopes.
+
+---
+
 ## [2.0.5] - 2026-11-15
 
 ### Added

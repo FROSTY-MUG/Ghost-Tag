@@ -11,6 +11,28 @@
 </head>
 <body>
 
+  <!-- Subtle Blurred Ambient Ghost Background (230% blur, 10% opacity) -->
+  <div class="bg-ambient-layer" aria-hidden="true">
+    <img src="assets/ghost-hero.jpg" alt="" class="bg-ambient-img">
+    <div class="bg-ambient-overlay"></div>
+  </div>
+
+  <!-- Premium Initial Loading Screen -->
+  <div id="loadingScreen" class="loading-screen">
+    <div class="loading-content">
+      <svg width="56" height="56" viewBox="0 0 64 64" fill="none" class="ghost-logo-svg" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 24 L24 10 L40 10 L52 24 L52 54 L44 46 L36 54 L28 46 L20 54 L12 46 Z" fill="#ffffff"/>
+        <rect x="22" y="24" width="6" height="10" fill="#000000"/>
+        <rect x="36" y="24" width="6" height="10" fill="#000000"/>
+      </svg>
+      <div class="loading-title">GHOST</div>
+      <div class="loading-indicator">
+        <div class="loading-bar"></div>
+      </div>
+      <div class="loading-status">Initializing secure environment...</div>
+    </div>
+  </div>
+
   <div class="app-container">
 
     <!-- Top App Header -->
@@ -38,20 +60,24 @@
     <!-- VIEW 1: LANDING PAGE -->
     <section id="view-landing" class="view-section active">
       <div style="text-align: center; padding: 60px 0 40px;">
-        <div style="display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 24px;">
-          <span style="font-size: 32px; font-weight: 700; letter-spacing: 3px;">GHOST</span>
-          <svg width="44" height="44" viewBox="0 0 64 64" fill="none" class="ghost-logo-svg" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 24 L24 10 L40 10 L52 24 L52 54 L44 46 L36 54 L28 46 L20 54 L12 46 Z" fill="currentColor"/>
-            <rect x="22" y="24" width="6" height="10" fill="#000000"/>
-            <rect x="36" y="24" width="6" height="10" fill="#000000"/>
-          </svg>
-        </div>
-        <h1 class="hero-heading" style="font-size: 26px; margin-bottom: 8px;">Encrypted NFC storage.</h1>
-        <p class="subheading" style="font-size: 16px; margin-bottom: 36px; color: var(--text-primary); letter-spacing: 0.5px;">Write. Scan. Decrypt.</p>
+        <div style="font-size: 32px; font-weight: 700; letter-spacing: 4px; margin-bottom: 20px;">GHOST</div>
+        <svg width="64" height="64" viewBox="0 0 64 64" fill="none" class="ghost-logo-svg" style="margin-bottom: 24px;" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 24 L24 10 L40 10 L52 24 L52 54 L44 46 L36 54 L28 46 L20 54 L12 46 Z" fill="#ffffff"/>
+          <rect x="22" y="24" width="6" height="10" fill="#000000"/>
+          <rect x="36" y="24" width="6" height="10" fill="#000000"/>
+        </svg>
+        <h1 class="hero-heading" style="font-size: 24px; margin-bottom: 32px; font-weight: 600; letter-spacing: 0.5px;">Encrypted NFC storage.</h1>
 
-        <div class="btn-group" style="max-width: 300px; margin: 0 auto;">
+        <div class="btn-group" style="max-width: 280px; margin: 0 auto 36px;">
           <button class="btn btn-primary" id="btnLaunch">Launch Web Version</button>
           <a class="btn btn-secondary" id="btnDownloadApk" href="https://github.com/FROSTY-MUG/Ghost-Tag/releases/download/v2.0.5/Ghost-Tag-v2.0.5.apk" target="_blank" rel="noopener">Download Android APK</a>
+        </div>
+
+        <div style="font-size: 13px; color: var(--text-secondary); display: flex; justify-content: center; gap: 12px;">
+          <span class="footer-link" id="landingTechnicalLink">Technical</span> ·
+          <span class="footer-link" id="landingSecurityLink">Security</span> ·
+          <span class="footer-link" id="landingPrivacyLink">Privacy</span> ·
+          <a class="footer-link" href="https://github.com/FROSTY-MUG/Ghost-Tag" target="_blank" rel="noopener">Source</a>
         </div>
       </div>
     </section>
@@ -185,7 +211,10 @@
 
       <div class="nfc-scan-target">
         <div class="nfc-pulse-ring"></div>
-        <button class="btn btn-primary" id="btnStartSingleScan" style="max-width: 220px;">Start Scanning</button>
+        <div style="display: flex; gap: 10px; width: 100%; max-width: 280px; justify-content: center;">
+          <button class="btn btn-primary" id="btnStartSingleScan">Start Scanning</button>
+          <button class="btn btn-danger btn-sm" id="btnStopSingleScan" style="display: none; width: auto;">Stop</button>
+        </div>
       </div>
 
       <!-- Tag Detected Readout -->
@@ -285,11 +314,26 @@
     <!-- VIEW 11: BULK FILE VAULT (Scan tags) -->
     <section id="view-bulk-scan" class="view-section">
       <h2 class="section-heading">BULK FILE VAULT</h2>
-      <p class="subheading">Scan the NFC tags you want to use.</p>
+      <p class="subheading" id="bulkScanSubtitle">Scan the NFC tags you want to use.</p>
 
       <div class="nfc-scan-target" style="padding: 32px 16px;">
         <div class="nfc-pulse-ring" style="width: 48px; height: 48px; margin-bottom: 12px;"></div>
-        <button class="btn btn-primary" id="btnStartBulkScan" style="max-width: 220px;">Start Scanning</button>
+        <div style="display: flex; gap: 10px; width: 100%; max-width: 320px; justify-content: center;">
+          <button class="btn btn-primary" id="btnStartBulkScan">Start Scanning</button>
+          <button class="btn btn-danger btn-sm" id="btnStopBulkScan" style="display: none; width: auto;">Stop Scanning</button>
+        </div>
+      </div>
+
+      <!-- Scanning Stopped Panel (Section 2.5) -->
+      <div id="bulkScanStoppedPanel" class="alert-box alert-warning" style="display: none;">
+        <strong>SCANNING STOPPED</strong><br>
+        <span id="bulkStoppedCountText">0 tags collected.</span><br>
+        <span id="bulkStoppedStorageText">Total usable Ghost storage: 0 bytes</span>
+        <div class="btn-group-row" style="margin-top: 14px;">
+          <button class="btn btn-primary btn-sm" id="btnBulkStoppedContinue">Continue</button>
+          <button class="btn btn-secondary btn-sm" id="btnBulkStoppedResume">Resume Scanning</button>
+          <button class="btn btn-ghost btn-sm" id="btnBulkStoppedCancel">Cancel</button>
+        </div>
       </div>
 
       <div id="bulkScanReadout" style="display: none;">
@@ -345,14 +389,29 @@
       </div>
     </section>
 
-    <!-- VIEW 13: BULK PROGRESS & COMPLETION -->
+    <!-- VIEW 13: BULK PROGRESS & WRITING PAUSED (Section 2.5) -->
     <section id="view-bulk-progress" class="view-section">
-      <h2 class="section-heading">Bulk Write Progress</h2>
+      <h2 class="section-heading">Writing Bulk Vault</h2>
       <div class="mono-readout" id="bulkWriteProgressText" style="text-align: center; font-size: 15px; padding: 20px;">
         ENCRYPTING FILES...
       </div>
       <div class="mono-readout" id="bulkWriteProgressTally" style="font-size: 13px; text-align: center; white-space: pre-wrap;">
         HOLD NEXT TAG NEAR PHONE
+      </div>
+
+      <div style="margin-top: 14px; text-align: center;" id="bulkWriteStopWrapper">
+        <button class="btn btn-danger btn-sm" id="btnStopBulkWrite">Stop Writing</button>
+      </div>
+
+      <!-- Writing Paused Panel (Section 2.5) -->
+      <div id="bulkWritePausedPanel" class="alert-box alert-warning" style="display: none; margin-top: 20px;">
+        <strong>WRITING PAUSED</strong><br>
+        <span id="bulkPausedCountText">37 / 86 chunks written and verified.</span><br>
+        <span id="bulkPausedRemainingText">49 chunks remain.</span>
+        <div class="btn-group-row" style="margin-top: 14px;">
+          <button class="btn btn-primary btn-sm" id="btnBulkResumeWrite">Resume Writing</button>
+          <button class="btn btn-ghost btn-sm" id="btnBulkCancelWrite">Cancel Session</button>
+        </div>
       </div>
 
       <div class="btn-group" id="btnBulkCompleteDone" style="display: none;">
@@ -363,11 +422,25 @@
     <!-- VIEW 14: DECRYPT NOW SCAN -->
     <section id="view-decrypt-scan" class="view-section">
       <h2 class="section-heading">DECRYPT NOW</h2>
-      <p class="subheading">Scan the Ghost-Tag NFC tags you want to decrypt.</p>
+      <p class="subheading" id="decryptScanSubtitle">Scan the Ghost-Tag NFC tags you want to decrypt.</p>
 
       <div class="nfc-scan-target">
         <div class="nfc-pulse-ring"></div>
-        <button class="btn btn-primary" id="btnStartDecryptScan" style="max-width: 220px;">Start Scanning</button>
+        <div style="display: flex; gap: 10px; width: 100%; max-width: 320px; justify-content: center;">
+          <button class="btn btn-primary" id="btnStartDecryptScan">Start Scanning</button>
+          <button class="btn btn-danger btn-sm" id="btnStopDecryptScan" style="display: none; width: auto;">Stop Scanning</button>
+        </div>
+      </div>
+
+      <!-- Decryption Scanning Stopped Panel (Section 2.5) -->
+      <div id="decryptScanStoppedPanel" class="alert-box alert-warning" style="display: none;">
+        <strong>SCANNING STOPPED</strong><br>
+        <span id="decryptStoppedCountText">9 Ghost chunks collected.</span>
+        <div class="btn-group-row" style="margin-top: 14px;">
+          <button class="btn btn-primary btn-sm" id="btnDecryptStoppedTrigger">Decrypt Now</button>
+          <button class="btn btn-secondary btn-sm" id="btnDecryptStoppedResume">Resume Scanning</button>
+          <button class="btn btn-ghost btn-sm" id="btnDecryptStoppedCancel">Cancel</button>
+        </div>
       </div>
 
       <div id="decryptScanReadout" class="mono-readout" style="display: none;">
@@ -543,7 +616,7 @@ CIPHERTEXT (Encrypted Payload)
           <li><strong>AES-256-GCM</strong>: Authenticated symmetric encryption with 96-bit CSPRNG nonces.</li>
           <li><strong>PBKDF2-SHA256</strong>: 100,000 iterations over 32-byte salt for Key Encryption Key derivation.</li>
           <li><strong>12-Word BIP-39</strong>: 128-bit entropy + 4-bit SHA256 checksum over English dictionary.</li>
-          <li><strong>Cauchy Reed-Solomon</strong>: Erasure coding over Galois Field $GF(2^8)$.</li>
+          <li><strong>Cauchy Reed-Solomon</strong>: Erasure coding over Galois Field GF(2^8).</li>
         </ul>
 
         <div style="margin-top: 24px;">
@@ -576,7 +649,7 @@ CIPHERTEXT (Encrypted Payload)
 
     <!-- Minimal Footer -->
     <footer class="app-footer">
-      <div>Technical · Security · Privacy · Source</div>
+      <div>GHOST-TAG v2.0.5</div>
       <div class="footer-nav">
         <span class="footer-link" id="footerTechnicalLink">Technical</span> ·
         <span class="footer-link" id="footerSecurityLink">Security</span> ·

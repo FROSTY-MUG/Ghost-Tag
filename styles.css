@@ -13,6 +13,7 @@
   --accent: #ffffff;
   --accent-green: #00ff66;
   --accent-red: #ff3333;
+  --accent-yellow: #ffbb33;
   --font-sans: -apple-system, BlinkMacSystemFont, "Geist", "Inter", "Segoe UI", Roboto, sans-serif;
   --font-mono: "Fira Code", "Courier New", monospace;
   --radius-sm: 2px;
@@ -37,11 +38,109 @@ html, body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  position: relative;
+  overflow-x: hidden;
 }
 
 a {
   color: inherit;
   text-decoration: none;
+}
+
+/* --- Subtle Blurred Ambient Ghost Background (230% / 48px blur, 10% opacity) --- */
+.bg-ambient-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.bg-ambient-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(48px);
+  opacity: 0.10;
+  transform: scale(1.18);
+  will-change: transform, filter;
+}
+
+.bg-ambient-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at center, rgba(0, 0, 0, 0.45) 0%, rgba(0, 0, 0, 0.88) 100%);
+}
+
+/* --- Initial Loading Screen --- */
+.loading-screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: #000000;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.45s ease, visibility 0.45s ease;
+}
+
+.loading-screen.fade-out {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.loading-content {
+  text-align: center;
+  position: relative;
+  z-index: 2;
+  max-width: 320px;
+  padding: 24px;
+}
+
+.loading-title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  margin: 16px 0 20px;
+  text-transform: uppercase;
+}
+
+.loading-indicator {
+  width: 160px;
+  height: 2px;
+  background-color: var(--border-subtle);
+  margin: 0 auto 16px;
+  overflow: hidden;
+  border-radius: 1px;
+}
+
+.loading-bar {
+  width: 40%;
+  height: 100%;
+  background-color: #ffffff;
+  animation: loadingSlide 1.2s infinite ease-in-out;
+}
+
+@keyframes loadingSlide {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(120%); }
+  100% { transform: translateX(260%); }
+}
+
+.loading-status {
+  font-size: 13px;
+  color: var(--text-secondary);
+  letter-spacing: 0.5px;
 }
 
 /* Custom Brutalist Ghost Logo */
@@ -60,6 +159,8 @@ a {
   flex: 1;
   display: flex;
   flex-direction: column;
+  position: relative;
+  z-index: 1;
 }
 
 /* Top App Header */
@@ -77,6 +178,8 @@ a {
   align-items: center;
   gap: 12px;
   cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .brand-title {
@@ -98,6 +201,8 @@ a {
   color: var(--text-secondary);
   transition: color 0.15s ease;
   cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .header-link:hover {
@@ -174,7 +279,7 @@ a {
   font-weight: 500;
 }
 
-/* Buttons */
+/* Buttons - Full Interactive States */
 .btn-group {
   display: flex;
   flex-direction: column;
@@ -198,13 +303,24 @@ a {
   letter-spacing: 0.5px;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.08s ease;
   border: 1px solid transparent;
   outline: none;
   background: transparent;
   color: var(--text-primary);
   text-align: center;
   width: 100%;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+.btn:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
 }
 
 .btn-primary {
@@ -251,9 +367,21 @@ a {
   border-color: var(--accent-red);
 }
 
+.btn-warning {
+  background-color: transparent;
+  color: var(--accent-yellow);
+  border: 1px solid #443300;
+}
+
+.btn-warning:hover {
+  background-color: #1a1400;
+  border-color: var(--accent-yellow);
+}
+
 .btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+  pointer-events: none;
 }
 
 /* Primary Action Navigation Cards */
@@ -275,12 +403,23 @@ a {
   cursor: pointer;
   transition: all 0.15s ease;
   text-align: left;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .nav-action-btn:hover {
   border-color: var(--border-focus);
   background-color: var(--bg-card);
   transform: translateX(2px);
+}
+
+.nav-action-btn:active {
+  transform: scale(0.99);
+}
+
+.nav-action-btn:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
 }
 
 .nav-action-label {
@@ -325,7 +464,7 @@ a {
 }
 
 .btn-sm {
-  padding: 6px 12px;
+  padding: 8px 14px;
   font-size: 12px;
   width: auto;
 }
@@ -378,7 +517,7 @@ a {
   text-align: center;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: border-color 0.15s ease;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
   margin-bottom: 16px;
 }
 
@@ -456,7 +595,7 @@ a {
   left: 0;
   width: 100vw;
   height: 100vh;
-  background-color: rgba(0, 0, 0, 0.85);
+  background-color: rgba(0, 0, 0, 0.88);
   backdrop-filter: blur(4px);
   display: none;
   justify-content: center;

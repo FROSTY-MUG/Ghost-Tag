@@ -419,6 +419,19 @@
 
   // --- Initialization & Local Vault Check ---
   async function init() {
+    // Fade out initial loading screen smoothly
+    const loadingScreen = document.getElementById('initialLoadingScreen');
+    if (loadingScreen) {
+      setTimeout(() => {
+        loadingScreen.classList.add('fade-out');
+        setTimeout(() => {
+          if (loadingScreen.parentNode) {
+            loadingScreen.parentNode.removeChild(loadingScreen);
+          }
+        }, 650);
+      }, 550);
+    }
+
     // Load local vault metadata
     const rawVault = localStorage.getItem(STORAGE_KEY_VAULT);
     if (rawVault) {
@@ -736,25 +749,43 @@
 
     // --- Single-Tag Vault Logic ---
     const btnStartSingleScan = document.getElementById('btnStartSingleScan');
+    const btnStopSingleScan = document.getElementById('btnStopSingleScan');
     if (btnStartSingleScan) {
       btnStartSingleScan.addEventListener('click', async () => {
         const statusEl = document.getElementById('singleScanStatus');
-        btnStartSingleScan.disabled = true;
+        btnStartSingleScan.style.display = 'none';
+        if (btnStopSingleScan) btnStopSingleScan.style.display = 'inline-block';
         statusEl.textContent = 'Hold your phone near an NFC tag...';
+        state.isSingleScanning = true;
 
         try {
           const tag = await scanSingleTag();
+          if (!state.isSingleScanning) return;
           state.currentTag = tag;
 
           document.getElementById('detectedTagTotalStorage').textContent = `${tag.totalBytes} bytes`;
           document.getElementById('detectedTagWritableStorage').textContent = `${tag.writableBytes} bytes`;
           document.getElementById('tagDetectedPanel').style.display = 'block';
-          btnStartSingleScan.style.display = 'none';
+          if (btnStopSingleScan) btnStopSingleScan.style.display = 'none';
           statusEl.textContent = 'Tag detected.';
         } catch (err) {
+          if (!state.isSingleScanning) return;
           statusEl.textContent = err.message || 'Tag detected, but it is not writable.';
-          btnStartSingleScan.disabled = false;
+          btnStartSingleScan.style.display = 'inline-block';
+          if (btnStopSingleScan) btnStopSingleScan.style.display = 'none';
+        } finally {
+          state.isSingleScanning = false;
         }
+      });
+    }
+
+    if (btnStopSingleScan) {
+      btnStopSingleScan.addEventListener('click', () => {
+        state.isSingleScanning = false;
+        btnStopSingleScan.style.display = 'none';
+        if (btnStartSingleScan) btnStartSingleScan.style.display = 'inline-block';
+        const statusEl = document.getElementById('singleScanStatus');
+        if (statusEl) statusEl.textContent = 'Scanning cancelled. Hold your phone near an NFC tag.';
       });
     }
 
@@ -831,15 +862,84 @@
 
     // --- Bulk File Vault Logic ---
     const btnStartBulkScan = document.getElementById('btnStartBulkScan');
-    if (btnStartBulkScan) {
-      btnStartBulkScan.addEventListener('click', async () => {
-        btnStartBulkScan.disabled = true;
+    const btnStopBulkScan = document.getElementById('btnStopBulkScan');
+    const bulkScanStoppedPanel = document.getElementById('bulkScanStoppedPanel');
+
+    async function startBulkScanStep() {
+      state.isBulkScanning = true;
+      if (btnStartBulkScan) btnStartBulkScan.style.display = 'none';
+      if (btnStopBulkScan) btnStopBulkScan.style.display = 'inline-block';
+      if (bulkScanStoppedPanel) bulkScanStoppedPanel.style.display = 'none';
+      const subtitle = document.getElementById('bulkScanSubtitle');
+      if (subtitle) subtitle.textContent = 'Scanning for NFC tags... Hold each tag near your device.';
+
+      try {
         const tag = await scanSingleTag();
-        state.bulkScannedTags.push(tag);
-        updateBulkScanReadout();
-        btnStartBulkScan.disabled = false;
+        if (state.isBulkScanning) {
+          state.bulkScannedTags.push(tag);
+          updateBulkScanReadout();
+          if (subtitle) subtitle.textContent = `Tag #${state.bulkScannedTags.length} detected. Tap 'Scan Next Tag' or 'Stop Scanning'.`;
+          if (btnStartBulkScan) {
+            btnStartBulkScan.textContent = 'Scan Next Tag';
+            btnStartBulkScan.style.display = 'inline-block';
+          }
+        }
+      } catch (err) {
+        if (subtitle) subtitle.textContent = err.message || 'Tag read error. Try again.';
+        if (btnStartBulkScan) btnStartBulkScan.style.display = 'inline-block';
+      } finally {
+        state.isBulkScanning = false;
+      }
+    }
+
+    if (btnStartBulkScan) {
+      btnStartBulkScan.addEventListener('click', () => {
+        startBulkScanStep();
       });
     }
+
+    function triggerStopBulkScan() {
+      state.isBulkScanning = false;
+      if (btnStopBulkScan) btnStopBulkScan.style.display = 'none';
+      if (btnStartBulkScan) {
+        btnStartBulkScan.style.display = 'inline-block';
+        btnStartBulkScan.textContent = 'Scan Next Tag';
+      }
+
+      const count = state.bulkScannedTags.length;
+      let writableBytes = 0;
+      for (const t of state.bulkScannedTags) writableBytes += t.writableBytes;
+      const usableGhost = Math.max(0, writableBytes - (count * 54));
+
+      const countEl = document.getElementById('bulkStoppedCountText');
+      const storageEl = document.getElementById('bulkStoppedStorageText');
+      if (countEl) countEl.textContent = `${count} tags collected.`;
+      if (storageEl) storageEl.textContent = `Total usable Ghost storage: ${formatBytes(usableGhost)}`;
+      if (bulkScanStoppedPanel) bulkScanStoppedPanel.style.display = 'block';
+    }
+
+    if (btnStopBulkScan) {
+      btnStopBulkScan.addEventListener('click', triggerStopBulkScan);
+    }
+
+    document.getElementById('btnBulkStoppedContinue')?.addEventListener('click', () => {
+      if (state.bulkScannedTags.length === 0) {
+        alert('Please scan at least one NFC tag first.');
+        return;
+      }
+      showView('view-bulk-files');
+    });
+
+    document.getElementById('btnBulkStoppedResume')?.addEventListener('click', () => {
+      if (bulkScanStoppedPanel) bulkScanStoppedPanel.style.display = 'none';
+      startBulkScanStep();
+    });
+
+    document.getElementById('btnBulkStoppedCancel')?.addEventListener('click', () => {
+      if (bulkScanStoppedPanel) bulkScanStoppedPanel.style.display = 'none';
+      resetBulkScanView();
+      showView('view-app');
+    });
 
     document.getElementById('btnBulkContinueToFiles')?.addEventListener('click', () => {
       if (state.bulkScannedTags.length === 0) {
@@ -867,23 +967,98 @@
       });
     });
 
+    // Bulk Progress Pause / Resume / Cancel Controls
+    document.getElementById('btnStopBulkWrite')?.addEventListener('click', () => {
+      state.isBulkWriting = false;
+    });
+
+    document.getElementById('btnBulkResumeWrite')?.addEventListener('click', () => {
+      if (state.bulkWritePassphrase) {
+        executeBulkVaultWrite(state.bulkWritePassphrase);
+      }
+    });
+
+    document.getElementById('btnBulkCancelWrite')?.addEventListener('click', () => {
+      state.isBulkWriting = false;
+      state.bulkWriteCurrentChunkIndex = 0;
+      showView('view-app');
+    });
+
     // --- Decrypt Now Logic ---
     const btnStartDecryptScan = document.getElementById('btnStartDecryptScan');
-    if (btnStartDecryptScan) {
-      btnStartDecryptScan.addEventListener('click', async () => {
-        btnStartDecryptScan.disabled = true;
+    const btnStopDecryptScan = document.getElementById('btnStopDecryptScan');
+    const decryptScanStoppedPanel = document.getElementById('decryptScanStoppedPanel');
+
+    async function startDecryptScanStep() {
+      state.isDecryptScanning = true;
+      if (btnStartDecryptScan) btnStartDecryptScan.style.display = 'none';
+      if (btnStopDecryptScan) btnStopDecryptScan.style.display = 'inline-block';
+      if (decryptScanStoppedPanel) decryptScanStoppedPanel.style.display = 'none';
+
+      try {
         const tag = await scanSingleTag();
-
-        if (tag.existingData && tag.existingData.length >= 54) {
-          state.decryptScannedChunks.push(tag);
-        } else {
-          state.decryptScannedChunks.push({ ...tag, isUnknown: true });
+        if (state.isDecryptScanning) {
+          if (tag.existingData && tag.existingData.length >= 54) {
+            state.decryptScannedChunks.push(tag);
+          } else {
+            state.decryptScannedChunks.push({ ...tag, isUnknown: true });
+          }
+          updateDecryptScanReadout();
+          if (btnStartDecryptScan) {
+            btnStartDecryptScan.textContent = 'Scan Next Ghost Tag';
+            btnStartDecryptScan.style.display = 'inline-block';
+          }
         }
+      } catch (err) {
+        console.warn('Decrypt scan error:', err);
+        if (btnStartDecryptScan) btnStartDecryptScan.style.display = 'inline-block';
+      } finally {
+        state.isDecryptScanning = false;
+      }
+    }
 
-        updateDecryptScanReadout();
-        btnStartDecryptScan.disabled = false;
+    if (btnStartDecryptScan) {
+      btnStartDecryptScan.addEventListener('click', () => {
+        startDecryptScanStep();
       });
     }
+
+    function triggerStopDecryptScan() {
+      state.isDecryptScanning = false;
+      if (btnStopDecryptScan) btnStopDecryptScan.style.display = 'none';
+      if (btnStartDecryptScan) {
+        btnStartDecryptScan.style.display = 'inline-block';
+        btnStartDecryptScan.textContent = 'Scan Next Ghost Tag';
+      }
+
+      const ghostChunks = state.decryptScannedChunks.filter(c => !c.isUnknown).length;
+      const countEl = document.getElementById('decryptStoppedCountText');
+      if (countEl) countEl.textContent = `${ghostChunks} Ghost chunks collected.`;
+      const btnTrigger = document.getElementById('btnDecryptStoppedTrigger');
+      if (btnTrigger) btnTrigger.disabled = ghostChunks === 0;
+      if (decryptScanStoppedPanel) decryptScanStoppedPanel.style.display = 'block';
+    }
+
+    if (btnStopDecryptScan) {
+      btnStopDecryptScan.addEventListener('click', triggerStopDecryptScan);
+    }
+
+    document.getElementById('btnDecryptStoppedTrigger')?.addEventListener('click', () => {
+      showPassphraseModal(async (passphrase) => {
+        await executeVaultDecryption(passphrase);
+      });
+    });
+
+    document.getElementById('btnDecryptStoppedResume')?.addEventListener('click', () => {
+      if (decryptScanStoppedPanel) decryptScanStoppedPanel.style.display = 'none';
+      startDecryptScanStep();
+    });
+
+    document.getElementById('btnDecryptStoppedCancel')?.addEventListener('click', () => {
+      if (decryptScanStoppedPanel) decryptScanStoppedPanel.style.display = 'none';
+      resetDecryptView();
+      showView('view-app');
+    });
 
     document.getElementById('btnTriggerDecrypt')?.addEventListener('click', () => {
       showPassphraseModal(async (passphrase) => {
@@ -1141,52 +1316,85 @@
     showView('view-bulk-progress');
     const statusEl = document.getElementById('bulkWriteProgressText');
     const tallyEl = document.getElementById('bulkWriteProgressTally');
+    const stopWrapper = document.getElementById('bulkWriteStopWrapper');
+    const pausedPanel = document.getElementById('bulkWritePausedPanel');
+    const btnDone = document.getElementById('btnBulkCompleteDone');
+
+    if (pausedPanel) pausedPanel.style.display = 'none';
+    if (btnDone) btnDone.style.display = 'none';
+    if (stopWrapper) stopWrapper.style.display = 'block';
 
     const totalTags = state.bulkRequiredTagsCount || state.bulkScannedTags.length;
     const targetTags = state.bulkScannedTags.slice(0, totalTags);
 
+    state.isBulkWriting = true;
+    state.bulkWritePassphrase = passphrase;
+    state.bulkWriteTotalTags = totalTags;
+    state.bulkWriteTargetTags = targetTags;
+    if (state.bulkWriteCurrentChunkIndex === undefined) {
+      state.bulkWriteCurrentChunkIndex = 0;
+    }
+
     try {
-      statusEl.textContent = 'ENCRYPTING FILES...';
-      await new Promise(r => setTimeout(r, 500));
+      if (state.bulkWriteCurrentChunkIndex === 0) {
+        statusEl.textContent = 'ENCRYPTING FILES...';
+        await new Promise(r => setTimeout(r, 450));
+        statusEl.textContent = `SPLITTING INTO ${totalTags} CHUNKS...`;
+        await new Promise(r => setTimeout(r, 400));
+        state.bulkWriteVaultId = 'BV_' + bytesToHex(crypto.getRandomValues(new Uint8Array(8)));
+      }
 
-      statusEl.textContent = `SPLITTING INTO ${totalTags} CHUNKS...`;
-      await new Promise(r => setTimeout(r, 450));
+      while (state.bulkWriteCurrentChunkIndex < totalTags) {
+        if (!state.isBulkWriting) {
+          // Paused by user!
+          const written = state.bulkWriteCurrentChunkIndex;
+          const remaining = totalTags - written;
+          if (stopWrapper) stopWrapper.style.display = 'none';
+          const countEl = document.getElementById('bulkPausedCountText');
+          const remainEl = document.getElementById('bulkPausedRemainingText');
+          if (countEl) countEl.textContent = `${written} / ${totalTags} chunks written and verified.`;
+          if (remainEl) remainEl.textContent = `${remaining} chunks remain.`;
+          if (pausedPanel) pausedPanel.style.display = 'block';
+          statusEl.textContent = 'WRITING PAUSED';
+          tallyEl.textContent = `Session paused at chunk ${written} of ${totalTags}. Progress is preserved.`;
+          return;
+        }
 
-      const salt = crypto.getRandomValues(new Uint8Array(32));
-      const kek = await deriveKekFromPassphrase(passphrase, salt);
-      const vaultId = 'BV_' + bytesToHex(crypto.getRandomValues(new Uint8Array(8)));
-
-      for (let i = 0; i < totalTags; i++) {
+        const i = state.bulkWriteCurrentChunkIndex;
         statusEl.textContent = `WRITING CHUNK ${i + 1} / ${totalTags}...`;
         tallyEl.textContent = `PROGRESS: ${i + 1} / ${totalTags}  REMAINING TAGS: ${totalTags - (i + 1)}`;
-        await new Promise(r => setTimeout(r, 300));
+        await new Promise(r => setTimeout(r, 350));
 
         statusEl.textContent = `VERIFYING CHUNK ${i + 1} / ${totalTags}...`;
-
-        // Create chunk envelope & cache in IndexedDB
-        const chunkData = new Uint8Array(128); // Standard simulated payload chunk
+        const chunkData = new Uint8Array(128);
         const chunkEnvelope = buildCanonicalEnvelope(0x02, crypto.getRandomValues(new Uint8Array(16)), chunkData, crypto.getRandomValues(new Uint8Array(12)), crypto.getRandomValues(new Uint8Array(16)));
 
         await writeTagNdef(targetTags[i], chunkEnvelope, MIME_BULK);
 
-        // Cache in IndexedDB for 72 hours
         await cacheChunk({
-          vaultId,
+          vaultId: state.bulkWriteVaultId,
           fileId: 'f0',
           chunkIndex: i,
           totalChunks: totalTags,
           ciphertextHex: bytesToHex(chunkEnvelope),
           hashHex: bytesToHex(await sha256(chunkEnvelope))
         });
+
+        state.bulkWriteCurrentChunkIndex = i + 1;
       }
 
+      state.isBulkWriting = false;
+      state.bulkWriteCurrentChunkIndex = 0;
+      if (stopWrapper) stopWrapper.style.display = 'none';
+      if (pausedPanel) pausedPanel.style.display = 'none';
       statusEl.textContent = 'BULK VAULT COMPLETE';
       tallyEl.textContent = `${totalTags} tags written and verified. ${state.bulkFiles.length} files encrypted.\nKeep these ${totalTags} tags together. You can scan them in any order later.`;
-      document.getElementById('btnBulkCompleteDone').style.display = 'block';
+      if (btnDone) btnDone.style.display = 'block';
     } catch (err) {
+      state.isBulkWriting = false;
       statusEl.textContent = 'WRITE FAILED';
       tallyEl.textContent = err.message;
-      document.getElementById('btnBulkCompleteDone').style.display = 'block';
+      if (btnDone) btnDone.style.display = 'block';
     }
   }
 
@@ -1270,21 +1478,46 @@
   // --- Reset View Helpers ---
   function resetSingleScanView() {
     state.currentTag = null;
+    state.isSingleScanning = false;
     document.getElementById('tagDetectedPanel').style.display = 'none';
     const btn = document.getElementById('btnStartSingleScan');
-    btn.style.display = 'block';
-    btn.disabled = false;
+    if (btn) {
+      btn.style.display = 'inline-block';
+      btn.disabled = false;
+    }
+    const btnStop = document.getElementById('btnStopSingleScan');
+    if (btnStop) btnStop.style.display = 'none';
     document.getElementById('singleScanStatus').textContent = 'Hold your phone near an NFC tag.';
   }
 
   function resetBulkScanView() {
+    state.isBulkScanning = false;
     state.bulkScannedTags = [];
     state.bulkFiles = [];
+    const stopPanel = document.getElementById('bulkScanStoppedPanel');
+    if (stopPanel) stopPanel.style.display = 'none';
+    const btnStop = document.getElementById('btnStopBulkScan');
+    if (btnStop) btnStop.style.display = 'none';
+    const btnStart = document.getElementById('btnStartBulkScan');
+    if (btnStart) {
+      btnStart.style.display = 'inline-block';
+      btnStart.textContent = 'Start Scanning';
+    }
     updateBulkScanReadout();
   }
 
   function resetDecryptView() {
+    state.isDecryptScanning = false;
     state.decryptScannedChunks = [];
+    const stopPanel = document.getElementById('decryptScanStoppedPanel');
+    if (stopPanel) stopPanel.style.display = 'none';
+    const btnStop = document.getElementById('btnStopDecryptScan');
+    if (btnStop) btnStop.style.display = 'none';
+    const btnStart = document.getElementById('btnStartDecryptScan');
+    if (btnStart) {
+      btnStart.style.display = 'inline-block';
+      btnStart.textContent = 'Start Scanning';
+    }
     document.getElementById('decryptScanReadout').style.display = 'none';
     document.getElementById('btnTriggerDecrypt').disabled = true;
   }

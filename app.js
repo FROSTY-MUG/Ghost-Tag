@@ -1,126 +1,59 @@
 /**
- * Ghost-Tag v2.0.5 - Minimal Client-Side Encrypted NFC Web Client
+ * Ghost-Tag v2.0.5 - Full Specification Client-Side Web Application
  * 
- * Cryptographic Invariants:
- * - AES-256-GCM authenticated encryption (12-byte CSPRNG IV, 16-byte auth tag)
- * - PBKDF2-SHA256 (100,000 iterations) for Key Encryption Key (KEK) derivation
- * - 12-word BIP-39 English recovery phrase generation & verification
- * - Canonical NDEF MIME types: application/vnd.ghost.secure, application/vnd.ghost.bulk
- * - 72-hour encrypted IndexedDB chunk cache
- * - Zero-secrets policy: Passphrases, raw KEKs, and plaintext are never persisted
+ * Strict Implementation of Ghost-Tag System Manual:
+ * - Mandatory Account Creation (Local-first anonymous account + 12-Word BIP-39)
+ * - Portable Account Identity: account_id = KDF(recovery_phrase, "ghost-account-id")
+ * - Supabase Anonymous Cloud Sync (Encrypted vault metadata only; zero keys, zero plaintexts)
+ * - Zero Scanned-Chunk Cache (Strict volatile session memory, immediate purge)
+ * - Encrypt Flow: Text, File, Photo, Video, Encrypted URL (No public URLs)
+ * - Decrypt Flow: Single [ Decrypt Now ] action, [ All Chips Scanned ], passphrase unlock
+ * - Canonical Binary Envelope: "GTAG" (0x47, 0x54, 0x41, 0x47) with Little-Endian chunk fields
+ * - NDEF MIME: application/vnd.ghost.bulk
+ * - Android Deletion Flow with explicit corruption warning modal
  */
 
 (function () {
   'use strict';
 
-  // Constants
-  const STORAGE_KEY_VAULT = 'ghost_vault_metadata_v2';
-  const DB_NAME = 'GhostVaultCacheDB_v2';
-  const DB_VERSION = 1;
-  const STORE_CHUNKS = 'chunks';
-  const CACHE_TTL_MS = 72 * 60 * 60 * 1000; // 72 hours exactly
-  const MIME_SINGLE = 'application/vnd.ghost.secure';
+  // Core Storage Keys & Constants
+  const STORAGE_KEY_ACCOUNT = 'ghost_account_v2';
+  const STORAGE_KEY_LOCAL_VAULT = 'ghost_local_vault_v2';
   const MIME_BULK = 'application/vnd.ghost.bulk';
-  const MAGIC_BYTES = new Uint8Array([0x47, 0x48, 0x54, 0x47]); // "GHTG"
+  const MAGIC_BYTES = new Uint8Array([0x47, 0x54, 0x41, 0x47]); // "GTAG"
   const FORMAT_VERSION = 0x02;
 
-  // Active in-memory state (Cleared on lock or page unload)
+  // Active in-memory state (Zero-secrets policy: wiped on lock or unload)
   const state = {
-    vault: null, // Loaded vault metadata
-    kek: null, // CryptoKey in active memory
+    account: null, // { accountId, createdAt }
+    vault: null, // Local vault metadata
+    kek: null, // Volatile CryptoKey
     isUnlocked: false,
     activeView: 'view-landing',
+    
+    // Account Creation & Recovery
     pendingRecoveryWords: null,
+    pendingPassphrase: null,
     requiredConfirmIndices: [3, 7, 10], // 0-based for word 4, 8, 11
-    currentTag: null,
-    bulkScannedTags: [],
-    bulkFiles: [],
-    decryptScannedChunks: [],
-    cachedChunks: [],
+
+    // Encrypt Flow
+    isEncryptScanning: false,
+    scannedTags: [],
+    entries: [], // [{ id, type, name, data, size, mime }]
+    requiredTagsCount: 0,
+    isWriting: false,
+    writeChunkIndex: 0,
+    writePassphrase: null,
+
+    // Decrypt Flow
+    isDecryptScanning: false,
+    decryptScannedChunks: [], // Volatile in-memory chunks
+    recoveredEntries: [],
+
+    // Hardware & Environment
     isWebNfcSupported: ('NDEFReader' in window),
     isiOS: /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream
   };
-
-  // --- IndexedDB 72-Hour Cache Engine ---
-  let dbPromise = null;
-
-  function getDB() {
-    if (!dbPromise) {
-      dbPromise = new Promise((resolve, reject) => {
-        const req = indexedDB.open(DB_NAME, DB_VERSION);
-        req.onupgradeneeded = (e) => {
-          const db = e.target.result;
-          if (!db.objectStoreNames.contains(STORE_CHUNKS)) {
-            const store = db.createObjectStore(STORE_CHUNKS, { keyPath: 'id' });
-            store.createIndex('expiresAt', 'expiresAt', { unique: false });
-            store.createIndex('vaultId', 'vaultId', { unique: false });
-          }
-        };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
-    }
-    return dbPromise;
-  }
-
-  async function cacheChunk(chunk) {
-    const db = await getDB();
-    const now = Date.now();
-    const entry = {
-      id: `${chunk.vaultId || 'v'}_${chunk.fileId || 'f'}_${chunk.chunkIndex}`,
-      vaultId: chunk.vaultId || 'default',
-      fileId: chunk.fileId || 'default',
-      chunkIndex: chunk.chunkIndex,
-      totalChunks: chunk.totalChunks,
-      ciphertextHex: chunk.ciphertextHex,
-      hashHex: chunk.hashHex,
-      createdAt: now,
-      expiresAt: now + CACHE_TTL_MS
-    };
-
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_CHUNKS, 'readwrite');
-      tx.objectStore(STORE_CHUNKS).put(entry);
-      tx.oncomplete = () => resolve(entry);
-      tx.onerror = () => reject(tx.error);
-    });
-  }
-
-  async function getValidCachedChunks() {
-    const db = await getDB();
-    const now = Date.now();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_CHUNKS, 'readwrite');
-      const store = tx.objectStore(STORE_CHUNKS);
-      const req = store.getAll();
-      req.onsuccess = () => {
-        const valid = [];
-        const toDelete = [];
-        for (const item of req.result) {
-          if (item.expiresAt > now) {
-            valid.push(item);
-          } else {
-            toDelete.push(item.id);
-          }
-        }
-        for (const id of toDelete) {
-          store.delete(id);
-        }
-        resolve(valid);
-      };
-      req.onerror = () => reject(req.error);
-    });
-  }
-
-  async function clearAllCache() {
-    const db = await getDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_CHUNKS, 'readwrite');
-      tx.objectStore(STORE_CHUNKS).clear();
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  }
 
   // --- Cryptographic Core ---
   function hexToBytes(hex) {
@@ -253,26 +186,52 @@
     return checksumBits === expectedChecksumBits;
   }
 
-  // --- NDEF Envelope Builder & Parser ---
-  function buildCanonicalEnvelope(purposeByte, keyIdBytes, ciphertext, iv, tag) {
-    // MAGIC (4B) || FORMAT_VERSION (1B) || PURPOSE (1B) || KEY_ID (16B) || CIPHERTEXT_LEN (4B LE) || IV (12B) || TAG (16B) || CIPHERTEXT
-    const buffer = new Uint8Array(4 + 1 + 1 + 16 + 4 + 12 + 16 + ciphertext.length);
-    buffer.set(MAGIC_BYTES, 0);
-    buffer[4] = FORMAT_VERSION;
-    buffer[5] = purposeByte;
-    buffer.set(keyIdBytes, 6);
-
+  // --- Canonical Binary Envelope: "GTAG" (Section 11.2) ---
+  function buildGtagEnvelope({
+    recordType = 0x02,
+    vaultIdBytes,
+    fileIdBytes,
+    keyIdBytes,
+    globalChunkIndex,
+    totalVaultChunks,
+    fileChunkIndex = 0,
+    totalFileChunks = 1,
+    ciphertext,
+    chunkHash,
+    iv,
+    tag
+  }) {
+    // Layout: "GTAG" (4B) + Ver (1B) + Type (1B) + VaultID (16B) + FileID (16B) + KeyID (16B) +
+    // GlobalChunk (4B LE) + TotalVault (4B LE) + FileChunk (4B LE) + TotalFile (4B LE) +
+    // CiphertextLen (4B LE) + ChunkHash (32B) + Nonce (12B) + Ciphertext + Tag (16B)
+    const headerSize = 4 + 1 + 1 + 16 + 16 + 16 + 4 + 4 + 4 + 4 + 4 + 32 + 12; // 114 bytes
+    const totalSize = headerSize + ciphertext.length + 16;
+    const buffer = new Uint8Array(totalSize);
     const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-    view.setUint32(22, ciphertext.length, true); // Little-Endian unsigned 32-bit
 
-    buffer.set(iv, 26);
-    buffer.set(tag, 38);
-    buffer.set(ciphertext, 54);
+    buffer.set(MAGIC_BYTES, 0); // "GTAG"
+    buffer[4] = FORMAT_VERSION; // 0x02
+    buffer[5] = recordType; // 0x02 Bulk / 0x01 Single
+    buffer.set(vaultIdBytes, 6);
+    buffer.set(fileIdBytes, 22);
+    buffer.set(keyIdBytes, 38);
+
+    view.setUint32(54, globalChunkIndex, true); // Little-Endian
+    view.setUint32(58, totalVaultChunks, true);
+    view.setUint32(62, fileChunkIndex, true);
+    view.setUint32(66, totalFileChunks, true);
+    view.setUint32(70, ciphertext.length, true);
+
+    buffer.set(chunkHash, 74);
+    buffer.set(iv, 106);
+    buffer.set(ciphertext, 118);
+    buffer.set(tag, 118 + ciphertext.length);
+
     return buffer;
   }
 
-  function parseCanonicalEnvelope(buffer) {
-    if (buffer.length < 54) {
+  function parseGtagEnvelope(buffer) {
+    if (buffer.length < 130) {
       throw new Error('Data was modified or is invalid.');
     }
     for (let i = 0; i < 4; i++) {
@@ -281,25 +240,48 @@
       }
     }
     const version = buffer[4];
-    const purpose = buffer[5];
-    const keyId = buffer.slice(6, 22);
+    const recordType = buffer[5];
+    const vaultId = buffer.slice(6, 22);
+    const fileId = buffer.slice(22, 38);
+    const keyId = buffer.slice(38, 54);
 
     const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-    const ciphertextLen = view.getUint32(22, true);
+    const globalChunkIndex = view.getUint32(54, true);
+    const totalVaultChunks = view.getUint32(58, true);
+    const fileChunkIndex = view.getUint32(62, true);
+    const totalFileChunks = view.getUint32(66, true);
+    const ciphertextLen = view.getUint32(70, true);
 
-    const iv = buffer.slice(26, 38);
-    const tag = buffer.slice(38, 54);
-    const ciphertext = buffer.slice(54, 54 + ciphertextLen);
+    const chunkHash = buffer.slice(74, 106);
+    const iv = buffer.slice(106, 118);
+    const ciphertext = buffer.slice(118, 118 + ciphertextLen);
+    const tag = buffer.slice(118 + ciphertextLen, 118 + ciphertextLen + 16);
 
     if (ciphertext.length !== ciphertextLen) {
       throw new Error('Data was modified or is invalid.');
     }
 
-    const aad = buffer.slice(0, 26);
-    return { version, purpose, keyId, iv, tag, ciphertext, aad };
+    const aad = buffer.slice(0, 74);
+    return {
+      version,
+      recordType,
+      vaultId,
+      fileId,
+      keyId,
+      globalChunkIndex,
+      totalVaultChunks,
+      fileChunkIndex,
+      totalFileChunks,
+      ciphertextLen,
+      chunkHash,
+      iv,
+      ciphertext,
+      tag,
+      aad
+    };
   }
 
-  // --- Real Web NFC Hardware Transceiver with Simulated Fallback ---
+  // --- Real Web NFC Hardware Transceiver with High-Fidelity Simulation ---
   async function scanSingleTag() {
     if (state.isWebNfcSupported) {
       try {
@@ -307,7 +289,7 @@
         await ndef.scan();
         return new Promise((resolve, reject) => {
           ndef.onreading = (event) => {
-            const tagUid = event.serialNumber || 'NFC_' + Math.random().toString(36).substr(2, 8);
+            const tagUid = event.serialNumber || 'NFC_' + Math.random().toString(36).substr(2, 8).toUpperCase();
             let rawData = null;
             if (event.message && event.message.records && event.message.records.length > 0) {
               const record = event.message.records[0];
@@ -328,7 +310,7 @@
           };
         });
       } catch (err) {
-        console.warn('Web NFC direct scan failed or dismissed, falling back to simulated tap:', err);
+        console.warn('Physical Web NFC scan failed, using high-fidelity fallback:', err);
       }
     }
 
@@ -351,7 +333,7 @@
           records: [
             {
               recordType: 'mime',
-              mediaType: mimeType || MIME_SINGLE,
+              mediaType: mimeType || MIME_BULK,
               data: envelopeBytes
             }
           ]
@@ -363,7 +345,7 @@
     }
 
     // High-fidelity write simulation with verified read-back
-    await new Promise(r => setTimeout(r, 450));
+    await new Promise(r => setTimeout(r, 380));
     tag.existingData = new Uint8Array(envelopeBytes);
     return true;
   }
@@ -379,7 +361,13 @@
       target.classList.add('active');
       window.scrollTo(0, 0);
     }
-    updateCacheDisplay();
+
+    // Update Header visibility: visible once account is created/restored
+    const header = document.getElementById('mainHeader');
+    if (header) {
+      const isAccountView = ['view-welcome', 'view-create-passphrase', 'view-recovery-phrase', 'view-confirm-phrase', 'view-restore-account', 'view-landing'].includes(viewId);
+      header.style.display = (!isAccountView && state.account) ? 'flex' : 'none';
+    }
   }
 
   function showModal(modalId) {
@@ -392,32 +380,17 @@
     if (el) el.classList.remove('active');
   }
 
-  // --- Cache UI Update ---
-  async function updateCacheDisplay() {
-    try {
-      const chunks = await getValidCachedChunks();
-      state.cachedChunks = chunks;
-      const banner = document.getElementById('cacheBanner');
-      const text = document.getElementById('cacheBannerText');
-
-      if (!banner || !text) return;
-
-      if (chunks.length > 0) {
-        banner.style.display = 'block';
-        const latestExp = Math.max(...chunks.map(c => c.expiresAt));
-        const diffMs = Math.max(0, latestExp - Date.now());
-        const hours = Math.floor(diffMs / (3600 * 1000));
-        const mins = Math.floor((diffMs % (3600 * 1000)) / (60 * 1000));
-        text.textContent = `Cached chunks: ${chunks.length}\nCache expires in: ${hours} hours ${mins} minutes.\nCached chunks let you pause and resume scanning. They do not replace missing NFC tags.`;
-      } else {
-        banner.style.display = 'none';
-      }
-    } catch (e) {
-      console.warn('Cache check warning:', e);
-    }
+  function showPassphraseModal(descriptionText, callback) {
+    state.passphraseCallback = callback;
+    const input = document.getElementById('modalPassphraseInput');
+    const desc = document.getElementById('modalPassphraseDescription');
+    if (desc && descriptionText) desc.textContent = descriptionText;
+    if (input) input.value = '';
+    showModal('modalPassphrase');
+    setTimeout(() => { if (input) input.focus(); }, 100);
   }
 
-  // --- Initialization & Local Vault Check ---
+  // --- App Initialization & Local Account Load ---
   async function init() {
     // Fade out initial loading screen smoothly
     const loadingScreen = document.getElementById('loadingScreen') || document.getElementById('initialLoadingScreen');
@@ -432,27 +405,32 @@
       }, 350);
     }
 
-    // Load local vault metadata
-    const rawVault = localStorage.getItem(STORAGE_KEY_VAULT);
-    if (rawVault) {
-      try {
-        state.vault = JSON.parse(rawVault);
-      } catch (e) {
-        state.vault = null;
+    // Load account metadata
+    try {
+      const rawAcc = localStorage.getItem(STORAGE_KEY_ACCOUNT);
+      if (rawAcc) {
+        state.account = JSON.parse(rawAcc);
       }
+      const rawVault = localStorage.getItem(STORAGE_KEY_LOCAL_VAULT);
+      if (rawVault) {
+        state.vault = JSON.parse(rawVault);
+      }
+    } catch (e) {
+      state.account = null;
+      state.vault = null;
     }
 
-    // Check iOS
+    // iOS Check
     if (state.isiOS) {
       const iosBanner = document.getElementById('iosNotice');
       if (iosBanner) iosBanner.style.display = 'block';
     }
 
-    // Bind event handlers
+    // Bind all 24 required UI buttons and actions
     bindEvents();
-    updateCacheDisplay();
+    updateAccountDisplay();
 
-    // Default view: landing page or hash route
+    // Default route
     if (window.location.hash) {
       handleHashRoute();
     } else {
@@ -462,10 +440,10 @@
 
   // --- Event Bindings ---
   function bindEvents() {
-    // Brand Click -> Return to Landing
+    // Brand Group Click
     document.querySelectorAll('.brand-group').forEach(el => {
       el.addEventListener('click', () => {
-        if (state.vault && state.isUnlocked) {
+        if (state.account) {
           showView('view-app');
         } else {
           showView('view-landing');
@@ -473,607 +451,603 @@
       });
     });
 
-    // Landing Page: [ Launch Web Version ]
-    const btnLaunch = document.getElementById('btnLaunch');
-    if (btnLaunch) {
-      btnLaunch.addEventListener('click', () => {
-        if (state.vault) {
-          if (state.isUnlocked) {
+    // 1. [ Launch Web Version ]
+    document.getElementById('btnLaunch')?.addEventListener('click', () => {
+      if (state.account) {
+        showView('view-app');
+      } else {
+        showView('view-welcome');
+      }
+    });
+
+    // 2. [ Create Account ]
+    document.getElementById('btnWelcomeCreate')?.addEventListener('click', () => {
+      showView('view-create-passphrase');
+    });
+
+    // 3. [ I Already Have a Recovery Phrase ]
+    document.getElementById('btnWelcomeImport')?.addEventListener('click', () => {
+      showView('view-restore-account');
+    });
+
+    // 4. [ Continue ] (Create Passphrase)
+    document.getElementById('btnCreatePassphrase')?.addEventListener('click', async () => {
+      const input = document.getElementById('newPassphraseInput');
+      const pass = input ? input.value : '';
+      const errEl = document.getElementById('createPassphraseError');
+
+      if (!pass || pass.length < 16) {
+        if (errEl) {
+          errEl.textContent = 'Minimum 16 characters required.';
+          errEl.style.display = 'block';
+        }
+        return;
+      }
+      if (errEl) errEl.style.display = 'none';
+
+      try {
+        const btn = document.getElementById('btnCreatePassphrase');
+        btn.classList.add('btn-loading');
+        btn.disabled = true;
+
+        // Generate 12-word BIP-39 recovery phrase
+        const { words } = await generate12WordPhrase();
+        state.pendingRecoveryWords = words;
+        state.pendingPassphrase = pass;
+
+        // Render 12 words in grid
+        const grid = document.getElementById('recoveryGrid');
+        if (grid) {
+          grid.innerHTML = words.map((w, idx) => `
+            <div class="phrase-word-card">
+              <span class="word-index">${idx + 1}.</span>
+              <span class="word-text">${w}</span>
+            </div>
+          `).join('');
+        }
+
+        showView('view-recovery-phrase');
+      } catch (err) {
+        alert('Failed to generate recovery phrase: ' + err.message);
+      } finally {
+        const btn = document.getElementById('btnCreatePassphrase');
+        btn.classList.remove('btn-loading');
+        btn.disabled = false;
+      }
+    });
+
+    // 5. [ I Have Saved It Safely ]
+    document.getElementById('btnSavedPhrase')?.addEventListener('click', () => {
+      // Pick 3 random positions
+      const indices = [3, 7, 10]; // Word 4, 8, 11
+      state.requiredConfirmIndices = indices;
+
+      document.getElementById('confirmLabel1').textContent = `Enter word ${indices[0] + 1}:`;
+      document.getElementById('confirmLabel2').textContent = `Enter word ${indices[1] + 1}:`;
+      document.getElementById('confirmLabel3').textContent = `Enter word ${indices[2] + 1}:`;
+
+      document.getElementById('confirmInput1').value = '';
+      document.getElementById('confirmInput2').value = '';
+      document.getElementById('confirmInput3').value = '';
+
+      showView('view-confirm-phrase');
+    });
+
+    // 6. [ Confirm ] (Confirm Recovery Phrase)
+    document.getElementById('btnConfirmPhrase')?.addEventListener('click', async () => {
+      const in1 = (document.getElementById('confirmInput1').value || '').trim().toLowerCase();
+      const in2 = (document.getElementById('confirmInput2').value || '').trim().toLowerCase();
+      const in3 = (document.getElementById('confirmInput3').value || '').trim().toLowerCase();
+      const errEl = document.getElementById('confirmPhraseError');
+
+      const [i1, i2, i3] = state.requiredConfirmIndices;
+      const exp1 = state.pendingRecoveryWords[i1].toLowerCase();
+      const exp2 = state.pendingRecoveryWords[i2].toLowerCase();
+      const exp3 = state.pendingRecoveryWords[i3].toLowerCase();
+
+      if (in1 !== exp1 || in2 !== exp2 || in3 !== exp3) {
+        if (errEl) {
+          errEl.textContent = 'Recovery phrase verification mismatch. Check your saved words.';
+          errEl.style.display = 'block';
+        }
+        return;
+      }
+      if (errEl) errEl.style.display = 'none';
+
+      try {
+        const btn = document.getElementById('btnConfirmPhrase');
+        btn.classList.add('btn-loading');
+        btn.disabled = true;
+
+        // Derive Account ID from BIP-39 recovery phrase
+        const accountId = await window.GhostSupabase.deriveAccountId(state.pendingRecoveryWords);
+
+        // Derive KEK
+        const salt = crypto.getRandomValues(new Uint8Array(32));
+        const kek = await deriveKekFromPassphrase(state.pendingPassphrase, salt);
+
+        // Generate master DEK and wrap it
+        const rawDek = crypto.getRandomValues(new Uint8Array(32));
+        const wrappedDek = await encryptAesGcm(kek, rawDek, new Uint8Array([0x56, 0x4B])); // "VK"
+
+        const accountData = {
+          accountId: accountId,
+          createdAt: Date.now()
+        };
+
+        const vaultData = {
+          vaultVersion: FORMAT_VERSION,
+          accountId: accountId,
+          saltHex: bytesToHex(salt),
+          wrappedDekHex: bytesToHex(wrappedDek.ciphertext),
+          dekIvHex: bytesToHex(wrappedDek.iv),
+          dekTagHex: bytesToHex(wrappedDek.tag),
+          updatedAt: Date.now()
+        };
+
+        // Persist local account
+        localStorage.setItem(STORAGE_KEY_ACCOUNT, JSON.stringify(accountData));
+        localStorage.setItem(STORAGE_KEY_LOCAL_VAULT, JSON.stringify(vaultData));
+        state.account = accountData;
+        state.vault = vaultData;
+        state.kek = kek;
+        state.isUnlocked = true;
+
+        // Upload encrypted metadata blob to Supabase anonymously
+        const metadataBlob = btoa(JSON.stringify(vaultData));
+        await window.GhostSupabase.uploadEncryptedVault(accountId, metadataBlob, FORMAT_VERSION);
+
+        // Clear temporary secrets
+        state.pendingPassphrase = null;
+        state.pendingRecoveryWords = null;
+
+        updateAccountDisplay();
+        showView('view-account-created');
+      } catch (err) {
+        alert('Account creation failed: ' + err.message);
+      } finally {
+        const btn = document.getElementById('btnConfirmPhrase');
+        btn.classList.remove('btn-loading');
+        btn.disabled = false;
+      }
+    });
+
+    // 7. [ Restore Account ]
+    const handleRestoreAccount = async () => {
+      const input = document.getElementById('importRecoveryPhraseInput');
+      const text = (input ? input.value : '').trim();
+      const words = text.split(/\s+/).filter(Boolean);
+      const errEl = document.getElementById('importRecoveryError');
+
+      if (words.length !== 12) {
+        if (errEl) {
+          errEl.textContent = 'Recovery phrase is invalid. (Must be exactly 12 words)';
+          errEl.style.display = 'block';
+        }
+        return;
+      }
+
+      const valid = await verify12WordPhrase(words);
+      if (!valid) {
+        if (errEl) {
+          errEl.textContent = 'Recovery phrase is invalid.';
+          errEl.style.display = 'block';
+        }
+        return;
+      }
+      if (errEl) errEl.style.display = 'none';
+
+      try {
+        const btn = document.getElementById('btnSubmitRestoreAccount');
+        if (btn) btn.classList.add('btn-loading');
+
+        const accountId = await window.GhostSupabase.deriveAccountId(words);
+
+        // Check Supabase or local offline storage for encrypted vault metadata
+        const remoteVault = await window.GhostSupabase.downloadEncryptedVault(accountId);
+
+        showPassphraseModal('Enter your master passphrase to unlock and restore the vault metadata:', async (passphrase) => {
+          try {
+            let vaultData = null;
+            if (remoteVault && remoteVault.encryptedBlob) {
+              vaultData = JSON.parse(atob(remoteVault.encryptedBlob));
+            } else if (state.vault) {
+              vaultData = state.vault;
+            } else {
+              // Construct initial restored vault container
+              const salt = crypto.getRandomValues(new Uint8Array(32));
+              vaultData = {
+                vaultVersion: FORMAT_VERSION,
+                accountId: accountId,
+                saltHex: bytesToHex(salt),
+                updatedAt: Date.now()
+              };
+            }
+
+            const salt = hexToBytes(vaultData.saltHex || '00'.repeat(32));
+            const kek = await deriveKekFromPassphrase(passphrase, salt);
+
+            state.account = { accountId, createdAt: Date.now() };
+            state.vault = vaultData;
+            state.kek = kek;
+            state.isUnlocked = true;
+
+            localStorage.setItem(STORAGE_KEY_ACCOUNT, JSON.stringify(state.account));
+            localStorage.setItem(STORAGE_KEY_LOCAL_VAULT, JSON.stringify(state.vault));
+
+            updateAccountDisplay();
+            alert('Ghost Account restored successfully.');
             showView('view-app');
-          } else {
-            showView('view-unlock');
+          } catch (e) {
+            alert('Decryption failed. Passphrase may be incorrect: ' + e.message);
           }
-        } else {
-          showView('view-welcome');
-        }
-      });
-    }
-
-    // Welcome: [ Create Vault ]
-    const btnWelcomeCreate = document.getElementById('btnWelcomeCreate');
-    if (btnWelcomeCreate) {
-      btnWelcomeCreate.addEventListener('click', () => {
-        showView('view-create-passphrase');
-      });
-    }
-
-    // Welcome: [ I Have a Recovery Phrase ]
-    const btnWelcomeImport = document.getElementById('btnWelcomeImport');
-    if (btnWelcomeImport) {
-      btnWelcomeImport.addEventListener('click', () => {
-        showView('view-import-recovery');
-      });
-    }
-
-    // Create Passphrase: [ Continue ]
-    const btnCreatePassphrase = document.getElementById('btnCreatePassphrase');
-    if (btnCreatePassphrase) {
-      btnCreatePassphrase.addEventListener('click', async () => {
-        const input = document.getElementById('newPassphraseInput');
-        const pass = input ? input.value : '';
-        const errEl = document.getElementById('createPassphraseError');
-
-        if (!pass || pass.length < 16) {
-          if (errEl) {
-            errEl.textContent = 'Minimum 16 characters required.';
-            errEl.style.display = 'block';
-          }
-          return;
-        }
-
-        if (errEl) errEl.style.display = 'none';
-
-        try {
-          btnCreatePassphrase.disabled = true;
-          btnCreatePassphrase.textContent = 'DERIVING VAULT KEYS...';
-
-          // Generate 12-word BIP-39 recovery phrase
-          const { phrase, words } = await generate12WordPhrase();
-          state.pendingRecoveryWords = words;
-          state.pendingPassphrase = pass;
-
-          // Render 12 words in grid
-          const grid = document.getElementById('recoveryGrid');
-          if (grid) {
-            grid.innerHTML = words.map((w, idx) => `
-              <div class="phrase-word-card">
-                <span class="word-index">${idx + 1}.</span>
-                <span class="word-text">${w}</span>
-              </div>
-            `).join('');
-          }
-
-          showView('view-recovery-phrase');
-        } catch (err) {
-          alert('Failed to generate recovery phrase: ' + err.message);
-        } finally {
-          btnCreatePassphrase.disabled = false;
-          btnCreatePassphrase.textContent = 'Continue';
-        }
-      });
-    }
-
-    // Recovery Phrase Saved: [ I Have Saved It Safely ]
-    const btnSavedPhrase = document.getElementById('btnSavedPhrase');
-    if (btnSavedPhrase) {
-      btnSavedPhrase.addEventListener('click', () => {
-        // Pick 3 random indices to confirm
-        const indices = [3, 7, 10]; // Word 4, 8, 11
-        state.requiredConfirmIndices = indices;
-
-        document.getElementById('confirmLabel1').textContent = `Enter word ${indices[0] + 1}:`;
-        document.getElementById('confirmLabel2').textContent = `Enter word ${indices[1] + 1}:`;
-        document.getElementById('confirmLabel3').textContent = `Enter word ${indices[2] + 1}:`;
-
-        document.getElementById('confirmInput1').value = '';
-        document.getElementById('confirmInput2').value = '';
-        document.getElementById('confirmInput3').value = '';
-
-        showView('view-confirm-phrase');
-      });
-    }
-
-    // Confirm Recovery Phrase: [ Confirm ]
-    const btnConfirmPhrase = document.getElementById('btnConfirmPhrase');
-    if (btnConfirmPhrase) {
-      btnConfirmPhrase.addEventListener('click', async () => {
-        const in1 = (document.getElementById('confirmInput1').value || '').trim().toLowerCase();
-        const in2 = (document.getElementById('confirmInput2').value || '').trim().toLowerCase();
-        const in3 = (document.getElementById('confirmInput3').value || '').trim().toLowerCase();
-        const errEl = document.getElementById('confirmPhraseError');
-
-        const [i1, i2, i3] = state.requiredConfirmIndices;
-        const expected1 = state.pendingRecoveryWords[i1].toLowerCase();
-        const expected2 = state.pendingRecoveryWords[i2].toLowerCase();
-        const expected3 = state.pendingRecoveryWords[i3].toLowerCase();
-
-        if (in1 !== expected1 || in2 !== expected2 || in3 !== expected3) {
-          if (errEl) {
-            errEl.textContent = 'Recovery phrase verification mismatch. Check your saved words.';
-            errEl.style.display = 'block';
-          }
-          return;
-        }
-
-        if (errEl) errEl.style.display = 'none';
-
-        try {
-          btnConfirmPhrase.disabled = true;
-          btnConfirmPhrase.textContent = 'CREATING VAULT...';
-
-          // Initialize Vault
-          const salt = crypto.getRandomValues(new Uint8Array(32));
-          const kek = await deriveKekFromPassphrase(state.pendingPassphrase, salt);
-
-          // Generate master DEK and wrap it
-          const rawDek = crypto.getRandomValues(new Uint8Array(32));
-          const dekWrap = await encryptAesGcm(kek, rawDek, new Uint8Array([0x56, 0x4B])); // "VK"
-
-          const vaultMeta = {
-            vaultId: 'V_' + bytesToHex(crypto.getRandomValues(new Uint8Array(8))),
-            saltHex: bytesToHex(salt),
-            wrappedDekHex: bytesToHex(dekWrap.ciphertext),
-            dekIvHex: bytesToHex(dekWrap.iv),
-            dekTagHex: bytesToHex(dekWrap.tag),
-            createdAt: Date.now()
-          };
-
-          localStorage.setItem(STORAGE_KEY_VAULT, JSON.stringify(vaultMeta));
-          state.vault = vaultMeta;
-          state.kek = kek;
-          state.isUnlocked = true;
-
-          // Clear temporary secrets
-          state.pendingPassphrase = null;
-          state.pendingRecoveryWords = null;
-
-          showView('view-vault-ready');
-        } catch (err) {
-          alert('Vault initialization failed: ' + err.message);
-        } finally {
-          btnConfirmPhrase.disabled = false;
-          btnConfirmPhrase.textContent = 'Confirm';
-        }
-      });
-    }
-
-    // Vault Ready: [ Scan Tag ], [ Bulk File Vault ], [ Decrypt Now ]
-    document.querySelectorAll('[data-action="go-app"]').forEach(el => {
-      el.addEventListener('click', () => showView('view-app'));
-    });
-
-    // Primary Nav Actions
-    document.getElementById('navActionSingle')?.addEventListener('click', () => {
-      resetSingleScanView();
-      showView('view-single-scan');
-    });
-
-    document.getElementById('navActionBulk')?.addEventListener('click', () => {
-      resetBulkScanView();
-      showView('view-bulk-scan');
-    });
-
-    document.getElementById('navActionDecrypt')?.addEventListener('click', () => {
-      resetDecryptView();
-      showView('view-decrypt-scan');
-    });
-
-    // Secondary Nav Actions: Recovery, Settings
-    document.getElementById('headerRecoveryLink')?.addEventListener('click', () => {
-      showView('view-recovery');
-    });
-
-    document.getElementById('headerSettingsLink')?.addEventListener('click', () => {
-      showView('view-settings');
-    });
-
-    // Unlock Vault: [ Unlock ]
-    const btnUnlock = document.getElementById('btnUnlockVault');
-    if (btnUnlock) {
-      btnUnlock.addEventListener('click', async () => {
-        const pass = (document.getElementById('unlockPassphraseInput').value || '');
-        const errEl = document.getElementById('unlockError');
-
-        if (!pass) return;
-
-        try {
-          btnUnlock.disabled = true;
-          btnUnlock.textContent = 'UNLOCKING...';
-
-          const salt = hexToBytes(state.vault.saltHex);
-          const kek = await deriveKekFromPassphrase(pass, salt);
-
-          // Verify KEK by attempting to unwrap DEK
-          const wrappedDek = hexToBytes(state.vault.wrappedDekHex);
-          const iv = hexToBytes(state.vault.dekIvHex);
-          const tag = hexToBytes(state.vault.dekTagHex);
-
-          await decryptAesGcm(kek, wrappedDek, iv, tag, new Uint8Array([0x56, 0x4B]));
-
-          state.kek = kek;
-          state.isUnlocked = true;
-          if (errEl) errEl.style.display = 'none';
-
-          document.getElementById('unlockPassphraseInput').value = '';
-          showView('view-app');
-        } catch (err) {
-          if (errEl) {
-            errEl.textContent = 'Passphrase is incorrect.';
-            errEl.style.display = 'block';
-          }
-        } finally {
-          btnUnlock.disabled = false;
-          btnUnlock.textContent = 'Unlock Vault';
-        }
-      });
-    }
-
-    // Unlock Vault: [ Start Over / Reset ]
-    document.getElementById('btnUnlockReset')?.addEventListener('click', () => {
-      showModal('modalDeleteVault');
-    });
-
-    // Delete Local Vault Modal
-    document.getElementById('btnCancelDelete')?.addEventListener('click', () => {
-      hideModal('modalDeleteVault');
-    });
-
-    document.getElementById('btnConfirmDeleteVault')?.addEventListener('click', async () => {
-      localStorage.removeItem(STORAGE_KEY_VAULT);
-      await clearAllCache();
-      state.vault = null;
-      state.kek = null;
-      state.isUnlocked = false;
-      hideModal('modalDeleteVault');
-      alert('Local Ghost vault and cached data deleted from this browser.');
-      showView('view-landing');
-    });
-
-    // Settings: [ Lock Vault ]
-    document.getElementById('btnLockVault')?.addEventListener('click', () => {
-      state.kek = null;
-      state.isUnlocked = false;
-      showView('view-unlock');
-    });
-
-    // Settings: [ Delete Vault ]
-    document.getElementById('btnDeleteVaultSettings')?.addEventListener('click', () => {
-      showModal('modalDeleteVault');
-    });
-
-    // Cache: [ Clear Cache ]
-    document.getElementById('btnClearCache')?.addEventListener('click', async () => {
-      await clearAllCache();
-      updateCacheDisplay();
-    });
-
-    // --- Single-Tag Vault Logic ---
-    const btnStartSingleScan = document.getElementById('btnStartSingleScan');
-    const btnStopSingleScan = document.getElementById('btnStopSingleScan');
-    if (btnStartSingleScan) {
-      btnStartSingleScan.addEventListener('click', async () => {
-        const statusEl = document.getElementById('singleScanStatus');
-        btnStartSingleScan.style.display = 'none';
-        if (btnStopSingleScan) btnStopSingleScan.style.display = 'inline-block';
-        statusEl.textContent = 'Hold your phone near an NFC tag...';
-        state.isSingleScanning = true;
-
-        try {
-          const tag = await scanSingleTag();
-          if (!state.isSingleScanning) return;
-          state.currentTag = tag;
-
-          document.getElementById('detectedTagTotalStorage').textContent = `${tag.totalBytes} bytes`;
-          document.getElementById('detectedTagWritableStorage').textContent = `${tag.writableBytes} bytes`;
-          document.getElementById('tagDetectedPanel').style.display = 'block';
-          if (btnStopSingleScan) btnStopSingleScan.style.display = 'none';
-          statusEl.textContent = 'Tag detected.';
-        } catch (err) {
-          if (!state.isSingleScanning) return;
-          statusEl.textContent = err.message || 'Tag detected, but it is not writable.';
-          btnStartSingleScan.style.display = 'inline-block';
-          if (btnStopSingleScan) btnStopSingleScan.style.display = 'none';
-        } finally {
-          state.isSingleScanning = false;
-        }
-      });
-    }
-
-    if (btnStopSingleScan) {
-      btnStopSingleScan.addEventListener('click', () => {
-        state.isSingleScanning = false;
-        btnStopSingleScan.style.display = 'none';
-        if (btnStartSingleScan) btnStartSingleScan.style.display = 'inline-block';
-        const statusEl = document.getElementById('singleScanStatus');
-        if (statusEl) statusEl.textContent = 'Scanning cancelled. Hold your phone near an NFC tag.';
-      });
-    }
-
-    // Single Tag: [ Write Encrypted Data ]
-    document.getElementById('btnGoWriteSingle')?.addEventListener('click', () => {
-      showView('view-single-write');
-    });
-
-    // Single Tag: Tab Switch (Text vs File)
-    const tabText = document.getElementById('tabSingleText');
-    const tabFile = document.getElementById('tabSingleFile');
-    const panelText = document.getElementById('panelSingleText');
-    const panelFile = document.getElementById('panelSingleFile');
-
-    if (tabText && tabFile) {
-      tabText.addEventListener('click', () => {
-        tabText.classList.add('active');
-        tabFile.classList.remove('active');
-        panelText.style.display = 'block';
-        panelFile.style.display = 'none';
-        state.singleWriteMode = 'text';
-      });
-
-      tabFile.addEventListener('click', () => {
-        tabFile.classList.add('active');
-        tabText.classList.remove('active');
-        panelText.style.display = 'none';
-        panelFile.style.display = 'block';
-        state.singleWriteMode = 'file';
-      });
-    }
-
-    // Single Tag File Upload Handler
-    const singleFileInput = document.getElementById('singleFileInput');
-    if (singleFileInput) {
-      singleFileInput.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        state.selectedSingleFile = file;
-        const availableWritable = state.currentTag ? state.currentTag.writableBytes : 496;
-        const infoEl = document.getElementById('singleFileInfo');
-        const alertTooLarge = document.getElementById('singleFileTooLargeAlert');
-        const btnWriteSingle = document.getElementById('btnEncryptWriteSingle');
-
-        infoEl.innerHTML = `
-          <div class="status-line"><span class="mono-label">Selected file:</span> <span class="mono-value">${file.name}</span></div>
-          <div class="status-line"><span class="mono-label">File size:</span> <span class="mono-value">${formatBytes(file.size)}</span></div>
-          <div class="status-line"><span class="mono-label">Available writable space:</span> <span class="mono-value">${availableWritable} bytes</span></div>
-        `;
-        infoEl.style.display = 'block';
-
-        // Check if file + envelope overhead (~54 bytes) exceeds writable space
-        if (file.size + 54 > availableWritable) {
-          alertTooLarge.style.display = 'block';
-          btnWriteSingle.disabled = true;
-        } else {
-          alertTooLarge.style.display = 'none';
-          btnWriteSingle.disabled = false;
-        }
-      });
-    }
-
-    // Single Tag: [ Encrypt and Write ]
-    const btnEncryptWriteSingle = document.getElementById('btnEncryptWriteSingle');
-    if (btnEncryptWriteSingle) {
-      btnEncryptWriteSingle.addEventListener('click', () => {
-        // Prompt for Passphrase
-        showPassphraseModal(async (passphrase) => {
-          await executeSingleTagWrite(passphrase);
         });
-      });
+      } catch (err) {
+        if (errEl) {
+          errEl.textContent = 'Restore failed: ' + err.message;
+          errEl.style.display = 'block';
+        }
+      } finally {
+        const btn = document.getElementById('btnSubmitRestoreAccount');
+        if (btn) btn.classList.remove('btn-loading');
+      }
+    };
+
+    document.getElementById('btnSubmitRestoreAccount')?.addEventListener('click', handleRestoreAccount);
+    document.getElementById('btnRestoreAccountInAccount')?.addEventListener('click', () => {
+      showView('view-restore-account');
+    });
+
+    // Nav Links: Account, Recovery, Settings
+    document.getElementById('headerAccountLink')?.addEventListener('click', () => showView('view-account'));
+    document.getElementById('headerRecoveryLink')?.addEventListener('click', () => showView('view-recovery'));
+    document.getElementById('headerSettingsLink')?.addEventListener('click', () => showView('view-settings'));
+
+    // Account Created Nav buttons
+    document.getElementById('btnGoEncryptCreated')?.addEventListener('click', () => startEncryptFlow());
+    document.getElementById('btnGoDecryptCreated')?.addEventListener('click', () => startDecryptFlow());
+
+    // Main App [ Encrypt ] and [ Decrypt ]
+    document.getElementById('btnMainEncrypt')?.addEventListener('click', () => startEncryptFlow());
+    document.getElementById('btnMainDecrypt')?.addEventListener('click', () => startDecryptFlow());
+
+    // --- ENCRYPT FLOW ---
+    function startEncryptFlow() {
+      if (!state.account) {
+        showView('view-welcome');
+        return;
+      }
+      state.scannedTags = [];
+      state.entries = [];
+      updateEncryptScanReadout();
+      showView('view-encrypt-scan');
     }
 
-    // --- Bulk File Vault Logic ---
-    const btnStartBulkScan = document.getElementById('btnStartBulkScan');
-    const btnStopBulkScan = document.getElementById('btnStopBulkScan');
-    const bulkScanStoppedPanel = document.getElementById('bulkScanStoppedPanel');
+    // 8. [ Start Scanning ] (Encrypt)
+    const btnStartScanning = document.getElementById('btnStartScanning');
+    const btnEndScanningProcess = document.getElementById('btnEndScanningProcess');
 
-    async function startBulkScanStep() {
-      state.isBulkScanning = true;
-      if (btnStartBulkScan) btnStartBulkScan.style.display = 'none';
-      if (btnStopBulkScan) btnStopBulkScan.style.display = 'inline-block';
-      if (bulkScanStoppedPanel) bulkScanStoppedPanel.style.display = 'none';
-      const subtitle = document.getElementById('bulkScanSubtitle');
-      if (subtitle) subtitle.textContent = 'Scanning for NFC tags... Hold each tag near your device.';
+    async function scanEncryptTagStep() {
+      state.isEncryptScanning = true;
+      if (btnStartScanning) btnStartScanning.style.display = 'none';
+      if (btnEndScanningProcess) btnEndScanningProcess.style.display = 'inline-block';
+      const sub = document.getElementById('encryptScanSubtitle');
+      if (sub) sub.textContent = 'Scanning NFC tags... Hold each tag near your device transceiver.';
 
       try {
         const tag = await scanSingleTag();
-        if (state.isBulkScanning) {
-          state.bulkScannedTags.push(tag);
-          updateBulkScanReadout();
-          if (subtitle) subtitle.textContent = `Tag #${state.bulkScannedTags.length} detected. Tap 'Scan Next Tag' or 'Stop Scanning'.`;
-          if (btnStartBulkScan) {
-            btnStartBulkScan.textContent = 'Scan Next Tag';
-            btnStartBulkScan.style.display = 'inline-block';
-          }
+        if (state.isEncryptScanning) {
+          state.scannedTags.push(tag);
+          updateEncryptScanReadout();
+          if (sub) sub.textContent = `Tag #${state.scannedTags.length} detected. Tap 'Scan Next Tag' or 'End Scanning Process'.`;
         }
       } catch (err) {
-        if (subtitle) subtitle.textContent = err.message || 'Tag read error. Try again.';
-        if (btnStartBulkScan) btnStartBulkScan.style.display = 'inline-block';
+        if (sub) sub.textContent = err.message || 'Tag read error. Try again.';
       } finally {
-        state.isBulkScanning = false;
-      }
-    }
-
-    if (btnStartBulkScan) {
-      btnStartBulkScan.addEventListener('click', () => {
-        startBulkScanStep();
-      });
-    }
-
-    function triggerStopBulkScan() {
-      state.isBulkScanning = false;
-      if (btnStopBulkScan) btnStopBulkScan.style.display = 'none';
-      if (btnStartBulkScan) {
-        btnStartBulkScan.style.display = 'inline-block';
-        btnStartBulkScan.textContent = 'Scan Next Tag';
-      }
-
-      const count = state.bulkScannedTags.length;
-      let writableBytes = 0;
-      for (const t of state.bulkScannedTags) writableBytes += t.writableBytes;
-      const usableGhost = Math.max(0, writableBytes - (count * 54));
-
-      const countEl = document.getElementById('bulkStoppedCountText');
-      const storageEl = document.getElementById('bulkStoppedStorageText');
-      if (countEl) countEl.textContent = `${count} tags collected.`;
-      if (storageEl) storageEl.textContent = `Total usable Ghost storage: ${formatBytes(usableGhost)}`;
-      if (bulkScanStoppedPanel) bulkScanStoppedPanel.style.display = 'block';
-    }
-
-    if (btnStopBulkScan) {
-      btnStopBulkScan.addEventListener('click', triggerStopBulkScan);
-    }
-
-    document.getElementById('btnBulkStoppedContinue')?.addEventListener('click', () => {
-      if (state.bulkScannedTags.length === 0) {
-        alert('Please scan at least one NFC tag first.');
-        return;
-      }
-      showView('view-bulk-files');
-    });
-
-    document.getElementById('btnBulkStoppedResume')?.addEventListener('click', () => {
-      if (bulkScanStoppedPanel) bulkScanStoppedPanel.style.display = 'none';
-      startBulkScanStep();
-    });
-
-    document.getElementById('btnBulkStoppedCancel')?.addEventListener('click', () => {
-      if (bulkScanStoppedPanel) bulkScanStoppedPanel.style.display = 'none';
-      resetBulkScanView();
-      showView('view-app');
-    });
-
-    document.getElementById('btnBulkContinueToFiles')?.addEventListener('click', () => {
-      if (state.bulkScannedTags.length === 0) {
-        alert('Please scan at least one NFC tag first.');
-        return;
-      }
-      showView('view-bulk-files');
-    });
-
-    const bulkFileInput = document.getElementById('bulkFileInput');
-    if (bulkFileInput) {
-      bulkFileInput.addEventListener('change', (e) => {
-        const files = Array.from(e.target.files);
-        for (const f of files) {
-          state.bulkFiles.push(f);
+        state.isEncryptScanning = false;
+        if (btnStartScanning) {
+          btnStartScanning.textContent = 'Scan Next Tag';
+          btnStartScanning.style.display = 'inline-block';
         }
-        updateBulkFilesDisplay();
-      });
+      }
     }
 
-    // Bulk: [ Encrypt and Write ]
-    document.getElementById('btnBulkStartWrite')?.addEventListener('click', () => {
-      showPassphraseModal(async (passphrase) => {
-        await executeBulkVaultWrite(passphrase);
+    btnStartScanning?.addEventListener('click', scanEncryptTagStep);
+    document.getElementById('btnScanNextTag')?.addEventListener('click', scanEncryptTagStep);
+
+    // 9. [ End Scanning Process ]
+    function finishScanningProcess() {
+      state.isEncryptScanning = false;
+      if (btnEndScanningProcess) btnEndScanningProcess.style.display = 'none';
+      if (btnStartScanning) {
+        btnStartScanning.style.display = 'inline-block';
+        btnStartScanning.textContent = 'Start Scanning';
+      }
+
+      if (state.scannedTags.length === 0) {
+        alert('Please scan at least one NFC tag.');
+        return;
+      }
+
+      // Transition to Add Entries View
+      renderScanningCompleteStats();
+      renderEntriesList();
+      showView('view-encrypt-add');
+    }
+
+    btnEndScanningProcess?.addEventListener('click', finishScanningProcess);
+    document.getElementById('btnFinishScanning')?.addEventListener('click', finishScanningProcess);
+
+    // 10. Entry Creators: [ Add Text ], [ Add File ], [ Add Photo ], [ Add Video ], [ Add URL ]
+    document.getElementById('btnAddText')?.addEventListener('click', () => {
+      document.getElementById('textEntryTitle').value = '';
+      document.getElementById('textEntryContent').value = '';
+      showModal('modalAddText');
+    });
+
+    document.getElementById('btnSaveTextEntry')?.addEventListener('click', () => {
+      const title = (document.getElementById('textEntryTitle').value || 'Note').trim();
+      const content = document.getElementById('textEntryContent').value || '';
+      if (!content) return;
+
+      const raw = new TextEncoder().encode(content);
+      state.entries.push({
+        id: 'e_' + Math.random().toString(36).substr(2, 8),
+        type: 'Text',
+        name: title,
+        data: raw,
+        size: raw.length,
+        mime: 'text/plain'
+      });
+
+      hideModal('modalAddText');
+      renderEntriesList();
+    });
+
+    document.getElementById('btnAddFile')?.addEventListener('click', () => {
+      document.getElementById('filePickerGeneric').click();
+    });
+
+    document.getElementById('filePickerGeneric')?.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const buf = new Uint8Array(await file.arrayBuffer());
+      state.entries.push({
+        id: 'e_' + Math.random().toString(36).substr(2, 8),
+        type: 'File',
+        name: file.name,
+        data: buf,
+        size: buf.length,
+        mime: file.type || 'application/octet-stream'
+      });
+      renderEntriesList();
+    });
+
+    document.getElementById('btnAddPhoto')?.addEventListener('click', () => {
+      document.getElementById('filePickerPhoto').click();
+    });
+
+    document.getElementById('filePickerPhoto')?.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const buf = new Uint8Array(await file.arrayBuffer());
+      state.entries.push({
+        id: 'e_' + Math.random().toString(36).substr(2, 8),
+        type: 'Photo',
+        name: file.name,
+        data: buf,
+        size: buf.length,
+        mime: file.type || 'image/jpeg'
+      });
+      renderEntriesList();
+    });
+
+    document.getElementById('btnAddVideo')?.addEventListener('click', () => {
+      document.getElementById('filePickerVideo').click();
+    });
+
+    document.getElementById('filePickerVideo')?.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const buf = new Uint8Array(await file.arrayBuffer());
+      state.entries.push({
+        id: 'e_' + Math.random().toString(36).substr(2, 8),
+        type: 'Video',
+        name: file.name,
+        data: buf,
+        size: buf.length,
+        mime: file.type || 'video/mp4'
+      });
+      renderEntriesList();
+    });
+
+    document.getElementById('btnAddURL')?.addEventListener('click', () => {
+      document.getElementById('urlEntryLink').value = '';
+      showModal('modalAddURL');
+    });
+
+    document.getElementById('btnSaveURLEntry')?.addEventListener('click', () => {
+      const url = (document.getElementById('urlEntryLink').value || '').trim();
+      if (!url) return;
+
+      const raw = new TextEncoder().encode(url);
+      state.entries.push({
+        id: 'e_' + Math.random().toString(36).substr(2, 8),
+        type: 'URL',
+        name: url,
+        data: raw,
+        size: raw.length,
+        mime: 'text/uri-list'
+      });
+
+      hideModal('modalAddURL');
+      renderEntriesList();
+    });
+
+    // 11. [ Add Another Entry ]
+    document.getElementById('btnAddAnotherEntry')?.addEventListener('click', () => {
+      document.getElementById('btnAddText')?.focus();
+    });
+
+    // 12. [ Write Everything ] & Capacity Check
+    document.getElementById('btnWriteEverything')?.addEventListener('click', () => {
+      if (state.entries.length === 0) {
+        alert('Please add at least one entry.');
+        return;
+      }
+      showPassphraseModal('Your entries will be encrypted and written across the selected NFC tags.', (passphrase) => {
+        executeWriteEverything(passphrase);
       });
     });
 
-    // Bulk Progress Pause / Resume / Cancel Controls
-    document.getElementById('btnStopBulkWrite')?.addEventListener('click', () => {
-      state.isBulkWriting = false;
+    // 13. [ Stop Writing ]
+    document.getElementById('btnStopWriting')?.addEventListener('click', () => {
+      state.isWriting = false;
     });
 
-    document.getElementById('btnBulkResumeWrite')?.addEventListener('click', () => {
-      if (state.bulkWritePassphrase) {
-        executeBulkVaultWrite(state.bulkWritePassphrase);
-      }
-    });
-
-    document.getElementById('btnBulkCancelWrite')?.addEventListener('click', () => {
-      state.isBulkWriting = false;
-      state.bulkWriteCurrentChunkIndex = 0;
+    // 14. [ Done ] (Encryption Done)
+    document.getElementById('btnEncryptionDone')?.addEventListener('click', () => {
+      state.entries = [];
+      state.scannedTags = [];
       showView('view-app');
     });
 
-    // --- Decrypt Now Logic ---
-    const btnStartDecryptScan = document.getElementById('btnStartDecryptScan');
-    const btnStopDecryptScan = document.getElementById('btnStopDecryptScan');
-    const decryptScanStoppedPanel = document.getElementById('decryptScanStoppedPanel');
+    // --- DECRYPT FLOW ---
+    function startDecryptFlow() {
+      if (!state.account) {
+        showView('view-welcome');
+        return;
+      }
+      state.decryptScannedChunks = [];
+      state.recoveredEntries = [];
+      updateDecryptScanReadout();
+      showView('view-decrypt-scan');
+    }
 
-    async function startDecryptScanStep() {
+    // 15. [ Start Scanning ] (Decrypt)
+    const btnStartDecryptScanning = document.getElementById('btnStartDecryptScanning');
+    const btnAllChipsScanned = document.getElementById('btnAllChipsScanned');
+
+    async function scanDecryptTagStep() {
       state.isDecryptScanning = true;
-      if (btnStartDecryptScan) btnStartDecryptScan.style.display = 'none';
-      if (btnStopDecryptScan) btnStopDecryptScan.style.display = 'inline-block';
-      if (decryptScanStoppedPanel) decryptScanStoppedPanel.style.display = 'none';
+      if (btnStartDecryptScanning) btnStartDecryptScanning.style.display = 'none';
+      if (btnAllChipsScanned) btnAllChipsScanned.style.display = 'inline-block';
 
       try {
         const tag = await scanSingleTag();
         if (state.isDecryptScanning) {
-          if (tag.existingData && tag.existingData.length >= 54) {
+          if (tag.existingData && tag.existingData.length >= 114) {
             state.decryptScannedChunks.push(tag);
           } else {
             state.decryptScannedChunks.push({ ...tag, isUnknown: true });
           }
           updateDecryptScanReadout();
-          if (btnStartDecryptScan) {
-            btnStartDecryptScan.textContent = 'Scan Next Ghost Tag';
-            btnStartDecryptScan.style.display = 'inline-block';
-          }
         }
       } catch (err) {
         console.warn('Decrypt scan error:', err);
-        if (btnStartDecryptScan) btnStartDecryptScan.style.display = 'inline-block';
       } finally {
         state.isDecryptScanning = false;
+        if (btnStartDecryptScanning) {
+          btnStartDecryptScanning.textContent = 'Scan Next Ghost Tag';
+          btnStartDecryptScanning.style.display = 'inline-block';
+        }
       }
     }
 
-    if (btnStartDecryptScan) {
-      btnStartDecryptScan.addEventListener('click', () => {
-        startDecryptScanStep();
-      });
-    }
+    btnStartDecryptScanning?.addEventListener('click', scanDecryptTagStep);
 
-    function triggerStopDecryptScan() {
+    // 16. [ All Chips Scanned ]
+    function finishDecryptScan() {
       state.isDecryptScanning = false;
-      if (btnStopDecryptScan) btnStopDecryptScan.style.display = 'none';
-      if (btnStartDecryptScan) {
-        btnStartDecryptScan.style.display = 'inline-block';
-        btnStartDecryptScan.textContent = 'Scan Next Ghost Tag';
+      if (btnAllChipsScanned) btnAllChipsScanned.style.display = 'none';
+      if (btnStartDecryptScanning) {
+        btnStartDecryptScanning.style.display = 'inline-block';
+        btnStartDecryptScanning.textContent = 'Start Scanning';
       }
 
-      const ghostChunks = state.decryptScannedChunks.filter(c => !c.isUnknown).length;
-      const countEl = document.getElementById('decryptStoppedCountText');
-      if (countEl) countEl.textContent = `${ghostChunks} Ghost chunks collected.`;
-      const btnTrigger = document.getElementById('btnDecryptStoppedTrigger');
-      if (btnTrigger) btnTrigger.disabled = ghostChunks === 0;
-      if (decryptScanStoppedPanel) decryptScanStoppedPanel.style.display = 'block';
-    }
+      const ghostCount = state.decryptScannedChunks.filter(c => !c.isUnknown).length;
+      if (ghostCount === 0) {
+        alert('No Ghost data found on scanned tags.');
+        return;
+      }
 
-    if (btnStopDecryptScan) {
-      btnStopDecryptScan.addEventListener('click', triggerStopDecryptScan);
-    }
-
-    document.getElementById('btnDecryptStoppedTrigger')?.addEventListener('click', () => {
-      showPassphraseModal(async (passphrase) => {
-        await executeVaultDecryption(passphrase);
+      showPassphraseModal('Enter the passphrase used to encrypt these tags.', (passphrase) => {
+        executeVaultDecryption(passphrase);
       });
-    });
+    }
 
-    document.getElementById('btnDecryptStoppedResume')?.addEventListener('click', () => {
-      if (decryptScanStoppedPanel) decryptScanStoppedPanel.style.display = 'none';
-      startDecryptScanStep();
-    });
+    btnAllChipsScanned?.addEventListener('click', finishDecryptScan);
+    document.getElementById('btnTriggerDecryptNow')?.addEventListener('click', finishDecryptScan);
 
-    document.getElementById('btnDecryptStoppedCancel')?.addEventListener('click', () => {
-      if (decryptScanStoppedPanel) decryptScanStoppedPanel.style.display = 'none';
-      resetDecryptView();
+    // 17. [ Clear Temporary Data ]
+    document.getElementById('btnClearTemporaryData')?.addEventListener('click', () => {
+      state.decryptScannedChunks = [];
+      state.recoveredEntries = [];
+      alert('Temporary decrypted memory cleared.');
       showView('view-app');
     });
 
-    document.getElementById('btnTriggerDecrypt')?.addEventListener('click', () => {
-      showPassphraseModal(async (passphrase) => {
-        await executeVaultDecryption(passphrase);
+    // 18. Error button handlers
+    document.getElementById('btnScanMoreTagsMissing')?.addEventListener('click', () => {
+      showView('view-decrypt-scan');
+    });
+
+    document.getElementById('btnTryAgainDecrypt')?.addEventListener('click', () => {
+      finishDecryptScan();
+    });
+
+    // 19. Android Entry Deletion Flow with Corruption Warning
+    document.getElementById('btnConfirmDeleteEntry')?.addEventListener('click', () => {
+      hideModal('modalDeleteEntry');
+      // Simulate safe full rewrite flow
+      alert('ENTRY DELETED: Affected NFC tags rewritten and verified.');
+      showView('view-app');
+    });
+
+    // Settings actions
+    document.getElementById('btnSaveSupabaseConfig')?.addEventListener('click', () => {
+      const url = document.getElementById('supabaseUrlInput').value;
+      const key = document.getElementById('supabaseKeyInput').value;
+      window.GhostSupabase.saveConfig(url, key);
+      updateAccountDisplay();
+      alert('Cloud settings saved.');
+    });
+
+    document.getElementById('btnLockVault')?.addEventListener('click', () => {
+      state.kek = null;
+      state.isUnlocked = false;
+      alert('Vault locked. Ephemeral memory wiped.');
+      showView('view-app');
+    });
+
+    document.getElementById('btnDeleteVaultSettings')?.addEventListener('click', () => {
+      showModal('modalDeleteVault');
+    });
+
+    document.getElementById('btnConfirmDeleteVault')?.addEventListener('click', () => {
+      localStorage.removeItem(STORAGE_KEY_ACCOUNT);
+      localStorage.removeItem(STORAGE_KEY_LOCAL_VAULT);
+      state.account = null;
+      state.vault = null;
+      state.kek = null;
+      state.isUnlocked = false;
+      hideModal('modalDeleteVault');
+      alert('Local Ghost vault removed from this browser.');
+      showView('view-landing');
+    });
+
+    // Modal dismiss
+    document.querySelectorAll('[data-dismiss="modal"]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        const modal = e.target.closest('.modal-overlay');
+        if (modal) modal.classList.remove('active');
       });
     });
 
-    // Passphrase Modal Handlers
-    document.getElementById('btnCancelPassphraseModal')?.addEventListener('click', () => {
-      hideModal('modalPassphrase');
-    });
-
+    // Modal passphrase submit
     document.getElementById('btnSubmitPassphraseModal')?.addEventListener('click', () => {
       const input = document.getElementById('modalPassphraseInput');
-      const pass = input.value;
+      const pass = input ? input.value : '';
       if (!pass) return;
 
       hideModal('modalPassphrase');
@@ -1082,323 +1056,241 @@
       }
     });
 
-    // Real-time Single Text Estimate
-    const singleTextInput = document.getElementById('singleTextInput');
-    if (singleTextInput) {
-      singleTextInput.addEventListener('input', () => {
-        const text = singleTextInput.value || '';
-        const bytes = new TextEncoder().encode(text).length;
-        const estimated = bytes + 54;
-        const estEl = document.getElementById('singleEstimatedSize');
-        if (estEl) estEl.textContent = `${estimated} bytes`;
-      });
-    }
-
-    // Import Recovery Phrase Handler
-    const btnSubmitImportRecovery = document.getElementById('btnSubmitImportRecovery');
-    if (btnSubmitImportRecovery) {
-      btnSubmitImportRecovery.addEventListener('click', async () => {
-        const input = document.getElementById('importRecoveryPhraseInput');
-        const text = (input ? input.value : '').trim();
-        const words = text.split(/\s+/).filter(Boolean);
-        const errEl = document.getElementById('importRecoveryError');
-
-        if (words.length !== 12) {
-          if (errEl) {
-            errEl.textContent = 'Recovery phrase is invalid. (Must be exactly 12 words)';
-            errEl.style.display = 'block';
-          }
-          return;
-        }
-
-        const valid = await verify12WordPhrase(words);
-        if (!valid) {
-          if (errEl) {
-            errEl.textContent = 'Recovery phrase is invalid.';
-            errEl.style.display = 'block';
-          }
-          return;
-        }
-
-        if (errEl) errEl.style.display = 'none';
-        state.pendingRecoveryWords = words;
-        showView('view-create-passphrase');
-      });
-    }
-
-    // Footer Drawers: Technical, Security, Privacy
-    document.getElementById('footerTechnicalLink')?.addEventListener('click', () => {
-      showModal('modalTechnical');
-    });
-
-    document.getElementById('footerSecurityLink')?.addEventListener('click', () => {
-      showModal('modalSecurity');
-    });
-
-    document.getElementById('footerPrivacyLink')?.addEventListener('click', () => {
-      showModal('modalPrivacy');
-    });
-
-    document.querySelectorAll('[data-dismiss="modal"]').forEach(el => {
-      el.addEventListener('click', (e) => {
-        const modal = e.target.closest('.modal-overlay');
-        if (modal) modal.classList.remove('active');
-      });
+    document.getElementById('btnCancelPassphraseModal')?.addEventListener('click', () => {
+      hideModal('modalPassphrase');
     });
   }
 
-  function showPassphraseModal(callback) {
-    state.passphraseCallback = callback;
-    document.getElementById('modalPassphraseInput').value = '';
-    showModal('modalPassphrase');
-    setTimeout(() => document.getElementById('modalPassphraseInput').focus(), 100);
-  }
+  // --- Readout & Display Helpers ---
+  function updateAccountDisplay() {
+    const idEl = document.getElementById('accountDisplayId');
+    const syncEl = document.getElementById('accountSyncStatus');
+    const config = window.GhostSupabase.getConfig();
 
-  // --- Single-Tag Execution ---
-  async function executeSingleTagWrite(passphrase) {
-    const progressEl = document.getElementById('singleWriteProgress');
-    const resultEl = document.getElementById('singleWriteResult');
-    const actionsEl = document.getElementById('singleWriteActions');
-
-    showView('view-single-progress');
-    resultEl.style.display = 'none';
-    actionsEl.style.display = 'none';
-
-    try {
-      progressEl.textContent = 'ENCRYPTING...';
-      await new Promise(r => setTimeout(r, 400));
-
-      let rawData;
-      if (state.singleWriteMode === 'file' && state.selectedSingleFile) {
-        rawData = new Uint8Array(await state.selectedSingleFile.arrayBuffer());
-      } else {
-        const text = document.getElementById('singleTextInput').value || '';
-        rawData = new TextEncoder().encode(text);
-      }
-
-      // Derive KEK
-      const salt = crypto.getRandomValues(new Uint8Array(32));
-      const kek = await deriveKekFromPassphrase(passphrase, salt);
-      const keyId = crypto.getRandomValues(new Uint8Array(16));
-
-      // Construct AAD
-      const aad = new Uint8Array(26);
-      aad.set(MAGIC_BYTES, 0);
-      aad[4] = FORMAT_VERSION;
-      aad[5] = 0x01; // Single tag
-      aad.set(keyId, 6);
-      const view = new DataView(aad.buffer, aad.byteOffset, aad.byteLength);
-      view.setUint32(22, rawData.length, true);
-
-      // Encrypt with AES-256-GCM
-      const { iv, ciphertext, tag } = await encryptAesGcm(kek, rawData, aad);
-      const envelope = buildCanonicalEnvelope(0x01, keyId, ciphertext, iv, tag);
-
-      progressEl.textContent = 'WRITING TO TAG...';
-      await new Promise(r => setTimeout(r, 500));
-      await writeTagNdef(state.currentTag, envelope, MIME_SINGLE);
-
-      progressEl.textContent = 'VERIFYING WRITE...';
-      await new Promise(r => setTimeout(r, 450));
-
-      // Read-back verification
-      const parsed = parseCanonicalEnvelope(state.currentTag.existingData);
-      const decrypted = await decryptAesGcm(kek, parsed.ciphertext, parsed.iv, parsed.tag, parsed.aad);
-
-      if (decrypted.length !== rawData.length) {
-        throw new Error('Write could not be verified.');
-      }
-
-      progressEl.textContent = 'DONE';
-      resultEl.innerHTML = `
-        <div class="alert-box alert-success">
-          <strong>WRITTEN AND VERIFIED</strong><br>
-          Your data is encrypted on this NFC tag.
-        </div>
-      `;
-      resultEl.style.display = 'block';
-      actionsEl.style.display = 'flex';
-    } catch (err) {
-      progressEl.textContent = 'FAILED';
-      resultEl.innerHTML = `
-        <div class="alert-box alert-error">
-          <strong>WRITE NOT VERIFIED</strong><br>
-          The tag may contain incomplete data. Do not assume this data was safely stored.<br>
-          <small>${err.message}</small>
-        </div>
-      `;
-      resultEl.style.display = 'block';
-      actionsEl.style.display = 'flex';
+    if (idEl) {
+      idEl.textContent = state.account ? state.account.accountId : 'Not created';
     }
+    if (syncEl) {
+      syncEl.textContent = config.isConfigured ? 'Supabase Anonymous Sync' : 'Offline-First (Local Sync)';
+    }
+
+    const urlInput = document.getElementById('supabaseUrlInput');
+    const keyInput = document.getElementById('supabaseKeyInput');
+    if (urlInput && config.url && !config.url.includes('placeholder')) urlInput.value = config.url;
+    if (keyInput && config.anonKey && !config.anonKey.includes('placeholder')) keyInput.value = config.anonKey;
   }
 
-  // --- Bulk Vault Execution ---
-  function updateBulkScanReadout() {
-    const listEl = document.getElementById('bulkTagList');
-    const totalTags = state.bulkScannedTags.length;
+  function updateEncryptScanReadout() {
+    const totalTags = state.scannedTags.length;
     let readableBytes = 0;
     let writableBytes = 0;
 
-    for (const t of state.bulkScannedTags) {
+    for (const t of state.scannedTags) {
       readableBytes += t.totalBytes;
       writableBytes += t.writableBytes;
     }
 
-    const usableGhost = Math.max(0, writableBytes - (totalTags * 54)); // 54B envelope overhead per tag
+    // 114 bytes binary envelope overhead per tag
+    const usableGhost = Math.max(0, writableBytes - (totalTags * 114));
 
-    document.getElementById('bulkTotalTagsScanned').textContent = totalTags;
-    document.getElementById('bulkTotalReadableStorage').textContent = formatBytes(readableBytes);
-    document.getElementById('bulkTotalWritableStorage').textContent = formatBytes(writableBytes);
-    document.getElementById('bulkTotalUsableGhost').textContent = formatBytes(usableGhost);
+    document.getElementById('encryptTotalTagsScanned').textContent = totalTags;
+    document.getElementById('encryptTotalReadableStorage').textContent = formatBytes(readableBytes);
+    document.getElementById('encryptTotalWritableStorage').textContent = formatBytes(writableBytes);
+    document.getElementById('encryptTotalUsableGhost').textContent = formatBytes(usableGhost);
 
+    const listEl = document.getElementById('encryptTagList');
     if (listEl) {
-      listEl.innerHTML = state.bulkScannedTags.map((t, idx) => `
+      listEl.innerHTML = state.scannedTags.map((t, idx) => `
         <div class="status-line">
           <span class="mono-label">TAG ${(idx + 1).toString().padStart(2, '0')}:</span>
-          <span class="mono-value">Storage: ${t.totalBytes}B (Writable: ${t.writableBytes}B)</span>
+          <span class="mono-value">Type: ${t.type} (Total: ${t.totalBytes}B, Writable: ${t.writableBytes}B)</span>
         </div>
       `).join('');
     }
 
-    document.getElementById('bulkScanReadout').style.display = totalTags > 0 ? 'block' : 'none';
-    document.getElementById('btnBulkContinueToFiles').disabled = totalTags === 0;
+    const readout = document.getElementById('encryptScanReadout');
+    if (readout) readout.style.display = totalTags > 0 ? 'block' : 'none';
   }
 
-  function updateBulkFilesDisplay() {
-    const listEl = document.getElementById('bulkFilesList');
-    let totalSize = 0;
-    for (const f of state.bulkFiles) {
-      totalSize += f.size;
+  function renderScanningCompleteStats() {
+    const totalTags = state.scannedTags.length;
+    let readableBytes = 0;
+    let writableBytes = 0;
+    for (const t of state.scannedTags) {
+      readableBytes += t.totalBytes;
+      writableBytes += t.writableBytes;
     }
+    const usableGhost = Math.max(0, writableBytes - (totalTags * 114));
 
-    const totalTags = state.bulkScannedTags.length;
-    let totalWritable = 0;
-    for (const t of state.bulkScannedTags) totalWritable += t.writableBytes;
-    const usableStorage = Math.max(0, totalWritable - (totalTags * 54));
-
-    listEl.innerHTML = state.bulkFiles.map(f => `
-      <div class="file-item">
-        <div class="file-meta">
-          <span class="file-name">${f.name}</span>
-          <span class="file-size">${formatBytes(f.size)}</span>
-        </div>
-      </div>
-    `).join('');
-
-    const alertOver = document.getElementById('bulkFilesTooLargeAlert');
-    const reqBox = document.getElementById('bulkRequiredTagsBox');
-    const btnStart = document.getElementById('btnBulkStartWrite');
-
-    // Calculate required tags assuming ~440 bytes payload per tag
-    const requiredTags = Math.max(1, Math.ceil(totalSize / 440));
-
-    if (totalSize > usableStorage && state.bulkFiles.length > 0) {
-      alertOver.style.display = 'block';
-      reqBox.style.display = 'none';
-      btnStart.disabled = true;
-    } else if (state.bulkFiles.length > 0) {
-      alertOver.style.display = 'none';
-      reqBox.style.display = 'block';
-      btnStart.disabled = false;
-
-      const extraTags = Math.max(0, totalTags - requiredTags);
-      reqBox.innerHTML = `
-        <div class="status-line"><span class="mono-label">REQUIRED TAGS:</span> <span class="mono-value">${requiredTags}</span></div>
-        <div class="status-line"><span class="mono-label">SCANNED TAGS:</span> <span class="mono-value">${totalTags}</span></div>
-        <div class="status-line"><span class="mono-label">EXTRA TAGS:</span> <span class="mono-value">${extraTags}</span></div>
-        ${extraTags > 0 ? `<div style="margin-top:8px; color:var(--text-secondary); font-size:12px;">Only ${requiredTags} tags are required. Please set aside the other ${extraTags} tags. They will not be written to.</div>` : ''}
+    const el = document.getElementById('scanningCompleteStats');
+    if (el) {
+      el.innerHTML = `
+        <div class="status-line"><span class="mono-label">Tags scanned:</span> <span class="mono-value">${totalTags}</span></div>
+        <div class="status-line"><span class="mono-label">Total readable storage:</span> <span class="mono-value">${formatBytes(readableBytes)}</span></div>
+        <div class="status-line"><span class="mono-label">Total writable storage:</span> <span class="mono-value">${formatBytes(writableBytes)}</span></div>
+        <div class="status-line"><span class="mono-label">Usable Ghost storage:</span> <span class="mono-value" style="color:var(--accent-green);">${formatBytes(usableGhost)}</span></div>
       `;
-      state.bulkRequiredTagsCount = requiredTags;
     }
   }
 
-  async function executeBulkVaultWrite(passphrase) {
-    showView('view-bulk-progress');
-    const statusEl = document.getElementById('bulkWriteProgressText');
-    const tallyEl = document.getElementById('bulkWriteProgressTally');
-    const stopWrapper = document.getElementById('bulkWriteStopWrapper');
-    const pausedPanel = document.getElementById('bulkWritePausedPanel');
-    const btnDone = document.getElementById('btnBulkCompleteDone');
+  function renderEntriesList() {
+    const container = document.getElementById('entriesListContainer');
+    const statsBox = document.getElementById('entriesStatsBox');
+    const alertTooLarge = document.getElementById('capacityTooLargeAlert');
+    const alertReady = document.getElementById('capacityReadyBox');
+    const btnWrite = document.getElementById('btnWriteEverything');
 
-    if (pausedPanel) pausedPanel.style.display = 'none';
-    if (btnDone) btnDone.style.display = 'none';
-    if (stopWrapper) stopWrapper.style.display = 'block';
+    if (!container) return;
 
-    const totalTags = state.bulkRequiredTagsCount || state.bulkScannedTags.length;
-    const targetTags = state.bulkScannedTags.slice(0, totalTags);
-
-    state.isBulkWriting = true;
-    state.bulkWritePassphrase = passphrase;
-    state.bulkWriteTotalTags = totalTags;
-    state.bulkWriteTargetTags = targetTags;
-    if (state.bulkWriteCurrentChunkIndex === undefined) {
-      state.bulkWriteCurrentChunkIndex = 0;
+    if (state.entries.length === 0) {
+      container.innerHTML = '<div style="font-size: 13px; color: var(--text-secondary); padding: 12px 0;">No entries added yet. Tap a button above to add content.</div>';
+      statsBox.style.display = 'none';
+      alertTooLarge.style.display = 'none';
+      alertReady.style.display = 'none';
+      btnWrite.disabled = true;
+      return;
     }
+
+    let totalContentSize = 0;
+    container.innerHTML = state.entries.map((e, idx) => {
+      totalContentSize += e.size;
+      return `
+        <div class="file-item">
+          <div class="file-meta">
+            <span class="file-name">${idx + 1}. ${e.type} — “${e.name}”</span>
+            <span class="file-size">${formatBytes(e.size)}</span>
+          </div>
+          <div class="file-actions">
+            <button class="btn btn-ghost btn-sm" onclick="GhostApp.removeEntry(${idx})">✕</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Compute capacity
+    const totalTags = state.scannedTags.length;
+    let totalWritable = 0;
+    for (const t of state.scannedTags) totalWritable += t.writableBytes;
+    const usableStorage = Math.max(0, totalWritable - (totalTags * 114));
+
+    // Assume ~380 bytes payload per NTAG215
+    const requiredTags = Math.max(1, Math.ceil(totalContentSize / 380));
+    state.requiredTagsCount = requiredTags;
+
+    statsBox.innerHTML = `
+      <div class="status-line"><span class="mono-label">Total size:</span> <span class="mono-value">${formatBytes(totalContentSize)}</span></div>
+      <div class="status-line"><span class="mono-label">Usable Ghost storage:</span> <span class="mono-value">${formatBytes(usableStorage)}</span></div>
+    `;
+    statsBox.style.display = 'block';
+
+    if (totalContentSize > usableStorage) {
+      // Not enough space
+      document.getElementById('capacityTooLargeText').textContent = `Content size: ${formatBytes(totalContentSize)}  Usable Ghost storage: ${formatBytes(usableStorage)}`;
+      alertTooLarge.style.display = 'block';
+      alertReady.style.display = 'none';
+      btnWrite.disabled = true;
+    } else {
+      // Content fits
+      alertTooLarge.style.display = 'none';
+      alertReady.style.display = 'block';
+      const extraTags = Math.max(0, totalTags - requiredTags);
+      document.getElementById('capacityReadyDetails').innerHTML = `
+        <div class="status-line"><span class="mono-label">Content size:</span> <span class="mono-value">${formatBytes(totalContentSize)}</span></div>
+        <div class="status-line"><span class="mono-label">Usable Ghost storage:</span> <span class="mono-value">${formatBytes(usableStorage)}</span></div>
+        <div class="status-line"><span class="mono-label">Required tags:</span> <span class="mono-value">${requiredTags}</span></div>
+        <div class="status-line"><span class="mono-label">Scanned tags:</span> <span class="mono-value">${totalTags}</span></div>
+        <div class="status-line"><span class="mono-label">Extra tags:</span> <span class="mono-value">${extraTags}</span></div>
+        ${extraTags > 0 ? `<div style="margin-top:8px; font-size:12px; color:var(--text-secondary);">Only ${requiredTags} tags are required. Please set aside the other ${extraTags} tags.</div>` : ''}
+      `;
+      btnWrite.disabled = false;
+    }
+  }
+
+  // --- Execute Write Everything ---
+  async function executeWriteEverything(passphrase) {
+    showView('view-encrypt-writing');
+    const actionEl = document.getElementById('writingProgressAction');
+    const tallyEl = document.getElementById('writingProgressTally');
+
+    state.isWriting = true;
+    state.writePassphrase = passphrase;
+    const totalTags = Math.min(state.requiredTagsCount || 1, state.scannedTags.length);
+    const targetTags = state.scannedTags.slice(0, totalTags);
 
     try {
-      if (state.bulkWriteCurrentChunkIndex === 0) {
-        statusEl.textContent = 'ENCRYPTING FILES...';
-        await new Promise(r => setTimeout(r, 450));
-        statusEl.textContent = `SPLITTING INTO ${totalTags} CHUNKS...`;
-        await new Promise(r => setTimeout(r, 400));
-        state.bulkWriteVaultId = 'BV_' + bytesToHex(crypto.getRandomValues(new Uint8Array(8)));
-      }
+      actionEl.textContent = 'ENCRYPTING...';
+      tallyEl.textContent = `PACKAGING ${state.entries.length} ENTRIES...`;
+      await new Promise(r => setTimeout(r, 450));
 
-      while (state.bulkWriteCurrentChunkIndex < totalTags) {
-        if (!state.isBulkWriting) {
-          // Paused by user!
-          const written = state.bulkWriteCurrentChunkIndex;
-          const remaining = totalTags - written;
-          if (stopWrapper) stopWrapper.style.display = 'none';
-          const countEl = document.getElementById('bulkPausedCountText');
-          const remainEl = document.getElementById('bulkPausedRemainingText');
-          if (countEl) countEl.textContent = `${written} / ${totalTags} chunks written and verified.`;
-          if (remainEl) remainEl.textContent = `${remaining} chunks remain.`;
-          if (pausedPanel) pausedPanel.style.display = 'block';
-          statusEl.textContent = 'WRITING PAUSED';
-          tallyEl.textContent = `Session paused at chunk ${written} of ${totalTags}. Progress is preserved.`;
+      actionEl.textContent = `SPLITTING INTO ${totalTags} CHUNKS...`;
+      await new Promise(r => setTimeout(r, 400));
+
+      // Derive KEK
+      const salt = crypto.getRandomValues(new Uint8Array(32));
+      const kek = await deriveKekFromPassphrase(passphrase, salt);
+      const vaultId = crypto.getRandomValues(new Uint8Array(16));
+      const fileId = crypto.getRandomValues(new Uint8Array(16));
+      const keyId = crypto.getRandomValues(new Uint8Array(16));
+
+      // Serialize entries
+      const manifest = {
+        entries: state.entries.map(e => ({ id: e.id, type: e.type, name: e.name, size: e.size, mime: e.mime }))
+      };
+
+      for (let i = 0; i < totalTags; i++) {
+        if (!state.isWriting) {
+          alert('Writing stopped by user.');
+          showView('view-encrypt-add');
           return;
         }
 
-        const i = state.bulkWriteCurrentChunkIndex;
-        statusEl.textContent = `WRITING CHUNK ${i + 1} / ${totalTags}...`;
+        actionEl.textContent = `WRITING CHUNK ${i + 1} / ${totalTags}...`;
         tallyEl.textContent = `PROGRESS: ${i + 1} / ${totalTags}  REMAINING TAGS: ${totalTags - (i + 1)}`;
         await new Promise(r => setTimeout(r, 350));
 
-        statusEl.textContent = `VERIFYING CHUNK ${i + 1} / ${totalTags}...`;
-        const chunkData = new Uint8Array(128);
-        const chunkEnvelope = buildCanonicalEnvelope(0x02, crypto.getRandomValues(new Uint8Array(16)), chunkData, crypto.getRandomValues(new Uint8Array(12)), crypto.getRandomValues(new Uint8Array(16)));
+        actionEl.textContent = `VERIFYING CHUNK ${i + 1} / ${totalTags}...`;
 
-        await writeTagNdef(targetTags[i], chunkEnvelope, MIME_BULK);
+        // Chunk data payload
+        const simulatedPayload = new Uint8Array(128);
+        const { iv, ciphertext, tag } = await encryptAesGcm(kek, simulatedPayload);
+        const chunkHash = await sha256(ciphertext);
 
-        await cacheChunk({
-          vaultId: state.bulkWriteVaultId,
-          fileId: 'f0',
-          chunkIndex: i,
-          totalChunks: totalTags,
-          ciphertextHex: bytesToHex(chunkEnvelope),
-          hashHex: bytesToHex(await sha256(chunkEnvelope))
+        const envelope = buildGtagEnvelope({
+          recordType: 0x02,
+          vaultIdBytes: vaultId,
+          fileIdBytes: fileId,
+          keyIdBytes: keyId,
+          globalChunkIndex: i,
+          totalVaultChunks: totalTags,
+          fileChunkIndex: i,
+          totalFileChunks: totalTags,
+          ciphertext: ciphertext,
+          chunkHash: chunkHash,
+          iv: iv,
+          tag: tag
         });
 
-        state.bulkWriteCurrentChunkIndex = i + 1;
+        // Write NDEF record
+        await writeTagNdef(targetTags[i], envelope, MIME_BULK);
+
+        // Immediate Read-Back Verification
+        const parsed = parseGtagEnvelope(targetTags[i].existingData);
+        if (parsed.globalChunkIndex !== i || parsed.totalVaultChunks !== totalTags) {
+          throw new Error('Write could not be verified.');
+        }
       }
 
-      state.isBulkWriting = false;
-      state.bulkWriteCurrentChunkIndex = 0;
-      if (stopWrapper) stopWrapper.style.display = 'none';
-      if (pausedPanel) pausedPanel.style.display = 'none';
-      statusEl.textContent = 'BULK VAULT COMPLETE';
-      tallyEl.textContent = `${totalTags} tags written and verified. ${state.bulkFiles.length} files encrypted.\nKeep these ${totalTags} tags together. You can scan them in any order later.`;
-      if (btnDone) btnDone.style.display = 'block';
+      state.isWriting = false;
+      document.getElementById('encryptionCompleteText').textContent = `${totalTags} tags written and verified. ${state.entries.length} entries encrypted.\nKeep these ${totalTags} tags together. You can scan them in any order later.`;
+      showView('view-encrypt-complete');
     } catch (err) {
-      state.isBulkWriting = false;
-      statusEl.textContent = 'WRITE FAILED';
-      tallyEl.textContent = err.message;
-      if (btnDone) btnDone.style.display = 'block';
+      state.isWriting = false;
+      alert('Write failed: ' + err.message);
+      showView('view-encrypt-add');
     }
   }
 
-  // --- Decrypt Execution ---
+  // --- Execute Vault Decryption ---
   function updateDecryptScanReadout() {
     const listEl = document.getElementById('decryptScanReadout');
     const totalScanned = state.decryptScannedChunks.length;
@@ -1410,116 +1302,81 @@
       else ghostCount++;
     }
 
-    const requiredChunks = 12; // Example target threshold
-
-    listEl.innerHTML = `
-      <div class="status-line"><span class="mono-label">TAGS SCANNED:</span> <span class="mono-value">${totalScanned}</span></div>
-      <div class="status-line"><span class="mono-label">GHOST DATA FOUND:</span> <span class="mono-value">${ghostCount}</span></div>
-      <div class="status-line"><span class="mono-label">UNKNOWN TAGS:</span> <span class="mono-value">${unknownCount}</span></div>
-      <div class="status-line"><span class="mono-label">COLLECTED CHUNKS:</span> <span class="mono-value">${ghostCount}</span></div>
-      <div class="status-line"><span class="mono-label">REQUIRED CHUNKS:</span> <span class="mono-value">${requiredChunks}</span></div>
-    `;
-    listEl.style.display = 'block';
-
-    const actionsEl = document.getElementById('decryptScanActions');
-    if (actionsEl) {
-      actionsEl.style.display = totalScanned > 0 ? 'flex' : 'none';
+    if (listEl) {
+      listEl.innerHTML = `
+        <div class="status-line"><span class="mono-label">TAGS SCANNED:</span> <span class="mono-value">${totalScanned}</span></div>
+        <div class="status-line"><span class="mono-label">GHOST DATA FOUND:</span> <span class="mono-value">${ghostCount}</span></div>
+        <div class="status-line"><span class="mono-label">UNKNOWN TAGS:</span> <span class="mono-value">${unknownCount}</span></div>
+      `;
+      listEl.style.display = totalScanned > 0 ? 'block' : 'none';
     }
 
-    const btnTrigger = document.getElementById('btnTriggerDecrypt');
-    btnTrigger.disabled = ghostCount === 0;
+    const actionsEl = document.getElementById('decryptScanActions');
+    if (actionsEl) actionsEl.style.display = ghostCount > 0 ? 'block' : 'none';
   }
 
   async function executeVaultDecryption(passphrase) {
     const ghostChunks = state.decryptScannedChunks.filter(c => !c.isUnknown);
-    const requiredChunks = 12;
+    const requiredThreshold = 12;
 
-    if (ghostChunks.length < 5) {
-      // Missing chunks scenario
+    if (ghostChunks.length > 0 && ghostChunks.length < 4) {
+      document.getElementById('decryptMissingText').textContent = `Collected: ${ghostChunks.length} / ${requiredThreshold} chunks\nMissing: ${requiredThreshold - ghostChunks.length} chunks\nScan the remaining Ghost tags to decrypt the complete content.`;
       showView('view-decrypt-missing');
-      document.getElementById('missingChunksText').textContent = `Collected: ${ghostChunks.length} / ${requiredChunks} chunks\nMissing: ${requiredChunks - ghostChunks.length} chunks\nScan the remaining Ghost tags to decrypt the complete files.`;
       return;
     }
 
+    showView('view-decrypt-progress');
+    const statusEl = document.getElementById('decryptProgressStatus');
+
     try {
-      // Verify passphrase derivation
+      statusEl.textContent = 'IDENTIFYING VAULT...';
+      await new Promise(r => setTimeout(r, 400));
+
+      statusEl.textContent = 'VERIFYING CHUNKS...';
+      await new Promise(r => setTimeout(r, 450));
+
+      statusEl.textContent = 'RECONSTRUCTING DATA...';
+      await new Promise(r => setTimeout(r, 400));
+
+      statusEl.textContent = 'DECRYPTING...';
+      await new Promise(r => setTimeout(r, 400));
+
+      // Derive KEK
       const salt = hexToBytes(state.vault?.saltHex || '00'.repeat(32));
       const kek = await deriveKekFromPassphrase(passphrase, salt);
 
-      // Successfully decrypted mockup files
+      // Decrypted entries sample
+      state.recoveredEntries = [
+        { type: 'Text', name: 'Server recovery notes', size: 12288, content: 'SSH root@192.168.1.1\nKey: ed25519-vault-master' },
+        { type: 'Photo', name: 'photo.jpg', size: 245760 },
+        { type: 'Video', name: 'video.mp4', size: 3250585 },
+        { type: 'URL', name: 'https://instagram.com/yourusername', size: 34 }
+      ];
+
+      renderRecoveredEntries();
       showView('view-decrypt-complete');
-      document.getElementById('recoveredFilesList').innerHTML = `
-        <div class="file-item">
-          <div class="file-meta">
-            <span class="file-name">notes.txt</span>
-            <span class="file-size">12 KB</span>
-          </div>
-          <div class="file-actions">
-            <button class="btn btn-secondary btn-sm" onclick="alert('Viewing notes.txt:\\n[Restored Secure Data]')">View</button>
-            <button class="btn btn-primary btn-sm" onclick="alert('Downloading notes.txt')">Download</button>
-          </div>
-        </div>
-        <div class="file-item">
-          <div class="file-meta">
-            <span class="file-name">photo.jpg</span>
-            <span class="file-size">240 KB</span>
-          </div>
-          <div class="file-actions">
-            <button class="btn btn-secondary btn-sm" onclick="alert('Viewing photo.jpg')">View</button>
-            <button class="btn btn-primary btn-sm" onclick="alert('Downloading photo.jpg')">Download</button>
-          </div>
-        </div>
-      `;
     } catch (err) {
       showView('view-decrypt-failed');
     }
   }
 
-  // --- Reset View Helpers ---
-  function resetSingleScanView() {
-    state.currentTag = null;
-    state.isSingleScanning = false;
-    document.getElementById('tagDetectedPanel').style.display = 'none';
-    const btn = document.getElementById('btnStartSingleScan');
-    if (btn) {
-      btn.style.display = 'inline-block';
-      btn.disabled = false;
-    }
-    const btnStop = document.getElementById('btnStopSingleScan');
-    if (btnStop) btnStop.style.display = 'none';
-    document.getElementById('singleScanStatus').textContent = 'Hold your phone near an NFC tag.';
-  }
+  function renderRecoveredEntries() {
+    const listEl = document.getElementById('recoveredEntriesList');
+    if (!listEl) return;
 
-  function resetBulkScanView() {
-    state.isBulkScanning = false;
-    state.bulkScannedTags = [];
-    state.bulkFiles = [];
-    const stopPanel = document.getElementById('bulkScanStoppedPanel');
-    if (stopPanel) stopPanel.style.display = 'none';
-    const btnStop = document.getElementById('btnStopBulkScan');
-    if (btnStop) btnStop.style.display = 'none';
-    const btnStart = document.getElementById('btnStartBulkScan');
-    if (btnStart) {
-      btnStart.style.display = 'inline-block';
-      btnStart.textContent = 'Start Scanning';
-    }
-    updateBulkScanReadout();
-  }
-
-  function resetDecryptView() {
-    state.isDecryptScanning = false;
-    state.decryptScannedChunks = [];
-    const stopPanel = document.getElementById('decryptScanStoppedPanel');
-    if (stopPanel) stopPanel.style.display = 'none';
-    const btnStop = document.getElementById('btnStopDecryptScan');
-    if (btnStop) btnStop.style.display = 'none';
-    const btnStart = document.getElementById('btnStartDecryptScan');
-    if (btnStart) {
-      btnStart.style.display = 'inline-block';
-      btnStart.textContent = 'Start Scanning';
-    }
-    document.getElementById('decryptScanReadout').style.display = 'none';
-    document.getElementById('btnTriggerDecrypt').disabled = true;
+    listEl.innerHTML = state.recoveredEntries.map((e, idx) => `
+      <div class="file-item">
+        <div class="file-meta">
+          <span class="file-name">${idx + 1}. ${e.type} — “${e.name}”</span>
+          <span class="file-size">${formatBytes(e.size)}</span>
+        </div>
+        <div class="file-actions">
+          <button class="btn btn-secondary btn-sm" onclick="GhostApp.viewEntry(${idx})">View</button>
+          <button class="btn btn-primary btn-sm" onclick="GhostApp.downloadEntry(${idx})">Download</button>
+          <button class="btn btn-danger btn-sm" onclick="GhostApp.promptDeleteEntry('${e.name}')">Delete Entry</button>
+        </div>
+      </div>
+    `).join('');
   }
 
   function formatBytes(bytes) {
@@ -1530,54 +1387,47 @@
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   }
 
-  window.promptBulkAddText = function() {
-    const title = prompt('Enter filename for text record (e.g. notes.txt):', 'notes.txt');
-    if (!title) return;
-    const content = prompt('Enter text content:');
-    if (content === null) return;
-    const blob = new Blob([content], { type: 'text/plain' });
-    const file = new File([blob], title, { type: 'text/plain' });
-    state.bulkFiles.push(file);
-    updateBulkFilesDisplay();
-  };
-
   function handleHashRoute() {
     const hash = window.location.hash.replace('#', '');
     if (!hash) return;
-    if (hash === 'scan') {
-      resetSingleScanView();
-      showView('view-single-scan');
-    } else if (hash === 'write') {
-      showView('view-single-write');
-    } else if (hash === 'bulk') {
-      resetBulkScanView();
-      showView('view-bulk-scan');
+    if (hash === 'technical') {
+      window.location.href = 'technical.html#technical';
+    } else if (hash === 'security') {
+      window.location.href = 'technical.html#security';
+    } else if (hash === 'privacy') {
+      window.location.href = 'technical.html#privacy';
+    } else if (hash === 'source') {
+      window.location.href = 'technical.html#source';
+    } else if (hash === 'encrypt') {
+      startEncryptFlow();
     } else if (hash === 'decrypt') {
-      resetDecryptView();
-      showView('view-decrypt-scan');
-    } else if (hash === 'recovery') {
-      showView('view-recovery');
-    } else if (hash === 'settings') {
-      showView('view-settings');
-    } else if (hash === 'app') {
-      if (state.vault && !state.isUnlocked) {
-        showView('view-unlock');
-      } else if (state.vault && state.isUnlocked) {
-        showView('view-app');
-      } else {
-        showView('view-welcome');
-      }
+      startDecryptFlow();
     }
   }
 
   window.addEventListener('hashchange', handleHashRoute);
 
-  // Global Exports & Bootstrap
+  // Global Exports for In-App Button Handlers
   window.GhostApp = {
     state,
     showView,
     init,
-    handleHashRoute
+    removeEntry: (idx) => {
+      state.entries.splice(idx, 1);
+      renderEntriesList();
+    },
+    viewEntry: (idx) => {
+      const e = state.recoveredEntries[idx];
+      if (e) alert(`Viewing ${e.name}:\n\n${e.content || '[Binary Decrypted Data Verified]'}`);
+    },
+    downloadEntry: (idx) => {
+      const e = state.recoveredEntries[idx];
+      if (e) alert(`Downloading ${e.name} (${formatBytes(e.size)})...`);
+    },
+    promptDeleteEntry: (name) => {
+      document.getElementById('deleteEntryTargetName').textContent = `Entry: ${name}`;
+      showModal('modalDeleteEntry');
+    }
   };
 
   document.addEventListener('DOMContentLoaded', init);

@@ -1,0 +1,29 @@
+# Ghost-Tag Code Ownership Specification
+# Enforces mandatory code review assignments for core security, cryptographic,
+# and platform-specific modules.
+
+# Global default owner
+* @FROSTY-MUG
+
+# Core Cryptographic Implementations (Argon2id, AES-256-GCM, Cauchy Reed-Solomon)
+/src/crypto/              @FROSTY-MUG
+
+# NFC Hardware Transceiver & NDEF Canonical Envelopes
+/src/nfc/                 @FROSTY-MUG
+
+# Vault Orchestration, Chunk Sharding & Recovery Phrase Mechanics
+/src/vault/               @FROSTY-MUG
+
+# Native Android C++ NDK, JNI Bridge & Memory Zeroization
+/android/app/src/main/cpp/ @FROSTY-MUG
+/android/app/CMakeLists.txt @FROSTY-MUG
+
+# CI/CD Workflows, Security Policies, and Infrastructure
+/.github/                 @FROSTY-MUG
+/ci/                      @FROSTY-MUG
+/SECURITY.md              @FROSTY-MUG
+/CODE_OF_CONDUCT.md       @FROSTY-MUG
+
+# Web Terminal, Static Documentation & Release Distribution
+/web/                     @FROSTY-MUG
+/docs/                    @FROSTY-MUG

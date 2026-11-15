@@ -1,0 +1,48 @@
+{
+  "name": "Ghost-Tag Android & Cryptography DevContainer",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20",
+      "nodeGypDependencies": true
+    },
+    "ghcr.io/devcontainers/features/java:1": {
+      "version": "17",
+      "installGradle": true
+    },
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "configureZshAsDefaultShell": true
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "files.trimTrailingWhitespace": true,
+        "files.insertFinalNewline": true
+      },
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "github.vscode-github-actions",
+        "msjsdiag.vscode-react-native",
+        "streetsidesoftware.code-spell-checker"
+      ]
+    }
+  },
+  "forwardPorts": [8081],
+  "portsAttributes": {
+    "8081": {
+      "label": "React Native Metro Bundler",
+      "onAutoForward": "notify"
+    }
+  },
+  "postCreateCommand": "npm install && npm test",
+  "remoteUser": "vscode"
+}

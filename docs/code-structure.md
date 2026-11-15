@@ -115,11 +115,15 @@ Ghost-Tag/
 │   │   └── index.ts                     # Barrel export for operations
 │   ├── ui/                              # High-contrast monospace terminal interface
 │   │   ├── screens/
-│   │   │   ├── HomeScreen.tsx           # Terminal dashboard & navigation hub
+│   │   │   ├── HomeScreen.tsx           # Terminal dashboard & operational navigation hub
+│   │   │   ├── ReadTagScreen.tsx        # Single-tag NFC read, Argon2id derivation & decryption
+│   │   │   ├── WriteTagScreen.tsx       # Single-tag purpose, capacity meter, encrypt & lock
 │   │   │   ├── BulkVaultCreationScreen.tsx # Multi-file selection & tag requirement calculator
 │   │   │   ├── BulkWriteScreen.tsx      # Sequential tag write orchestrator with extra-tag exclusion
 │   │   │   ├── BulkScanScreen.tsx       # Random-order tag scanner with cache TTL countdown
 │   │   │   ├── ReconstructionScreen.tsx # File assembly visualizer, integrity check, SAF export
+│   │   │   ├── PassphraseScreen.tsx     # Master passphrase update & 24-word BIP39 recovery
+│   │   │   ├── SettingsScreen.tsx       # Platform defense matrix, Argon2id tuning & panic wipe
 │   │   │   └── index.ts                 # Barrel export for screens
 │   │   ├── navigation/
 │   │   │   ├── RootNavigator.tsx        # React Navigation native stack container

@@ -1,3 +1,11 @@
+/**
+ * @file HomeScreen.tsx
+ * @summary Ghost-Tag Primary Dashboard & Operational Navigation Hub.
+ *
+ * Provides instant access to Single-Tag Vault (v1), Bulk Distributed Vault (v2),
+ * Passphrase & BIP39 Recovery, and Security Defense Settings.
+ */
+
 import React from 'react';
 import {
   StyleSheet,
@@ -6,49 +14,134 @@ import {
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { theme } from '@ghost-tag/ui/theme';
+import type { RootStackParamList } from '../navigation/types';
 
 export const HomeScreen: React.FC = () => {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.contentContainer}
-    >
+    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+      {/* Brand Header */}
       <View style={styles.header}>
-        <View style={styles.badgeContainer}>
-          <Text style={styles.badgeText}>ENCRYPTED NFC VAULT</Text>
+        <View style={styles.brandBadge}>
+          <Text style={styles.brandBadgeText}>OFFLINE ENCRYPTED NFC VAULT</Text>
         </View>
-        <Text style={styles.title}>Ghost-Tag</Text>
+        <Text style={styles.title}>GHOST-TAG</Text>
         <Text style={styles.subtitle}>
-          Hardware-anchored zero-knowledge credentials
+          Hardware-anchored distributed file & credential vault
         </Text>
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.cardHeader}>Vault Security</Text>
-        <Text style={styles.cardDescription}>
-          AES-256-GCM envelope encryption with Argon2id key derivation and secure hardware enclave.
+      {/* Core Promise & Limitation Banner */}
+      <View style={styles.promiseBanner}>
+        <Text style={styles.bannerTag}>CORE USER PROMISE</Text>
+        <Text style={styles.bannerText}>
+          "Ghost-Tag splits your encrypted files into pieces and stores one piece on each NFC tag. You can scan the tags in any order later. Ghost-Tag identifies each piece, verifies it, and reassembles your files when enough valid pieces are collected."
         </Text>
-        <View style={styles.statusRow}>
-          <View style={styles.statusIndicator} />
-          <Text style={styles.statusText}>Engine Ready</Text>
+      </View>
+
+      {/* Section 1: Single-Tag Vault (v1) */}
+      <View style={styles.sectionCard}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>SINGLE-TAG VAULT (v1)</Text>
+          <Text style={styles.sectionSub}>54-Byte Fixed Envelope • AES-256-GCM</Text>
+        </View>
+
+        <View style={styles.btnRow}>
+          <TouchableOpacity
+            style={styles.primaryActionBtn}
+            onPress={() => navigation.navigate('ReadTag')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.btnIcon}>📡</Text>
+            <Text style={styles.primaryActionText}>READ / SCAN TAG</Text>
+            <Text style={styles.btnSubtext}>Scan & decrypt single tag</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.secondaryActionBtn}
+            onPress={() => navigation.navigate('WriteTag')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.btnIcon}>💾</Text>
+            <Text style={styles.secondaryActionText}>WRITE NEW TAG</Text>
+            <Text style={styles.btnSubtext}>Encrypt & lock NTAG chip</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
-      <View style={styles.actionContainer}>
-        <TouchableOpacity
-          style={styles.primaryButton}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.primaryButtonText}>Scan Ghost Tag</Text>
-        </TouchableOpacity>
+      {/* Section 2: Bulk Distributed Vault (v2) */}
+      <View style={styles.sectionCard}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>BULK DISTRIBUTED VAULT (v2)</Text>
+          <Text style={styles.sectionSub}>Cauchy Reed-Solomon GF(2^8) • Multi-Tag Sharding</Text>
+        </View>
 
         <TouchableOpacity
-          style={styles.secondaryButton}
+          style={styles.fullWidthActionBtn}
+          onPress={() => navigation.navigate('BulkVaultCreation')}
           activeOpacity={0.8}
         >
-          <Text style={styles.secondaryButtonText}>Create New Vault Entry</Text>
+          <View style={styles.fullBtnContent}>
+            <Text style={styles.btnIcon}>📁</Text>
+            <View>
+              <Text style={styles.fullBtnTitle}>CREATE DISTRIBUTED VAULT</Text>
+              <Text style={styles.fullBtnSub}>Shard arbitrary files across physical tags</Text>
+            </View>
+          </View>
+          <Text style={styles.chevron}>→</Text>
         </TouchableOpacity>
+
+        <View style={[styles.btnRow, { marginTop: 10 }]}>
+          <TouchableOpacity
+            style={[styles.secondaryActionBtn, { flex: 1 }]}
+            onPress={() => navigation.navigate('BulkScan', { totalRequiredChunks: 5 })}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.secondaryActionText}>SCAN TAGS (RANDOM)</Text>
+            <Text style={styles.btnSubtext}>72h offline cache active</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.secondaryActionBtn, { flex: 1 }]}
+            onPress={() => navigation.navigate('Reconstruction', { targetFileCount: 3 })}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.secondaryActionText}>RECONSTRUCT VAULT</Text>
+            <Text style={styles.btnSubtext}>Solve Cauchy matrix</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Section 3: Passphrase & Security Settings */}
+      <View style={styles.sectionCard}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>ROOT SECRETS & PLATFORM DEFENSE</Text>
+          <Text style={styles.sectionSub}>Argon2id KDF • FLAG_SECURE • KeyStore TEE</Text>
+        </View>
+
+        <View style={styles.btnRow}>
+          <TouchableOpacity
+            style={[styles.secondaryActionBtn, { flex: 1 }]}
+            onPress={() => navigation.navigate('Passphrase')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.secondaryActionText}>PASSPHRASE & BIP39</Text>
+            <Text style={styles.btnSubtext}>24-word recovery phrase</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.secondaryActionBtn, { flex: 1 }]}
+            onPress={() => navigation.navigate('Settings')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.secondaryActionText}>SECURITY SETTINGS</Text>
+            <Text style={styles.btnSubtext}>Hardware defense matrix</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </ScrollView>
   );
@@ -61,103 +154,153 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: theme.spacing.lg,
-    alignItems: 'stretch',
+    paddingBottom: theme.spacing.xxl,
   },
   header: {
-    marginTop: theme.spacing.xl,
-    marginBottom: theme.spacing.xl,
+    marginTop: theme.spacing.md,
+    marginBottom: theme.spacing.lg,
     alignItems: 'center',
   },
-  badgeContainer: {
-    backgroundColor: theme.colors.surfaceHighlight,
+  brandBadge: {
+    backgroundColor: 'rgba(0, 229, 255, 0.08)',
     borderColor: theme.colors.primary,
     borderWidth: 1,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: theme.spacing.xs,
-    borderRadius: theme.borderRadius.pill,
-    marginBottom: theme.spacing.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginBottom: 6,
   },
-  badgeText: {
+  brandBadgeText: {
     color: theme.colors.primary,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1.5,
   },
   title: {
-    fontSize: 34,
+    fontSize: 32,
     fontWeight: '800',
     color: theme.colors.textPrimary,
-    letterSpacing: -0.5,
+    letterSpacing: 3,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 12,
     color: theme.colors.textSecondary,
-    marginTop: theme.spacing.xs,
+    marginTop: 4,
     textAlign: 'center',
   },
-  card: {
+  promiseBanner: {
+    backgroundColor: 'rgba(0, 255, 102, 0.03)',
+    borderLeftWidth: 3,
+    borderLeftColor: theme.colors.success,
+    borderColor: theme.colors.border,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: theme.spacing.lg,
+  },
+  bannerTag: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: theme.colors.success,
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  bannerText: {
+    fontSize: 11,
+    color: theme.colors.textSecondary,
+    lineHeight: 16,
+    fontStyle: 'italic',
+  },
+  sectionCard: {
     backgroundColor: theme.colors.surface,
     borderColor: theme.colors.border,
     borderWidth: 1,
-    borderRadius: theme.borderRadius.lg,
-    padding: theme.spacing.lg,
-    marginBottom: theme.spacing.xl,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.lg,
   },
-  cardHeader: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: theme.colors.textPrimary,
-    marginBottom: theme.spacing.xs,
+  sectionHeader: {
+    marginBottom: 12,
   },
-  cardDescription: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-    lineHeight: 20,
-    marginBottom: theme.spacing.md,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statusIndicator: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: theme.colors.primary,
-    marginRight: theme.spacing.sm,
-  },
-  statusText: {
+  sectionTitle: {
+    fontSize: 11,
+    fontWeight: '800',
     color: theme.colors.primary,
-    fontSize: 13,
-    fontWeight: '600',
+    letterSpacing: 1,
   },
-  actionContainer: {
-    gap: theme.spacing.md,
+  sectionSub: {
+    fontSize: 10,
+    color: theme.colors.textMuted,
+    marginTop: 2,
   },
-  primaryButton: {
-    backgroundColor: theme.colors.primary,
-    paddingVertical: theme.spacing.md,
-    borderRadius: theme.borderRadius.md,
+  btnRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  primaryActionBtn: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 229, 255, 0.1)',
+    borderColor: theme.colors.primary,
+    borderWidth: 1,
+    padding: 12,
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  primaryButtonText: {
-    color: '#000000',
-    fontSize: 16,
-    fontWeight: '700',
+  primaryActionText: {
+    color: theme.colors.primary,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginTop: 4,
   },
-  secondaryButton: {
-    backgroundColor: theme.colors.surfaceHighlight,
+  secondaryActionBtn: {
+    flex: 1,
+    backgroundColor: '#07090e',
     borderColor: theme.colors.border,
     borderWidth: 1,
-    paddingVertical: theme.spacing.md,
-    borderRadius: theme.borderRadius.md,
+    padding: 12,
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  secondaryButtonText: {
+  secondaryActionText: {
     color: theme.colors.textPrimary,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginTop: 4,
+  },
+  btnIcon: {
+    fontSize: 18,
+  },
+  btnSubtext: {
+    fontSize: 9,
+    color: theme.colors.textMuted,
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  fullWidthActionBtn: {
+    backgroundColor: 'rgba(178, 75, 243, 0.08)',
+    borderColor: '#b24bf3',
+    borderWidth: 1,
+    padding: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  fullBtnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  fullBtnTitle: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  fullBtnSub: {
+    color: theme.colors.textMuted,
+    fontSize: 10,
+    marginTop: 2,
+  },
+  chevron: {
+    color: '#b24bf3',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 });

@@ -158,7 +158,40 @@ Ghost-Tag supports standard **NFC Forum Type 2** tags (NXP NTAG21x and MIFARE Ul
 
 ---
 
-## 7. Bulk Scanning v2: Distributed NFC File-Vault
+## 6. Android App Screens & User Workflows
+
+The Ghost-Tag Android application provides a comprehensive suite of offline, hardware-anchored screens:
+
+```
+                          ┌─────────────────────────┐
+                          │   Home Dashboard Hub    │
+                          │      (HomeScreen)       │
+                          └────────────┬────────────┘
+         ┌─────────────────────────────┼─────────────────────────────┐
+         ▼                             ▼                             ▼
+┌──────────────────┐         ┌──────────────────┐         ┌──────────────────┐
+│ Single-Tag (v1)  │         │ Bulk Vault (v2)  │         │ Security & Root  │
+├──────────────────┤         ├──────────────────┤         ├──────────────────┤
+│ • ReadTagScreen  │         │ • BulkVaultCreate│         │ • Passphrase     │
+│ • WriteTagScreen │         │ • BulkWriteScreen│         │ • SettingsScreen │
+│                  │         │ • BulkScanScreen │         │                  │
+│                  │         │ • Reconstruction │         │                  │
+└──────────────────┘         └──────────────────┘         └──────────────────┘
+```
+
+### 6.1 Single-Tag Vault (v1)
+- **Read & Decrypt Tag (`ReadTagScreen`)**: Connects to the device's NFC controller to poll for Ghost-Tag Type 2 tags. Validates the 4-byte `GTAG` magic, parses the 54-byte envelope, derives ephemeral KEK via Argon2id, verifies AAD and AES-256-GCM authentication tag, and displays decrypted plaintext with one-touch clipboard copy and diagnostic log stream.
+- **Write & Lock Tag (`WriteTagScreen`)**: User selects categorical purpose (`0x01` Note, `0x02` Credential, `0x03` Config, `0x05` Asset ID), enters secret plaintext, and picks target hardware chip (NTAG213, NTAG215, NTAG216). Displays real-time capacity utilization bar, validates $\ge 16$-character passphrase, derives KEK, binds deterministic AAD, writes envelope to EEPROM, and performs read-back verification.
+
+### 6.2 Bulk Distributed Vault (v2)
+- **Create Distributed Vault (`BulkVaultCreationScreen`)**: Pick arbitrary binary files (PDFs, videos, images, ZIPs) via Android SAF. Adjust Cauchy-Vandermonde Reed-Solomon redundancy slider ($0\%$ to $100\%$). Calculates exact required tags ($K$ data + $M$ parity tags) and enforces the **Extra-Tag Exclusion Rule**.
+- **Sequential Tag Writer (`BulkWriteScreen`)**: Guides sequential writing to required blank tags, excluding surplus tags, and verifying every written chunk.
+- **Random-Order Tag Scanner (`BulkScanScreen`)**: Users tap physical tags in any random order. Collects and validates chunks into an encrypted offline cache protected by a **72-Hour TTL Countdown Timer**.
+- **Vault Reconstruction (`ReconstructionScreen`)**: Solves Cauchy-Vandermonde matrix over $\text{GF}(2^8)$ to reconstruct missing pieces, verifies SHA-256 hashes against original ciphertext, decrypts files with vault DEK, and allows secure scoped export.
+
+### 6.3 Root Secrets & Hardware Defense
+- **Passphrase & BIP39 Recovery (`PassphraseScreen`)**: Manage the user's $\ge 16$-character root secret, view active ephemeral volatile session status, generate a 24-word BIP39 recovery phrase with checksums, and trigger one-touch session lock and key zeroization.
+- **Settings & Defense Matrix (`SettingsScreen`)**: Adjust Argon2id work factors (Standard 64MB, High 128MB, Paranoid 256MB), configure auto-lock inactivity timers (1 min, 5 min, 15 min, Never), view live hardware security status (`FLAG_SECURE`, KeyStore TEE, `ptrace` anti-debug, kernel `mlock`, Frida hooks scanner), and trigger emergency **Panic Memory Zeroization**.
 
 Ghost-Tag Bulk Scanning v2 partitions arbitrary large or multi-file payloads across collections of physical NFC tags.
 
@@ -258,13 +291,13 @@ npm run web
 ### 9.6 Official Android Release APK (v2.0.0)
 Official signed releases are available under [GitHub Releases](https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.0) and via the web showcase:
 
-- **Release Artifact**: `ghost-tag-v2.0.0.apk` / `app-release.apk` (391 KB)
+- **Release Artifact**: `ghost-tag-v2.0.0.apk` / `app-release.apk` (399 KB)
 - **Package Name**: `com.ghosttag`
 - **Minimum OS**: Android 8.0 Oreo (API 26)
 - **Target Architectures**: `arm64-v8a`, `armeabi-v7a`, `x86_64`
 - **SHA-256 Checksum**:
   ```
-  41848271db6cac270ebaf74758e43bb701113f3315a0b2c4309f9ec9caa71f61
+  28a2e3d85ec803a733b62cdd5f55f1077d7b5a990a256b656262009d096e71ea
   ```
 
 To build or verify the release APK locally:

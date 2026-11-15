@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ghost-Tag // Technical, Security & Privacy</title>
+  <meta name="description" content="Technical specifications, cryptographic security architecture, privacy model, and source details for Ghost-Tag v2.0.5.">
+  <meta name="theme-color" content="#000000">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg width='64' height='64' viewBox='0 0 64 64' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12 24 L24 10 L40 10 L52 24 L52 54 L44 46 L36 54 L28 46 L20 54 L12 46 Z' fill='%23ffffff'/%3E%3Crect x='22' y='24' width='6' height='10' fill='%23000000'/%3E%3Crect x='36' y='24' width='6' height='10' fill='%23000000'/%3E%3C/svg%3E">
+  <style>
+    .tech-container {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 40px 20px 80px;
+    }
+    .tech-nav-bar {
+      display: flex;
+      gap: 16px;
+      padding: 14px 0;
+      margin-bottom: 32px;
+      border-bottom: 1px solid var(--border-subtle);
+      position: sticky;
+      top: 0;
+      background: rgba(8, 8, 8, 0.95);
+      backdrop-filter: blur(8px);
+      z-index: 10;
+    }
+    .tech-nav-link {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 0.5px;
+      transition: color 0.15s ease;
+    }
+    .tech-nav-link:hover, .tech-nav-link:focus-visible {
+      color: var(--text-primary);
+    }
+    .tech-section {
+      margin-bottom: 56px;
+      scroll-margin-top: 80px;
+    }
+    .tech-section h2 {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      margin-bottom: 16px;
+      color: var(--text-primary);
+      text-transform: uppercase;
+      border-left: 2px solid var(--accent-green);
+      padding-left: 12px;
+    }
+    .tech-section p {
+      color: var(--text-secondary);
+      font-size: 14px;
+      line-height: 1.6;
+      margin-bottom: 16px;
+    }
+    .tech-section ul {
+      margin: 0 0 16px 20px;
+      color: var(--text-secondary);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .code-block {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 16px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--text-primary);
+      overflow-x: auto;
+      margin-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Subtle Blurred Ambient Ghost Background -->
+  <div class="bg-ambient-layer" aria-hidden="true">
+    <img src="assets/ghost-hero.jpg" alt="" class="bg-ambient-img">
+    <div class="bg-ambient-overlay"></div>
+  </div>
+
+  <div class="tech-container">
+
+    <!-- Header & Return Link -->
+    <header style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center;">
+      <a href="index.html" class="brand-group" style="text-decoration: none; color: inherit;">
+        <svg width="28" height="28" viewBox="0 0 64 64" fill="none" class="ghost-logo-svg" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 24 L24 10 L40 10 L52 24 L52 54 L44 46 L36 54 L28 46 L20 54 L12 46 Z" fill="currentColor"/>
+          <rect x="22" y="24" width="6" height="10" fill="#000000"/>
+          <rect x="36" y="24" width="6" height="10" fill="#000000"/>
+        </svg>
+        <span class="brand-title">GHOST</span>
+      </a>
+      <a href="index.html" class="btn btn-secondary btn-sm" style="text-decoration: none;">Return to App</a>
+    </header>
+
+    <!-- Navigation Anchors -->
+    <nav class="tech-nav-bar">
+      <a href="#technical" class="tech-nav-link">Technical</a>
+      <a href="#security" class="tech-nav-link">Security</a>
+      <a href="#privacy" class="tech-nav-link">Privacy</a>
+      <a href="#source" class="tech-nav-link">Source</a>
+    </nav>
+
+    <!-- SECTION 1: TECHNICAL -->
+    <section id="technical" class="tech-section">
+      <h2>Technical Specifications</h2>
+      <p>
+        Ghost-Tag v2.0.5 is an offline, client-side encrypted NFC storage system. It fragments, encrypts, and distributes data across physical NFC chips using a canonical NDEF binary envelope format.
+      </p>
+
+      <h3>Canonical Binary Envelope Layout</h3>
+      <div class="code-block">
+MAGIC (4B: "GTAG" [0x47, 0x54, 0x41, 0x47])
+FORMAT_VERSION (1B: 0x02)
+RECORD_TYPE (1B: 0x01 Single | 0x02 Bulk)
+VAULT_ID (16B CSPRNG)
+FILE_ID (16B CSPRNG)
+KEY_ID (16B CSPRNG)
+GLOBAL_CHUNK_INDEX (4B Little-Endian)
+TOTAL_VAULT_CHUNKS (4B Little-Endian)
+FILE_CHUNK_INDEX (4B Little-Endian)
+TOTAL_FILE_CHUNKS (4B Little-Endian)
+CIPHERTEXT_LENGTH (4B Little-Endian)
+CHUNK_HASH (32B SHA-256)
+AES_GCM_NONCE (12B CSPRNG)
+ENCRYPTED_CHUNK (Variable Length Ciphertext)
+AES_GCM_AUTH_TAG (16B Authentication Tag)
+      </div>
+
+      <h3>MIME Type & Chip Geometry</h3>
+      <ul>
+        <li><strong>Standard MIME Type</strong>: <code>application/vnd.ghost.bulk</code></li>
+        <li><strong>NTAG213</strong>: 180B Total, 144B NDEF, 54B Header, 90B Max Usable Storage</li>
+        <li><strong>NTAG215</strong>: 540B Total, 504B NDEF, 54B Header, 450B Max Usable Storage</li>
+        <li><strong>NTAG216</strong>: 924B Total, 888B NDEF, 54B Header, 834B Max Usable Storage</li>
+      </ul>
+    </section>
+
+    <!-- SECTION 2: SECURITY -->
+    <section id="security" class="tech-section">
+      <h2>Cryptographic Security Model</h2>
+      <p>
+        Ghost-Tag operates under a zero-trust model where physical NFC chips may be inspected, cloned, or lost without revealing plaintext data.
+      </p>
+      <ul>
+        <li><strong>Authenticated Symmetric Encryption</strong>: AES-256-GCM with unique 96-bit CSPRNG nonces per chunk.</li>
+        <li><strong>Key Derivation Function</strong>: PBKDF2-SHA256 (100,000 iterations) on Web, Argon2id ($m=64\,\text{MB}, t=3, p=4$) on Android.</li>
+        <li><strong>Two-Tier Hierarchy</strong>: Key Encryption Key (KEK) unwraps ephemeral Data Encryption Keys (DEKs) in volatile memory only.</li>
+        <li><strong>Zero Secrets Policy</strong>: Master passphrases, raw KEKs, and decrypted plaintext are never persisted to disk or cloud storage.</li>
+        <li><strong>Supabase Cloud Role</strong>: Supabase stores exclusively an encrypted vault metadata blob for cross-device account restoration; it never receives keys, plaintexts, or NFC data.</li>
+      </ul>
+    </section>
+
+    <!-- SECTION 3: PRIVACY -->
+    <section id="privacy" class="tech-section">
+      <h2>Privacy & Zero-Knowledge Guarantees</h2>
+      <p>
+        Ghost-Tag enforces absolute user privacy by design:
+      </p>
+      <ul>
+        <li><strong>Zero Telemetry</strong>: No analytics scripts, no tracking pixels, no telemetry beacons.</li>
+        <li><strong>Zero Cookies</strong>: The web client does not set tracking cookies or third-party cookies.</li>
+        <li><strong>No Scanned-Chunk Cache</strong>: Scanned NFC chunks reside purely in volatile session memory during active transactions and are purged immediately upon session completion.</li>
+        <li><strong>Encrypted URLs by Default</strong>: Web links stored on Ghost tags are encrypted binary ciphertext; they do not open as readable NFC URL records.</li>
+      </ul>
+    </section>
+
+    <!-- SECTION 4: SOURCE -->
+    <section id="source" class="tech-section">
+      <h2>Source Code & Verification</h2>
+      <p>
+        Ghost-Tag is completely open source under the MIT License.
+      </p>
+      <ul>
+        <li><strong>GitHub Repository</strong>: <a href="https://github.com/FROSTY-MUG/Ghost-Tag" target="_blank" rel="noopener" style="color: var(--accent-green);">https://github.com/FROSTY-MUG/Ghost-Tag</a></li>
+        <li><strong>Android APK Release</strong>: <a href="https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.5" target="_blank" rel="noopener" style="color: var(--accent-green);">Ghost-Tag v2.0.5 on GitHub Releases</a></li>
+        <li><strong>Target Platforms</strong>: Android Native (API 26+) and Web Client (Google Chrome for Android 89+).</li>
+        <li><strong>License</strong>: MIT Open Source License.</li>
+      </ul>
+    </section>
+
+    <!-- Footer -->
+    <footer class="app-footer" style="margin-top: 40px;">
+      <div>GHOST-TAG v2.0.5</div>
+      <div class="footer-nav">
+        <a href="index.html" class="footer-link">Home</a> ·
+        <a href="#technical" class="footer-link">Technical</a> ·
+        <a href="#security" class="footer-link">Security</a> ·
+        <a href="#privacy" class="footer-link">Privacy</a> ·
+        <a href="https://github.com/FROSTY-MUG/Ghost-Tag" target="_blank" rel="noopener" class="footer-link">Source</a>
+      </div>
+    </footer>
+
+  </div>
+
+</body>
+</html>

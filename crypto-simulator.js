@@ -468,3 +468,4 @@ window.GhostCrypto = {
   parseAndDecryptV1Envelope,
   WebNFC,
 };
+

@@ -91,7 +91,7 @@ export function constructAAD(
     kid = versionOrHeader.keyId;
     ctLen = versionOrHeader.ciphertextLength;
   } else {
-    version = versionOrHeader;
+    version = versionOrHeader as number;
     p = purpose!;
     kid = keyId!;
     ctLen = ciphertextLength!;

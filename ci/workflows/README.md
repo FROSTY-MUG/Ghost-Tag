@@ -2,7 +2,7 @@
 
 This directory contains the production GitHub Actions workflows for Ghost-Tag:
 
-1. **`ci.yml`**: TypeCheck (`tsc --noEmit`), Jest unit & integration test suite (178 tests), test coverage report.
+1. **`ci.yml`**: TypeCheck (`tsc --noEmit`), Jest unit & integration test suite (130 tests), test coverage report.
 2. **`android-build.yml`**: Release APK compilation, Android SDK build, and SHA-256 checksum generation.
 3. **`deploy-pages.yml`**: Automated GitHub Pages deployment for the web showcase in `web/`.
 4. **`release.yml`**: Automated tag release builder (`v*`) with APK artifact attachment.

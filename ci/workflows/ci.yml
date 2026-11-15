@@ -30,7 +30,7 @@ jobs:
       - name: Verify TypeScript Invariants
         run: npx tsc --noEmit
 
-      - name: Execute Jest Test Suite (178 Tests)
+      - name: Execute Jest Test Suite (130 Tests)
         run: npm test -- --ci --coverage --maxWorkers=2
 
       - name: Upload Test Coverage

@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 [![Platform: Android](https://img.shields.io/badge/Platform-Android%20(API%2026%2B)-black.svg)](https://developer.android.com)
 [![Crypto: AES--256--GCM](https://img.shields.io/badge/Crypto-AES--256--GCM%20%2B%20Argon2id-blue.svg)](./docs/cryptography.md)
-[![Tests: 178 Passing](https://img.shields.io/badge/Tests-178%20Passing%20(100%25)-brightgreen.svg)](./src/__tests__/)
+[![Tests: 130 Passing](https://img.shields.io/badge/Tests-130%20Passing%20(100%25)-brightgreen.svg)](./src/__tests__/)
 [![Release: v2.0.0](https://img.shields.io/badge/Release-v2.0.0-crimson.svg)](https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.0)
 
 ---
@@ -444,7 +444,7 @@ npm test -- operations.test.ts
 npm run verify
 ```
 
-All 10 test suites and **178 tests pass with 100% success rate**.
+All 9 test suites and **130 tests pass with 100% success rate**.
 
 ### 11.4 Running on an Android Device
 ```bash

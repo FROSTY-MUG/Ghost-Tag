@@ -68,7 +68,7 @@ Before submitting or committing any change:
 # 1. Verify TypeScript types
 npm run typecheck
 
-# 2. Run full test suite (178 tests must pass)
+# 2. Run full test suite (130 tests must pass)
 npm test
 
 # 3. Combined verification gate

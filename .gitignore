@@ -57,6 +57,7 @@ yarn-error.log
 *.jsbundle
 
 # Ruby / CocoaPods
+.bundle/
 **/Pods/
 /vendor/bundle/
 
@@ -76,6 +77,8 @@ yarn-error.log
 
 # Lean AI / IDE caches
 .lean_ai/
+.agents/
+skills-lock.json
 
 # Environment, secrets & credentials
 .env

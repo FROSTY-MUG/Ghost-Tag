@@ -51,18 +51,42 @@ Compromised Host OS      --->   Root keylogger/debugger   --->  Non-goal. Host m
 
 ### 2.1 Two-Tier Cryptographic Key Hierarchy
 
-```
-User Master Passphrase (>= 16 characters)
-   │
-   ▼
-Argon2id (Salt, RFC 9106 calibrated work factors)
-   │
-   ▼
-Key-Encryption Key (KEK) [256-bit, held ONLY in ephemeral volatile memory]
-   │
-   ├──► Wrapped DEK 1 (AES-256-GCM under KEK) ──► Unwraps to DEK 1 ──► Encrypts Tag Envelope 1
-   ├──► Wrapped DEK 2 (AES-256-GCM under KEK) ──► Unwraps to DEK 2 ──► Encrypts Tag Envelope 2
-   └──► Recovery Wrapped DEKs (Argon2id from 24-Word BIP39 Secret + Isolated Salt)
+```mermaid
+flowchart TD
+    subgraph PassphraseTier["Passphrase & Recovery Tier"]
+        Passphrase["User Master Passphrase<br/>(≥16 characters)"]
+        BIP39["BIP39 Recovery Phrase<br/>(24 Words + Checksum)"]
+    end
+
+    subgraph KDFTier["Argon2id KDF (RFC 9106)"]
+        Salt1["CSPRNG Salt (32B)"] --> KDF1["Argon2id KDF<br/>(m=64MB, t=3, p=4)"]
+        Passphrase --> KDF1
+        Salt2["Isolated Recovery Salt (32B)"] --> KDF2["Argon2id KDF<br/>(Recovery Work Factors)"]
+        BIP39 --> KDF2
+    end
+
+    subgraph VolatileTier["Volatile Ephemeral Memory (mlock'd)"]
+        KEK["Key-Encryption Key (KEK, 256-bit)"]
+        RecKEK["Recovery KEK (256-bit)"]
+    end
+
+    KDF1 --> KEK
+    KDF2 --> RecKEK
+
+    subgraph StorageTier["Encrypted Local Vault Storage (MMKV)"]
+        WrappedDEK["Wrapped DEK 1..N<br/>(AES-256-GCM under KEK)"]
+        RecWrappedDEK["Recovery Wrapped DEK<br/>(AES-256-GCM under RecKEK)"]
+    end
+
+    KEK -->|Wrap / Unwrap| WrappedDEK
+    RecKEK -->|Disaster Recovery Unwrap| RecWrappedDEK
+
+    subgraph NFCTier["Physical NFC Tag Envelopes"]
+        ActiveDEK["Active DEK (256-bit, Volatile)"]
+        WrappedDEK -.->|Unwrap during session| ActiveDEK
+        ActiveDEK -->|AES-256-GCM Encrypt + Nonce| Envelope1["Tag Envelope 1 (v1 Single 54B)"]
+        ActiveDEK -->|AES-256-GCM Encrypt + Nonce| Envelope2["Tag Envelope 2..N (v2 Bulk 134B)"]
+    end
 ```
 
 - **Zero-Secrets Policy**: Passphrases, derived KEKs, and unwrapped DEKs are **never persisted** to SQLite, MMKV, logs, or crash dumps.
@@ -112,7 +136,58 @@ Ghost-Tag supports standard **NFC Forum Type 2** tags (NXP NTAG21x and MIFARE Ul
 
 ---
 
-## 5. Technology Stack
+## 5. Technology Stack & System Architecture
+
+```mermaid
+flowchart TD
+    subgraph UI["Mobile UI Layer (React Native + TypeScript API 26+)"]
+        Home["HomeScreen (Main Dashboard Hub)"]
+        SingleTag["Single-Tag Vault (v1)<br/>• ReadTagScreen<br/>• WriteTagScreen"]
+        BulkVault["Bulk Distributed Vault (v2)<br/>• BulkVaultCreationScreen<br/>• BulkWriteScreen<br/>• BulkScanScreen<br/>• ReconstructionScreen"]
+        SecurityHub["Security & Hardware Matrix<br/>• PassphraseScreen<br/>• SettingsScreen"]
+    end
+
+    subgraph Operations["Operations & Orchestration"]
+        OpCoord["OperationCoordinator"]
+        BulkScanOp["BulkScanOperation"]
+        BulkWriteOp["BulkWriteOperation"]
+        ReconstructEng["ReconstructionEngine (GF(2^8))"]
+        FileViewer["FileViewerAndExporter"]
+    end
+
+    subgraph Vault["Vault & Cache Management"]
+        VaultMgr["VaultManager (MMKV Encrypted)"]
+        BulkVaultMgr["BulkVaultManager"]
+        ChunkCache["ChunkCache (72h TTL)"]
+        RecoveryMgr["RecoveryManager (BIP39 24-Word)"]
+    end
+
+    subgraph Crypto["Cryptographic Core"]
+        Argon2id["Argon2id KDF (RFC 9106)"]
+        AESGCM["AES-256-GCM Cipher"]
+        ErasureCode["Cauchy-Vandermonde RS"]
+        SecureMem["Volatile Secure Memory (mlock)"]
+    end
+
+    subgraph NativeBridge["Native Security Core (C++17 & JNI)"]
+        AntiDebug["ptrace(PTRACE_TRACEME)"]
+        MemoryProtect["mlock() Page Lock & Zeroize"]
+        FridaDetector["Anti-Instrumentation / Proc Maps Scan"]
+        KeyStore["Android KeyStore TEE Master Key"]
+    end
+
+    subgraph Hardware["Physical NFC Hardware"]
+        NTAG["NXP NTAG213 / 215 / 216"]
+        MIFARE["MIFARE Ultralight C"]
+    end
+
+    UI --> Operations
+    Operations --> Vault
+    Operations --> Crypto
+    Vault --> Crypto
+    Crypto --> NativeBridge
+    Operations --> Hardware
+```
 
 - **Mobile Framework**: React Native (Android Native Target, API 26+)
 - **Language**: TypeScript (Strict Mode)
@@ -125,7 +200,7 @@ Ghost-Tag supports standard **NFC Forum Type 2** tags (NXP NTAG21x and MIFARE Ul
 
 ---
 
-## 6. End-to-End User Workflows
+## 6. Single-Tag Cryptographic Workflows (v1)
 
 ### 6.1 Scan & Decrypt
 1. Hold tag to back of phone.
@@ -158,50 +233,109 @@ Ghost-Tag supports standard **NFC Forum Type 2** tags (NXP NTAG21x and MIFARE Ul
 
 ---
 
-## 6. Android App Screens & User Workflows
+## 7. Android App Screens & User Workflows
 
 The Ghost-Tag Android application provides a comprehensive suite of offline, hardware-anchored screens:
 
-```
-                          ┌─────────────────────────┐
-                          │   Home Dashboard Hub    │
-                          │      (HomeScreen)       │
-                          └────────────┬────────────┘
-         ┌─────────────────────────────┼─────────────────────────────┐
-         ▼                             ▼                             ▼
-┌──────────────────┐         ┌──────────────────┐         ┌──────────────────┐
-│ Single-Tag (v1)  │         │ Bulk Vault (v2)  │         │ Security & Root  │
-├──────────────────┤         ├──────────────────┤         ├──────────────────┤
-│ • ReadTagScreen  │         │ • BulkVaultCreate│         │ • Passphrase     │
-│ • WriteTagScreen │         │ • BulkWriteScreen│         │ • SettingsScreen │
-│                  │         │ • BulkScanScreen │         │                  │
-│                  │         │ • Reconstruction │         │                  │
-└──────────────────┘         └──────────────────┘         └──────────────────┘
+```mermaid
+flowchart TD
+    Home["HomeScreen (Main Dashboard Hub)"]
+
+    subgraph SingleVault["Single-Tag Vault (v1)"]
+        ReadTag["ReadTagScreen<br/>• Scan & Decrypt<br/>• Verify AAD & Auth Tag"]
+        WriteTag["WriteTagScreen<br/>• Category Selector<br/>• Mandatory Read-Back Verify"]
+    end
+
+    subgraph BulkVault["Bulk Distributed Vault (v2)"]
+        BulkCreate["BulkVaultCreationScreen<br/>• SAF File Picker<br/>• Cauchy RS Redundancy<br/>• Extra-Tag Exclusion"]
+        BulkWrite["BulkWriteScreen<br/>• Sequential Chunk Writer<br/>• Atomic Verification"]
+        BulkScan["BulkScanScreen<br/>• Random-Order Tag Scanner<br/>• 72h Encrypted Cache"]
+        Reconstruct["ReconstructionScreen<br/>• Cauchy GF(2^8) Matrix Solver<br/>• Secure Scoped Export"]
+    end
+
+    subgraph SecurityHub["Security & Hardware Matrix"]
+        Passphrase["PassphraseScreen<br/>• Session Lock / Unlock<br/>• BIP39 24-Word Recovery"]
+        Settings["SettingsScreen<br/>• Hardware Security Status<br/>• Argon2 Tuning<br/>• Emergency Panic Zeroize"]
+    end
+
+    Home --> ReadTag
+    Home --> WriteTag
+    Home --> BulkCreate
+    Home --> BulkScan
+    Home --> Passphrase
+    Home --> Settings
+
+    BulkCreate --> BulkWrite
+    BulkScan --> Reconstruct
 ```
 
-### 6.1 Single-Tag Vault (v1)
+### 7.1 Single-Tag Vault Screens
 - **Read & Decrypt Tag (`ReadTagScreen`)**: Connects to the device's NFC controller to poll for Ghost-Tag Type 2 tags. Validates the 4-byte `GTAG` magic, parses the 54-byte envelope, derives ephemeral KEK via Argon2id, verifies AAD and AES-256-GCM authentication tag, and displays decrypted plaintext with one-touch clipboard copy and diagnostic log stream.
 - **Write & Lock Tag (`WriteTagScreen`)**: User selects categorical purpose (`0x01` Note, `0x02` Credential, `0x03` Config, `0x05` Asset ID), enters secret plaintext, and picks target hardware chip (NTAG213, NTAG215, NTAG216). Displays real-time capacity utilization bar, validates $\ge 16$-character passphrase, derives KEK, binds deterministic AAD, writes envelope to EEPROM, and performs read-back verification.
 
-### 6.2 Bulk Distributed Vault (v2)
+### 7.2 Bulk Distributed Vault Screens
 - **Create Distributed Vault (`BulkVaultCreationScreen`)**: Pick arbitrary binary files (PDFs, videos, images, ZIPs) via Android SAF. Adjust Cauchy-Vandermonde Reed-Solomon redundancy slider ($0\%$ to $100\%$). Calculates exact required tags ($K$ data + $M$ parity tags) and enforces the **Extra-Tag Exclusion Rule**.
 - **Sequential Tag Writer (`BulkWriteScreen`)**: Guides sequential writing to required blank tags, excluding surplus tags, and verifying every written chunk.
 - **Random-Order Tag Scanner (`BulkScanScreen`)**: Users tap physical tags in any random order. Collects and validates chunks into an encrypted offline cache protected by a **72-Hour TTL Countdown Timer**.
 - **Vault Reconstruction (`ReconstructionScreen`)**: Solves Cauchy-Vandermonde matrix over $\text{GF}(2^8)$ to reconstruct missing pieces, verifies SHA-256 hashes against original ciphertext, decrypts files with vault DEK, and allows secure scoped export.
 
-### 6.3 Root Secrets & Hardware Defense
+### 7.3 Root Secrets & Hardware Defense Screens
 - **Passphrase & BIP39 Recovery (`PassphraseScreen`)**: Manage the user's $\ge 16$-character root secret, view active ephemeral volatile session status, generate a 24-word BIP39 recovery phrase with checksums, and trigger one-touch session lock and key zeroization.
 - **Settings & Defense Matrix (`SettingsScreen`)**: Adjust Argon2id work factors (Standard 64MB, High 128MB, Paranoid 256MB), configure auto-lock inactivity timers (1 min, 5 min, 15 min, Never), view live hardware security status (`FLAG_SECURE`, KeyStore TEE, `ptrace` anti-debug, kernel `mlock`, Frida hooks scanner), and trigger emergency **Panic Memory Zeroization**.
 
+---
+
+## 8. Bulk Scanning v2: Distributed NFC File-Vault
+
 Ghost-Tag Bulk Scanning v2 partitions arbitrary large or multi-file payloads across collections of physical NFC tags.
 
-### 7.1 Core User Promise
+### 8.1 Core User Promise
 > **"Ghost-Tag splits your encrypted files into pieces and stores one piece on each NFC tag. You can scan the tags in any order later. Ghost-Tag identifies each piece, verifies it, and reassembles your files when enough valid pieces are collected."**
 
-### 7.2 Core Limitation
+### 8.2 Core Limitation
 > **"A lost, damaged, or missing tag may prevent reconstruction. Enable redundancy to tolerate lost tags. Ghost-Tag does not prevent tag cloning, deletion, or replay."**
 
-### 7.3 Key Features
+### 8.3 Bulk Creation & Random-Order Scan Lifecycle
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as User
+    participant App as Ghost-Tag Android (v2.0.0)
+    participant Engine as ReconstructionEngine & Cauchy GF(2^8)
+    participant NFC as Physical NFC Tags (K + M)
+    participant Cache as Encrypted Chunk Cache (72h TTL)
+
+    rect rgb(15, 20, 25)
+    Note over User, NFC: PHASE 1: BULK ENCRYPTION & SEQUENTIAL WRITE
+    User->>App: Select Arbitrary Files (SAF Picker)
+    App->>App: Generate Vault DEK & Encrypt Files (AES-256-GCM)
+    App->>Engine: Partition Ciphertext & Compute Cauchy RS Parity Chunks
+    App-->>User: Enforce Extra-Tag Exclusion (e.g. Need 86 tags, set aside 14)
+    loop For each required tag (1 to K+M)
+        User->>NFC: Present Blank Compatible Tag
+        App->>NFC: Write 134B NDEF Envelope (application/vnd.ghost.bulk)
+        App->>NFC: Atomic Read-Back Verification (Match SHA-256 & Tag)
+        App-->>User: Visual Progress Feedback
+    end
+    end
+
+    rect rgb(25, 15, 15)
+    Note over User, NFC: PHASE 2: RANDOM-ORDER SCAN & RECONSTRUCTION
+    loop Scan in Any Random Order (TTL: 72 Hours)
+        User->>NFC: Tap Any Tag in Collection
+        App->>NFC: Read 134B NDEF Envelope
+        App->>App: Verify 74-Byte AAD & AES-GCM Tag
+        App->>Cache: Cache Verified Chunk with TTL Expiry
+        App-->>User: Live Progress (e.g., 50 / 86 Chunks)
+    end
+    App->>Engine: Reconstruct from any K Chunks via Cauchy-Vandermonde GF(2^8)
+    Engine->>Engine: Verify SHA-256 Hashes & Decrypt Files with Vault DEK
+    App-->>User: Files Fully Restored! View In-App & Export via SAF
+    end
+```
+
+### 8.4 Key Features
 - **Arbitrary File Support**: Documents (`.pdf`, `.docx`), Images (`.png`, `.jpg`), Videos (`.mp4`, `.mov`), Archives (`.zip`, `.7z`), or any binary payload selected via Android's Storage Access Framework (`ACTION_OPEN_DOCUMENT`). Zero broad storage permissions requested.
 - **Random-Order Physical Scanning**: Users can tap NFC tags in any random physical sequence. The app verifies each chunk's 74-byte AAD binding and AES-256-GCM auth tag, caching valid chunks in local encrypted storage.
 - **134-Byte Binary Envelope Overhead**: Compact Little-Endian wire format storing chunk indices, vault UUID, file UUID, SHA-256 chunk hash, 12B nonce, and 16B GCM tag under `application/vnd.ghost.bulk`.
@@ -212,7 +346,45 @@ Ghost-Tag Bulk Scanning v2 partitions arbitrary large or multi-file payloads acr
 
 ---
 
-## 8. Strict Multi-Language Security Hardening
+## 9. Cross-Platform Interoperability & The Realistic Rule
+
+```mermaid
+flowchart LR
+    Tag[("Physical NFC Tag<br/>(Standard NDEF Envelope)")]
+
+    subgraph Android["Android APK (Primary Vault)"]
+        A_Read["Full Read / Scan"]
+        A_Write["Full Write / Lock / Wipe"]
+        A_Bulk["Bulk Distributed Vault (v2)"]
+    end
+
+    subgraph iOS["iOS Native App (Core NFC)"]
+        I_Read["NDEF Reader Session"]
+        I_Write["NDEF Writer Session"]
+        I_Vault["Vault Recovery & Export"]
+    end
+
+    subgraph Web["Web Showcase & Simulator"]
+        W_Chrome["Chrome on Android<br/>(Web NFC API: Read & Write)"]
+        W_Desktop["Desktop / Safari<br/>(Simulated Offline Vault)"]
+    end
+
+    Android <-->|NDEF Interchange| Tag
+    iOS <-->|NDEF Interchange| Tag
+    W_Chrome <-->|Web NFC HTTPS| Tag
+```
+
+> **The Realistic Cross-Platform Rule**:  
+> *"Ghost-Tag tags are cross-platform. Android and iPhone native apps can read and write them. The website can read and write them only in browsers that support Web NFC; on iPhone, use the native Ghost-Tag app for NFC."*
+
+- **Android APK**: Primary offline vault, background & foreground NFC transceiver, native C++ anti-reverse engineering, bulk scanning engine.
+- **iOS Native App**: Uses Apple Core NFC (`NFCNDEFReaderSession`), Keychain Secure Enclave, bulk scanning.
+- **Web App**: Browser-based vault viewer and recovery tool; physical tag read/write available on Android Chrome via Web NFC over HTTPS.
+- **Desktop Companion**: PC/SC smartcard USB-reader support for bulk management.
+
+---
+
+## 10. Strict Multi-Language Security Hardening
 
 Ghost-Tag implements defense-in-depth across **C++17, Kotlin/Java, and TypeScript** to prevent reverse engineering, dynamic instrumentation (Frida, Xposed), memory dumping, and key/hash leakage:
 
@@ -234,14 +406,14 @@ Ghost-Tag implements defense-in-depth across **C++17, Kotlin/Java, and TypeScrip
 
 ---
 
-## 9. Installation, Build & Testing
+## 11. Installation, Build & Testing
 
-### 9.1 Prerequisites
+### 11.1 Prerequisites
 - Node.js >= 18.x and npm
 - Android Studio with Android SDK API 26+ and NDK (version 27+)
 - Physical Android phone with NFC hardware support
 
-### 9.2 Setup & Dependencies
+### 11.2 Setup & Dependencies
 ```bash
 # Clone the repository
 git clone https://github.com/FROSTY-MUG/Ghost-Tag.git
@@ -251,7 +423,7 @@ cd Ghost-Tag
 npm install
 ```
 
-### 9.3 Running the Test Suite
+### 11.3 Running the Test Suite
 The project includes automated Jest unit and integration test suites covering contracts, crypto core, vault storage, NFC abstraction, bulk scanning, erasure coding, security hardening, and workflow engines:
 
 ```bash
@@ -267,17 +439,20 @@ npm test -- crypto.test.ts
 npm test -- vault.test.ts
 npm test -- nfc.test.ts
 npm test -- operations.test.ts
+
+# Full type-checking and testing gate
+npm run verify
 ```
 
 All 10 test suites and **178 tests pass with 100% success rate**.
 
-### 9.4 Running on an Android Device
+### 11.4 Running on an Android Device
 ```bash
 # Connect physical Android device with USB debugging enabled
 npm run android
 ```
 
-### 9.5 Running the Web Showcase & Interactive Simulator
+### 11.5 Running the Web Showcase & Interactive Simulator
 Ghost-Tag includes an official cyber-terminal web showcase and interactive simulator in `web/`:
 
 ```bash
@@ -288,11 +463,12 @@ npm run web
 - On **Chrome for Android**, physical NFC reading and writing is enabled directly via the **Web NFC API**!
 - Simulates single-tag encryption (v1 54B envelope), bulk file partitioning, and Cauchy-Vandermonde Reed-Solomon reconstruction over $\text{GF}(2^8)$ in real time.
 
-### 9.6 Official Android Release APK (v2.0.0)
+### 11.6 Official Android Release APK (v2.0.0)
 Official signed releases are available under [GitHub Releases](https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.0) and via the web showcase:
 
 - **Release Artifact**: `ghost-tag-v2.0.0.apk` / `app-release.apk` (399 KB)
 - **Package Name**: `com.ghosttag`
+- **Version**: `2.0.0` (versionCode `2`)
 - **Minimum OS**: Android 8.0 Oreo (API 26)
 - **Target Architectures**: `arm64-v8a`, `armeabi-v7a`, `x86_64`
 - **SHA-256 Checksum**:
@@ -313,12 +489,18 @@ The compiled APK is placed at `android/app/build/outputs/apk/release/app-release
 
 ---
 
-## 10. Detailed Documentation Index
+## 12. Detailed Documentation & Agent Index
 
-For in-depth technical specifications, consult the `docs/` folder:
+For in-depth technical specifications and autonomous agent guidance, consult the `docs/` and `agents/` directories:
 
-- [**Documentation Portal & Reading Roadmap**](./docs/README.md): Master index, reading sequences by persona (Security Auditor, Embedded Engineer, Contributor), and subsystem matrix.
 - [**System & Fallback Manual**](./docs/GHOST_TAG_SYSTEM_MANUAL.md): Definitive architecture guide, cross-platform rules, universal interchange format, Android/Web/iOS/Desktop specs, and test matrices.
+- [**Documentation Portal & Reading Roadmap**](./docs/README.md): Master index, reading sequences by persona (Security Auditor, Embedded Engineer, Contributor), and subsystem matrix.
+- [**AI Agent Guide**](./AGENT.md): Guidance for autonomous AI agents, non-negotiable security invariants, and fallback protocols.
+- [**Specialized Agents Directory**](./agents/):
+  - [Cryptographic Architect (`agents/crypto-architect.md`)](./agents/crypto-architect.md)
+  - [NFC Hardware Engineer (`agents/nfc-engineer.md`)](./agents/nfc-engineer.md)
+  - [Security & Reverse-Engineering Auditor (`agents/security-auditor.md`)](./agents/security-auditor.md)
+  - [QA & Test Automation Specialist (`agents/qa-automation-agent.md`)](./agents/qa-automation-agent.md)
 - [**Code Structure Guide**](./docs/code-structure.md): Comprehensive module directory, complete file inventory, and architectural dependency rules.
 - [**Security Hardening Specification**](./docs/security-hardening.md): Multi-language anti-reverse engineering, kernel page locking, anti-leak, and R8 obfuscation.
 - [**Bulk Scanning v2 Specification**](./docs/bulk-scanning-v2.md): Distributed vault architecture, 134-byte binary layout, Cauchy erasure coding, and 72-hour cache.
@@ -332,7 +514,7 @@ For in-depth technical specifications, consult the `docs/` folder:
 
 ---
 
-## 11. Contact & Contributing
+## 13. Contact & Contributing
 
 Ghost-Tag is maintained by **Aryan Arora**.
 - **Contact & Suggestions**: [aryanarora26110@gmail.com](mailto:aryanarora26110@gmail.com)

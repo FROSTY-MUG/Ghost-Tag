@@ -77,3 +77,26 @@ yarn-error.log
 # Lean AI / IDE caches
 .lean_ai/
 
+# Environment, secrets & credentials
+.env
+.env*.local
+*.pem
+*.key
+*.p12
+
+# Python cache & artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Scratch & temporary test dumps
+scratch/
+tmp/
+temp/
+*.tmp
+*.log
+Thumbs.db
+ehthumbs.db
+
+

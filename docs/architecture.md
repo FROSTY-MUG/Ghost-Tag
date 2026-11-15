@@ -6,49 +6,56 @@ Ghost-Tag is architectured around decoupled, single-responsibility subsystems co
 
 ## 1. High-Level Subsystem Decomposition
 
-```
-+-----------------------------------------------------------------------------------+
-|                            Terminal User Interface                                |
-|       (Black #000000 background, monospace typography, real-time status stream)   |
-+-----------------------------------------+-----------------------------------------+
-                                          |
-                                          v
-+-----------------------------------------------------------------------------------+
-|                              Operations Engine                                    |
-|   (Scan, Write, BulkWarn, BulkScan, ReconstructionEngine, Wipe, Repair, Exporter) |
-+-------------+---------------------------+---------------------------+-------------+
-              |                           |                           |
-              v                           v                           v
-+-------------+-------------+ +-----------+-----------+ +-------------+-------------+
-|        Local Vault        | |   Cryptographic Core  | |    Hardened Security      |
-|   - Encrypted MMKV DB     | |   - Argon2id RFC 9106 | |   - DeviceIntegrityCoord  |
-|   - DEK Manager           | |   - AES-256-GCM AEAD  | |   - 4-Pass secureWipe     |
-|   - Ephemeral Sessions    | |   - Cauchy RS GF(2^8) | |   - Secret Redactor       |
-|   - 72-Hour Chunk Cache   | |   - File Encryption   | |   - Constant-Time Equal   |
-|   - Write/Scan Journals   | |   - Key Wrapping      | |                           |
-|   - BIP39 Disaster Recov  | |   - Envelopes (v1/v2) | |                           |
-+-------------+-------------+ +-----------+-----------+ +-------------+-------------+
-              |                           |                           |
-              +---------------------------+---------------------------+
-                                          |
-                                          v
-+-----------------------------------------+-----------------------------------------+
-|                                 Shared Contracts                                  |
-|         (Binary Envelopes, Error Codes, State Machines, Hardware Tag Matrix)      |
-+-----------------------------------------+-----------------------------------------+
-                                          |
-                                          v
-+-----------------------------------------+-----------------------------------------+
-|                               NFC Abstraction Layer                               |
-|        (Android Foreground Dispatch, NDEF Framer, Atomic Read-Back Verify)        |
-+-----------------------------------------+-----------------------------------------+
-                                          |
-                                          v
-+-----------------------------------------------------------------------------------+
-|                        Native C++ & Android Platform Core                         |
-|   - Native C++ (libghosttag_security.so): ptrace, /proc/self/maps, mlock, barriers|
-|   - Kotlin Platform: WindowManager FLAG_SECURE, Android KeyStore TEE / StrongBox  |
-+-----------------------------------------------------------------------------------+
+```mermaid
+flowchart TD
+    subgraph UI["Terminal User Interface (Monospace #000000 / #00ff41)"]
+        HomeScreen["HomeScreen (Dashboard)"]
+        SingleTagUI["Single-Tag: ReadTagScreen, WriteTagScreen"]
+        BulkVaultUI["Bulk Distributed: BulkVaultCreate, BulkWrite, BulkScan, Reconstruction"]
+        SecurityUI["Hardening: PassphraseScreen, SettingsScreen"]
+    end
+
+    subgraph Operations["Operations Engine (Orchestration & State Machines)"]
+        OpCoord["OperationCoordinator"]
+        BulkScanOp["BulkScanOperation"]
+        BulkWriteOp["BulkWriteOperation"]
+        ReconstructEng["ReconstructionEngine (Cauchy RS GF(2^8))"]
+        FileViewer["FileViewerAndExporter (SAF)"]
+        WipeOp["WipeOperation (2-Pass + CC Guard)"]
+    end
+
+    subgraph CoreServices["Domain Services Layer"]
+        Vault["Local Vault (MMKV AES-256)<br/>• SessionManager (5-Min Auto-Lock)<br/>• 72-Hour Chunk Cache<br/>• BIP39 Disaster Recovery"]
+        Crypto["Cryptographic Core<br/>• Argon2id RFC 9106<br/>• AES-256-GCM AEAD<br/>• Cauchy-Vandermonde RS<br/>• Key Wrapping & AAD"]
+        Security["Hardened Security Bridge<br/>• 4-Pass secureWipe & Barriers<br/>• Constant-Time Equal<br/>• DeviceIntegrityCoordinator"]
+        NFC["NFC Abstraction Layer<br/>• Foreground Dispatch<br/>• NDEF Builder (54B/134B)<br/>• Atomic Read-Back Verify"]
+    end
+
+    subgraph Contracts["Authoritative Contracts (Zero Dependencies)"]
+        EnvelopeSchemas["Binary Envelopes (v1 Single / v2 Bulk)"]
+        ErrorCodes["Typed Error Enums"]
+        StateEnums["FSM State Machine Enums"]
+        HardwareMatrix["Type 2 Tag Matrix (NTAG21x/Ultralight)"]
+    end
+
+    subgraph NativePlatform["Native C++ & Android Platform Core"]
+        NativeCpp["libghosttag_security.so<br/>• ptrace(PTRACE_TRACEME)<br/>• /proc/self/maps Anti-Frida<br/>• Kernel mlock() Page Lock"]
+        KotlinPlatform["Android Platform<br/>• WindowManager FLAG_SECURE<br/>• Android KeyStore TEE Master Key"]
+    end
+
+    UI --> Operations
+    Operations --> Vault
+    Operations --> Crypto
+    Operations --> Security
+    Operations --> NFC
+
+    Vault --> Contracts
+    Crypto --> Contracts
+    Security --> Contracts
+    NFC --> Contracts
+
+    Security --> NativePlatform
+    Vault --> KotlinPlatform
 ```
 
 ---
@@ -150,24 +157,24 @@ Finite state machines orchestrating multi-step cryptographic and RF operations:
 
 To prevent tight coupling, spaghetti logic, and circular dependencies, Ghost-Tag enforces a strict hierarchical dependency graph:
 
-```
-Contracts (Zero Dependencies)
-   ▲
-   │
-   ├───────────────┬────────────────┬────────────────┐
-   │               │                │                │
-Crypto          Security          Vault             NFC
-   ▲               ▲                ▲                ▲
-   │               │                │                │
-   └───────────────┼────────────────┴────────────────┘
-                   │
-              Operations
-                   ▲
-                   │
-                  UI
+```mermaid
+graph BT
+    UI["UI Layer (React Native Screens)"] --> Operations["Operations Engine (FSM Coordinator)"]
+    Operations --> Crypto["Cryptographic Core"]
+    Operations --> Security["Hardened Security Bridge"]
+    Operations --> Vault["Encrypted Vault & Cache"]
+    Operations --> NFC["NFC Abstraction Layer"]
+
+    Crypto --> Contracts["Shared Contracts (Zero Dependencies)"]
+    Security --> Contracts
+    Vault --> Contracts
+    NFC --> Contracts
+
+    Security -.-> Native["Native C++ & Android KeyStore"]
+    Vault -.-> Native
 ```
 
-- **Contracts** never import from any other module.
+- **Contracts** (`src/contracts/`) never import from any other module.
 - **Crypto**, **Security**, **Vault**, and **NFC** import solely from **Contracts**.
 - **Operations** orchestrates domain modules and reports state transitions.
 - **UI** consumes **Operations** and renders state; it never calls crypto or raw NFC directly.

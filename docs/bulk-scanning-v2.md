@@ -81,6 +81,29 @@ To protect against lost or physically damaged NFC tags, Ghost-Tag implements sys
 - **$M$ Recovery Chunks**: Parity chunks computed over $\text{GF}(2^8)$ using an $(K+M) \times K$ Cauchy generator matrix.
 - **Reconstruction Property**: **Any $K$ valid chunks** out of the $K + M$ total chunks are mathematically sufficient to reconstruct the entire file.
 
+```mermaid
+flowchart TD
+    File["Original Plaintext File (PDF / Video / ZIP)"] --> AES["AES-256-GCM Encrypt (Vault DEK)"]
+    AES --> Ciphertext["Encrypted Ciphertext Stream"]
+    Ciphertext --> Partition["Partition into K Data Chunks (D₁ .. D_K)"]
+
+    Partition --> RS["Cauchy-Vandermonde Generator Matrix over GF(2^8)"]
+    RS --> Parity["Generate M Parity Chunks (P₁ .. P_M)"]
+
+    Partition --> Tags["Physical NFC Tags (1 .. K + M)"]
+    Parity --> Tags
+
+    subgraph Reconstruction["Reconstruction Gate (Any K of K+M Tags)"]
+        ScannedTags["Collected Chunks (Any Order: D₂, P₁, D_K, ...)"] --> Solver["Invert K x K Cauchy Sub-Matrix in GF(2^8)"]
+        Solver --> RestoredCiphertext["Restored Full Ciphertext Stream"]
+        RestoredCiphertext --> SHA["Verify SHA-256 Hashes"]
+        SHA --> Decrypt["Decrypt with Vault DEK"]
+        Decrypt --> RestoredFile["Restored Plaintext File"]
+    end
+
+    Tags -.->|Random-Order Taps| ScannedTags
+```
+
 ---
 
 ## 6. Temporary Encrypted Chunk Cache (72-Hour TTL)
@@ -89,6 +112,27 @@ Scanning dozens of tags may occur across multiple physical sessions, locations, 
 - **72-Hour Time-to-Live (TTL)**: Scanned chunks are cached in local encrypted storage.
 - **Duplicate Suppression**: Rescanning an already-collected tag is detected and suppressed (`CHUNK_ALREADY_CACHED`).
 - **Auto-Purge**: Chunks exceeding 72 hours are automatically zeroized and purged (`CACHE_EXPIRED`).
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> PhysicalTap: NFC Tag Detected
+    PhysicalTap --> ValidateEnvelope: Parse 134B NDEF Envelope
+    ValidateEnvelope --> ErrorReject: Magic / Version Invalid
+    ValidateEnvelope --> AuthVerify: Verify 74B AAD & GCM Tag
+    AuthVerify --> ErrorReject: Auth Tag Mismatch (Tampered)
+    AuthVerify --> CacheStore: Valid Chunk Authenticated
+    CacheStore --> CheckThreshold: Store with 72h Timestamp
+    CheckThreshold --> ProgressUpdate: Chunks < K Required
+    ProgressUpdate --> Idle: Awaiting Next Tag
+    CheckThreshold --> TriggerReconstruct: Chunks >= K Required
+    TriggerReconstruct --> RestoredFile: Cauchy GF(2^8) Solved & Decrypted
+    RestoredFile --> CleanPurge: Session Complete / File Exported
+    CleanPurge --> [*]
+
+    CacheStore --> ExpiredPurge: 72h Countdown Elapses
+    ExpiredPurge --> [*]
+```
 
 ---
 

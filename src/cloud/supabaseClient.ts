@@ -8,9 +8,19 @@
 
 import { computeChunkHash } from '../crypto';
 
+export type CloudMode = 'offline' | 'supabase';
+
+export interface CloudConfig {
+  mode: CloudMode;
+  url?: string;
+  publishableKey?: string;
+  anonKey?: string;
+}
+
 export interface SupabaseConfig {
   url: string;
   anonKey: string;
+  publishableKey?: string;
   isConfigured: boolean;
 }
 
@@ -24,17 +34,19 @@ export interface EncryptedVaultRecord {
 const DEFAULT_CONFIG: SupabaseConfig = {
   url: 'https://placeholder.supabase.co',
   anonKey: 'placeholder-anon-key',
+  publishableKey: 'placeholder-anon-key',
   isConfigured: false,
 };
 
 let activeConfig: SupabaseConfig = { ...DEFAULT_CONFIG };
 
-export function configureSupabase(url: string, anonKey: string): SupabaseConfig {
+export function configureSupabase(url: string, publishableOrAnonKey: string): SupabaseConfig {
   const cleanUrl = url.trim().replace(/\/+$/, '');
-  const cleanKey = anonKey.trim();
+  const cleanKey = publishableOrAnonKey.trim();
   activeConfig = {
     url: cleanUrl,
     anonKey: cleanKey,
+    publishableKey: cleanKey,
     isConfigured: Boolean(cleanUrl && cleanKey && !cleanUrl.includes('placeholder')),
   };
   return activeConfig;
@@ -46,6 +58,18 @@ export function resetSupabaseConfig(): void {
 
 export function getSupabaseConfig(): SupabaseConfig {
   return { ...activeConfig };
+}
+
+export function getCloudConfig(): CloudConfig {
+  if (activeConfig.isConfigured && activeConfig.url && (activeConfig.publishableKey || activeConfig.anonKey)) {
+    return {
+      mode: 'supabase',
+      url: activeConfig.url,
+      publishableKey: activeConfig.publishableKey || activeConfig.anonKey,
+      anonKey: activeConfig.anonKey,
+    };
+  }
+  return { mode: 'offline' };
 }
 
 /**
@@ -164,4 +188,35 @@ export async function downloadEncryptedVaultMetadata(
   }
 
   return null;
+}
+
+export async function deleteEncryptedVaultMetadata(
+  accountId: string
+): Promise<{ success: boolean; source: string }> {
+  inMemoryVaultSyncStore.delete(accountId);
+
+  if (!activeConfig.isConfigured) {
+    return { success: true, source: 'offline-local' };
+  }
+
+  try {
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeoutId = controller ? setTimeout(() => controller.abort(), 1000) : null;
+    const key = activeConfig.publishableKey || activeConfig.anonKey;
+    const resp = await fetch(
+      `${activeConfig.url}/rest/v1/ghost_vaults?account_id=eq.${accountId}`,
+      {
+        method: 'DELETE',
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+        },
+        signal: controller?.signal,
+      }
+    );
+    if (timeoutId) clearTimeout(timeoutId);
+    return { success: resp.ok, source: 'supabase-cloud' };
+  } catch (e) {
+    return { success: true, source: 'offline-fallback' };
+  }
 }

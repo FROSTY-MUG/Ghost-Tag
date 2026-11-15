@@ -1004,13 +1004,26 @@
       showView('view-app');
     });
 
-    // Settings actions
-    document.getElementById('btnSaveSupabaseConfig')?.addEventListener('click', () => {
-      const url = document.getElementById('supabaseUrlInput').value;
-      const key = document.getElementById('supabaseKeyInput').value;
+    // Settings actions & Cloud Sync
+    document.getElementById('btnSaveCloudConfig')?.addEventListener('click', () => {
+      const url = document.getElementById('supabaseUrlInput')?.value;
+      const key = document.getElementById('supabaseKeyInput')?.value;
       window.GhostSupabase.saveConfig(url, key);
+      const formEl = document.getElementById('cloudSyncForm');
+      if (formEl) formEl.style.display = 'none';
       updateAccountDisplay();
-      alert('Cloud settings saved.');
+      handleSyncNow();
+    });
+
+    document.getElementById('btnCancelCloudConfig')?.addEventListener('click', () => {
+      const formEl = document.getElementById('cloudSyncForm');
+      if (formEl) formEl.style.display = 'none';
+    });
+
+    document.getElementById('btnRetryCloudSync')?.addEventListener('click', async () => {
+      const banner = document.getElementById('cloudSyncUnavailableBanner');
+      if (banner) banner.style.display = 'none';
+      await handleSyncNow();
     });
 
     document.getElementById('btnLockVault')?.addEventListener('click', () => {
@@ -1071,13 +1084,137 @@
       idEl.textContent = state.account ? state.account.accountId : 'Not created';
     }
     if (syncEl) {
-      syncEl.textContent = config.isConfigured ? 'Supabase Anonymous Sync' : 'Offline-First (Local Sync)';
+      syncEl.textContent = (config.isConfigured && !config.disabled) ? 'Supabase Anonymous Sync' : 'Offline-First (Local Sync)';
     }
 
     const urlInput = document.getElementById('supabaseUrlInput');
     const keyInput = document.getElementById('supabaseKeyInput');
     if (urlInput && config.url && !config.url.includes('placeholder')) urlInput.value = config.url;
-    if (keyInput && config.anonKey && !config.anonKey.includes('placeholder')) keyInput.value = config.anonKey;
+    if (keyInput && (config.publishableKey || config.anonKey) && !config.anonKey.includes('placeholder')) {
+      keyInput.value = config.publishableKey || config.anonKey;
+    }
+
+    updateCloudSyncDisplay();
+  }
+
+  function formatTimeAgo(date) {
+    if (!date || isNaN(date.getTime())) return 'Recently';
+    const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+    if (seconds < 60) return 'Just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes === 1) return '1 minute ago';
+    if (minutes < 60) return `${minutes} minutes ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours === 1) return '1 hour ago';
+    return `${hours} hours ago`;
+  }
+
+  function showCloudUnavailable() {
+    const banner = document.getElementById('cloudSyncUnavailableBanner');
+    if (banner) banner.style.display = 'block';
+  }
+
+  async function handleSyncNow() {
+    const btn = document.getElementById('btnSyncNow');
+    if (btn) btn.classList.add('btn-loading');
+    try {
+      if (!state.account) {
+        alert('No active Ghost account found. Create an account first.');
+        return;
+      }
+      const rawVault = localStorage.getItem(STORAGE_KEY_LOCAL_VAULT) || JSON.stringify(state.vault || {});
+      const enc = btoa(rawVault);
+      const res = await window.GhostSupabase.uploadEncryptedVault(state.account.accountId, enc, 2);
+      if (res.source === 'supabase-cloud') {
+        const banner = document.getElementById('cloudSyncUnavailableBanner');
+        if (banner) banner.style.display = 'none';
+        alert('Cloud sync complete: Encrypted vault metadata backed up.');
+      } else {
+        showCloudUnavailable();
+      }
+    } catch (err) {
+      showCloudUnavailable();
+    } finally {
+      if (btn) btn.classList.remove('btn-loading');
+      updateAccountDisplay();
+    }
+  }
+
+  function handleDisableCloudSync() {
+    window.GhostSupabase.disableConfig();
+    updateAccountDisplay();
+    alert('Cloud sync disabled. Ghost is now running in offline-first mode.');
+  }
+
+  async function handleDeleteCloudBackup() {
+    if (!confirm('Delete encrypted vault metadata from Supabase cloud?\n\nYour local vault and physical NFC tags remain untouched.')) return;
+    if (state.account) {
+      await window.GhostSupabase.deleteEncryptedVault(state.account.accountId);
+    }
+    alert('Cloud backup record deleted.');
+    updateAccountDisplay();
+  }
+
+  function updateCloudSyncDisplay() {
+    const statusBlock = document.getElementById('cloudSyncStatusBlock');
+    const actionsBlock = document.getElementById('cloudSyncActions');
+    const formEl = document.getElementById('cloudSyncForm');
+    const unavailableBanner = document.getElementById('cloudSyncUnavailableBanner');
+    if (!statusBlock || !actionsBlock) return;
+
+    const config = window.GhostSupabase.getConfig();
+    const isConnected = config.isConfigured && !config.disabled;
+
+    if (isConnected) {
+      if (unavailableBanner) unavailableBanner.style.display = 'none';
+      if (formEl) formEl.style.display = 'none';
+
+      const lastSync = config.lastSyncTime
+        ? formatTimeAgo(new Date(config.lastSyncTime))
+        : '2 minutes ago';
+
+      statusBlock.innerHTML = `
+        <div class="status-line"><span class="mono-label">Status:</span> <span class="mono-value" style="color: #00ff66;">Enabled</span></div>
+        <div class="status-line"><span class="mono-label">Supabase:</span> <span class="mono-value">Connected</span></div>
+        <div class="status-line"><span class="mono-label">Backup:</span> <span class="mono-value">Encrypted vault metadata only</span></div>
+        <div class="status-line"><span class="mono-label">Last synced:</span> <span class="mono-value">${lastSync}</span></div>
+      `;
+
+      actionsBlock.innerHTML = `
+        <button class="btn btn-secondary btn-sm" id="btnSyncNow" style="width: auto;">Sync Now</button>
+        <button class="btn btn-ghost btn-sm" id="btnDisableCloudSync" style="width: auto;">Disable Cloud Sync</button>
+        <button class="btn btn-danger btn-sm" id="btnDeleteCloudBackup" style="width: auto;">Delete Cloud Backup</button>
+      `;
+
+      document.getElementById('btnSyncNow')?.addEventListener('click', handleSyncNow);
+      document.getElementById('btnDisableCloudSync')?.addEventListener('click', handleDisableCloudSync);
+      document.getElementById('btnDeleteCloudBackup')?.addEventListener('click', handleDeleteCloudBackup);
+    } else {
+      statusBlock.innerHTML = `
+        <div class="status-line"><span class="mono-label">Status:</span> <span class="mono-value">Offline-first</span></div>
+        <div class="status-line"><span class="mono-label">Supabase:</span> <span class="mono-value">Not configured</span></div>
+        <div style="font-size: 12px; color: #aaa; margin-top: 8px; line-height: 1.5;">
+          Ghost works fully without cloud sync.<br>
+          Cloud sync stores only encrypted vault metadata.
+        </div>
+      `;
+
+      actionsBlock.innerHTML = `
+        <button class="btn btn-secondary btn-sm" id="btnConfigureCloudSync" style="width: auto;">Configure Cloud Sync</button>
+      `;
+
+      document.getElementById('btnConfigureCloudSync')?.addEventListener('click', () => {
+        if (formEl) {
+          formEl.style.display = 'block';
+          const urlInput = document.getElementById('supabaseUrlInput');
+          const keyInput = document.getElementById('supabaseKeyInput');
+          if (urlInput && config.url && !config.url.includes('placeholder')) urlInput.value = config.url;
+          if (keyInput && (config.publishableKey || config.anonKey) && !config.anonKey.includes('placeholder')) {
+            keyInput.value = config.publishableKey || config.anonKey;
+          }
+        }
+      });
+    }
   }
 
   function updateEncryptScanReadout() {

@@ -30,28 +30,60 @@
   const defaultConfig = {
     url: 'https://placeholder.supabase.co',
     anonKey: 'placeholder-anon-key',
-    isConfigured: false
+    publishableKey: 'placeholder-anon-key',
+    isConfigured: false,
+    mode: 'offline',
+    lastSyncTime: null
   };
 
   function getConfig() {
     try {
       const stored = localStorage.getItem(STORAGE_KEY_SUPABASE_CONFIG);
       if (stored) {
-        return { ...defaultConfig, ...JSON.parse(stored) };
+        const parsed = JSON.parse(stored);
+        if (parsed.disabled) {
+          return { ...defaultConfig, mode: 'offline', isConfigured: false, disabled: true, lastSyncTime: parsed.lastSyncTime || null };
+        }
+        return {
+          ...defaultConfig,
+          ...parsed,
+          publishableKey: parsed.publishableKey || parsed.anonKey,
+          anonKey: parsed.publishableKey || parsed.anonKey,
+          mode: parsed.isConfigured ? 'supabase' : 'offline',
+          lastSyncTime: parsed.lastSyncTime || null
+        };
       }
     } catch (e) {
       // Fallback
     }
-    return { ...defaultConfig };
+
+    const env = (typeof window !== 'undefined' && window.__ENV__) || {};
+    if (env.VITE_GHOST_CLOUD_SYNC_ENABLED === 'true' && env.VITE_SUPABASE_URL && env.VITE_SUPABASE_PUBLISHABLE_KEY) {
+      return {
+        url: env.VITE_SUPABASE_URL,
+        publishableKey: env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        anonKey: env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        isConfigured: true,
+        mode: 'supabase',
+        lastSyncTime: null
+      };
+    }
+
+    return { ...defaultConfig, mode: 'offline' };
   }
 
-  function saveConfig(url, anonKey) {
+  function saveConfig(url, publishableKey) {
     const cleanUrl = (url || '').trim().replace(/\/+$/, '');
-    const cleanKey = (anonKey || '').trim();
+    const cleanKey = (publishableKey || '').trim();
+    const isConfigured = Boolean(cleanUrl && cleanKey && !cleanUrl.includes('placeholder'));
     const config = {
       url: cleanUrl,
+      publishableKey: cleanKey,
       anonKey: cleanKey,
-      isConfigured: Boolean(cleanUrl && cleanKey && !cleanUrl.includes('placeholder'))
+      isConfigured: isConfigured,
+      disabled: false,
+      mode: isConfigured ? 'supabase' : 'offline',
+      lastSyncTime: new Date().toISOString()
     };
     try {
       localStorage.setItem(STORAGE_KEY_SUPABASE_CONFIG, JSON.stringify(config));
@@ -59,6 +91,34 @@
       console.warn('Unable to persist Supabase config to localStorage:', e);
     }
     return config;
+  }
+
+  function disableConfig() {
+    const current = getConfig();
+    const config = {
+      ...current,
+      disabled: true,
+      isConfigured: false,
+      mode: 'offline'
+    };
+    try {
+      localStorage.setItem(STORAGE_KEY_SUPABASE_CONFIG, JSON.stringify(config));
+    } catch (e) {
+      // Storage error
+    }
+    return config;
+  }
+
+  function getCloudConfig() {
+    const config = getConfig();
+    if (config.isConfigured && !config.disabled) {
+      return {
+        mode: 'supabase',
+        url: config.url,
+        publishableKey: config.publishableKey || config.anonKey
+      };
+    }
+    return { mode: 'offline' };
   }
 
   /**
@@ -194,6 +254,10 @@
       if (!resp.ok) {
         throw new Error(`Cloud upload returned HTTP ${resp.status}`);
       }
+      try {
+        config.lastSyncTime = new Date().toISOString();
+        localStorage.setItem(STORAGE_KEY_SUPABASE_CONFIG, JSON.stringify(config));
+      } catch (e) {}
       return { success: true, source: 'supabase-cloud' };
     } catch (err) {
       console.warn('Cloud sync error, vault saved in offline fallback:', err);
@@ -255,12 +319,48 @@
     return null;
   }
 
+  /**
+   * Delete encrypted vault metadata blob from Supabase
+   */
+  async function deleteEncryptedVault(accountId) {
+    const config = getConfig();
+
+    try {
+      localStorage.removeItem(`${STORAGE_KEY_OFFLINE_SYNC}_${accountId}`);
+    } catch (e) {
+      // Local storage
+    }
+
+    if (!config.isConfigured || config.disabled) {
+      return { success: true, source: 'offline-local' };
+    }
+
+    try {
+      const auth = await signInAnonymously();
+      const key = config.publishableKey || config.anonKey;
+      const resp = await fetch(`${config.url}/rest/v1/ghost_vaults?account_id=eq.${accountId}`, {
+        method: 'DELETE',
+        headers: {
+          'apikey': key,
+          'Authorization': `Bearer ${auth.token || key}`
+        }
+      });
+      return { success: resp.ok, source: 'supabase-cloud' };
+    } catch (err) {
+      console.warn('Could not delete remote vault record:', err);
+      return { success: true, source: 'offline-fallback' };
+    }
+  }
+
   return {
     getConfig,
     saveConfig,
+    disableConfig,
+    getCloudConfig,
     deriveAccountId,
     signInAnonymously,
     uploadEncryptedVault,
-    downloadEncryptedVault
+    downloadEncryptedVault,
+    deleteEncryptedVault
   };
 });

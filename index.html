@@ -457,16 +457,45 @@
     <!-- VIEW 21: SECONDARY - SETTINGS & SUPABASE CONFIG -->
     <section id="view-settings" class="view-section">
       <h2 class="section-heading">Settings</h2>
-      <p class="subheading">Local Ghost vault and cloud sync settings.</p>
+      <p class="subheading">Ghost-Tag vault and cloud synchronization controls.</p>
 
-      <div class="form-group" style="margin-bottom: 20px;">
-        <label class="form-label">Supabase Cloud Sync (Optional):</label>
-        <input type="text" id="supabaseUrlInput" class="input-text" placeholder="https://your-project.supabase.co" style="margin-bottom: 8px;">
-        <input type="password" id="supabaseKeyInput" class="input-text" placeholder="Supabase Anon Public Key">
-        <div style="font-size: 11px; color: var(--text-secondary); margin-top: 6px;">
-          Configurable cloud sync. Leave empty to use local-first offline storage.
+      <!-- CLOUD SYNC CARD -->
+      <div class="settings-card" id="cloudSyncCard" style="background: #0d0d0d; border: 1px solid #222; border-radius: 6px; padding: 20px; margin-bottom: 24px;">
+        <div style="font-family: monospace; font-size: 13px; font-weight: bold; color: var(--accent-color, #00ff66); letter-spacing: 1.5px; margin-bottom: 12px;">CLOUD SYNC</div>
+
+        <!-- Dynamic Status Block -->
+        <div id="cloudSyncStatusBlock" style="margin-bottom: 14px;"></div>
+
+        <!-- Guarantees Banner -->
+        <div style="font-size: 12px; color: #888; margin-bottom: 16px; line-height: 1.6; border-left: 2px solid #333; padding-left: 10px;">
+          <div>Cloud sync is optional.</div>
+          <div style="color: #eee; font-weight: 500;">Ghost works fully offline.</div>
         </div>
-        <button class="btn btn-secondary btn-sm" id="btnSaveSupabaseConfig" style="margin-top: 8px; width: auto;">Save Cloud Config</button>
+
+        <!-- Error / Unavailable Banner -->
+        <div id="cloudSyncUnavailableBanner" style="display: none; background: #1a0808; border-left: 3px solid #ff4444; padding: 12px; margin-bottom: 16px;">
+          <div style="font-family: monospace; font-size: 12px; font-weight: bold; color: #ff5252; margin-bottom: 4px;">CLOUD SYNC UNAVAILABLE</div>
+          <div style="font-size: 12px; color: #ddd; line-height: 1.5;">
+            Ghost is continuing in offline-first mode.<br>
+            Your encrypted NFC data remains usable.
+          </div>
+          <button class="btn btn-secondary btn-sm" id="btnRetryCloudSync" style="margin-top: 10px; width: auto;">Retry</button>
+        </div>
+
+        <!-- Inline Form for Configuring Credentials -->
+        <div id="cloudSyncForm" style="display: none; margin-bottom: 16px; border-top: 1px solid #222; padding-top: 14px;">
+          <label class="form-label" style="font-size: 12px; color: #aaa;">Supabase Project URL:</label>
+          <input type="text" id="supabaseUrlInput" class="input-text" placeholder="https://your-project-ref.supabase.co" style="margin-bottom: 8px;">
+          <label class="form-label" style="font-size: 12px; color: #aaa;">Supabase Publishable Key (or Anon Key):</label>
+          <input type="password" id="supabaseKeyInput" class="input-text" placeholder="sb_publishable_... or anon key" style="margin-bottom: 12px;">
+          <div class="btn-group" style="margin-bottom: 0;">
+            <button class="btn btn-primary btn-sm" id="btnSaveCloudConfig" style="width: auto;">Save Credentials</button>
+            <button class="btn btn-ghost btn-sm" id="btnCancelCloudConfig" style="width: auto;">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Action Buttons Container -->
+        <div id="cloudSyncActions" class="btn-group" style="margin-bottom: 0;"></div>
       </div>
 
       <div class="btn-group">

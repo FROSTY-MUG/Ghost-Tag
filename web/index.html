@@ -33,6 +33,23 @@
     </div>
   </div>
 
+  <script>
+    // Failsafe auto-dismissal of initial loading splash screen
+    (function() {
+      function dismissLoading() {
+        var el = document.getElementById('loadingScreen') || document.getElementById('initialLoadingScreen');
+        if (el && !el.classList.contains('fade-out')) {
+          el.classList.add('fade-out');
+          setTimeout(function() {
+            if (el.parentNode) el.parentNode.removeChild(el);
+          }, 550);
+        }
+      }
+      setTimeout(dismissLoading, 600);
+      window.addEventListener('load', dismissLoading);
+    })();
+  </script>
+
   <div class="app-container">
 
     <!-- Top App Header -->

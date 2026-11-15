@@ -420,7 +420,7 @@
   // --- Initialization & Local Vault Check ---
   async function init() {
     // Fade out initial loading screen smoothly
-    const loadingScreen = document.getElementById('initialLoadingScreen');
+    const loadingScreen = document.getElementById('loadingScreen') || document.getElementById('initialLoadingScreen');
     if (loadingScreen) {
       setTimeout(() => {
         loadingScreen.classList.add('fade-out');
@@ -428,8 +428,8 @@
           if (loadingScreen.parentNode) {
             loadingScreen.parentNode.removeChild(loadingScreen);
           }
-        }, 650);
-      }, 550);
+        }, 550);
+      }, 350);
     }
 
     // Load local vault metadata

@@ -11,6 +11,9 @@
     "test": "jest",
     "typecheck": "tsc --noEmit",
     "verify": "tsc --noEmit && jest",
+    "audit:security": "python scripts/security_audit_agent.py",
+    "audit:quality": "python scripts/quality_audit_agent.py",
+    "audit": "python scripts/security_audit_agent.py && python scripts/quality_audit_agent.py",
     "build:apk": "python scripts/package_release_apk.py",
     "web": "npx --yes serve web -l 8080"
   },

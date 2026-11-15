@@ -1,11 +1,13 @@
 # Ghost-Tag CI/CD Workflows
 
-This directory contains the production GitHub Actions workflows for Ghost-Tag:
+This directory contains the production GitHub Actions workflows and autonomous agent pipelines for Ghost-Tag:
 
 1. **`ci.yml`**: TypeCheck (`tsc --noEmit`), Jest unit & integration test suite (130 tests), test coverage report.
-2. **`android-build.yml`**: Release APK compilation, Android SDK build, and SHA-256 checksum generation.
-3. **`deploy-pages.yml`**: Automated GitHub Pages deployment for the web showcase in `web/`.
-4. **`release.yml`**: Automated tag release builder (`v*`) with APK artifact attachment.
+2. **`agent-security-audit.yml`**: Autonomous Security Auditor Agent executing zero-secrets audits, Android hardware defense validation, and invariant checks.
+3. **`agent-quality-gate.yml`**: Autonomous Quality Assurance Agent enforcing strict type checking, version synchronization, and test suite pass rates.
+4. **`android-build.yml`**: Release APK compilation, Android SDK build, and SHA-256 checksum generation.
+5. **`deploy-pages.yml`**: Automated GitHub Pages deployment for the web showcase in `web/`.
+6. **`release.yml`**: Automated tag release builder (`v*`) with APK artifact attachment.
 
 ---
 

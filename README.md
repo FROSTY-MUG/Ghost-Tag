@@ -6,6 +6,9 @@
 [![Platform: Android](https://img.shields.io/badge/Platform-Android%20(API%2026%2B)-black.svg)](https://developer.android.com)
 [![Crypto: AES--256--GCM](https://img.shields.io/badge/Crypto-AES--256--GCM%20%2B%20Argon2id-blue.svg)](./docs/cryptography.md)
 [![Tests: 130 Passing](https://img.shields.io/badge/Tests-130%20Passing%20(100%25)-brightgreen.svg)](./src/__tests__/)
+[![Security Audit: Verified](https://img.shields.io/badge/Security%20Audit-Zero--Secrets%20%7C%20Verified-blueviolet.svg)](./scripts/security_audit_agent.py)
+[![Quality Gate: Passing](https://img.shields.io/badge/Quality%20Gate-100%25%20Passing-success.svg)](./scripts/quality_audit_agent.py)
+[![Dependabot: Active](https://img.shields.io/badge/Dependabot-Active-blue.svg)](./.github/dependabot.yml)
 [![Release: v2.0.0](https://img.shields.io/badge/Release-v2.0.0-crimson.svg)](https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.0)
 
 ---
@@ -446,24 +449,38 @@ npm run verify
 
 All 9 test suites and **130 tests pass with 100% success rate**.
 
-### 11.4 Running on an Android Device
+### 11.4 Running Autonomous Security & Quality Audit Agents
+Ghost-Tag includes standalone and CI-integrated autonomous agents for security and quality verification:
+
+```bash
+# 1. Run the Security Auditor Agent (scans zero-secrets, hardware defense & AAD invariants)
+npm run audit:security
+
+# 2. Run the Quality Assurance Agent (verifies type-safety, version sync & test gates)
+npm run audit:quality
+
+# 3. Combined autonomous audit
+npm run audit
+```
+
+### 11.5 Running on an Android Device
 ```bash
 # Connect physical Android device with USB debugging enabled
 npm run android
 ```
 
-### 11.5 Running the Web Showcase & Interactive Simulator
+### 11.6 Running the Web Showcase & Interactive Simulator
 Ghost-Tag includes an official cyber-terminal web showcase and interactive simulator in `web/`:
 
 ```bash
 # Launch the web showcase locally on port 8080
 npm run web
 ```
-- Open `http://localhost:8080` in any browser.
+- Open `http://localhost:8080` in any browser (or online at [frosty-mug.github.io/Ghost-Tag](https://frosty-mug.github.io/Ghost-Tag/)).
 - On **Chrome for Android**, physical NFC reading and writing is enabled directly via the **Web NFC API**!
 - Simulates single-tag encryption (v1 54B envelope), bulk file partitioning, and Cauchy-Vandermonde Reed-Solomon reconstruction over $\text{GF}(2^8)$ in real time.
 
-### 11.6 Official Android Release APK (v2.0.0)
+### 11.7 Official Android Release APK (v2.0.0)
 Official signed releases are available under [GitHub Releases](https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.0) and via the web showcase:
 
 - **Release Artifact**: `ghost-tag-v2.0.0.apk` / `app-release.apk` (399 KB)

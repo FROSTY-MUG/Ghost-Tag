@@ -243,6 +243,27 @@ All 10 test suites and **178 tests pass with 100% success rate**.
 npm run android
 ```
 
+### 9.5 Running the Web Showcase & Interactive Simulator
+Ghost-Tag includes an official cyber-terminal web showcase and interactive simulator in `web/`:
+
+```bash
+# Launch the web showcase locally on port 8080
+npm run web
+```
+- Open `http://localhost:8080` in any browser.
+- On **Chrome for Android**, physical NFC reading and writing is enabled directly via the **Web NFC API**!
+- Simulates single-tag encryption (v1 54B envelope), bulk file partitioning, and Cauchy-Vandermonde Reed-Solomon reconstruction over $\text{GF}(2^8)$ in real time.
+
+### 9.6 Building the Android Release APK
+```bash
+# Navigate to the android directory
+cd android
+
+# Build the release APK (signed and obfuscated via R8)
+./gradlew assembleRelease
+```
+The compiled APK will be generated at `android/app/build/outputs/apk/release/app-release.apk`.
+
 ---
 
 ## 10. Detailed Documentation Index

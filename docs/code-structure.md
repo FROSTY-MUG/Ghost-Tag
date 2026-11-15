@@ -8,6 +8,8 @@ This document provides a comprehensive directory and file tour of the entire Gho
 
 ```
 Ghost-Tag/
+├── ci/                                  # Continuous Integration & release pipeline specifications
+│   └── build-and-release.yml            # CI test, Android APK build, and GitHub Pages deploy specs
 ├── android/                             # Android native platform and build files
 │   ├── app/
 │   │   ├── build.gradle                 # App-level build config, CMake linking, R8 rules
@@ -136,6 +138,11 @@ Ghost-Tag/
 │       ├── nfc.test.ts                  # NFC hardware abstraction & read-back verify tests
 │       ├── vault.test.ts                # Vault, sessions, auto-lock, and recovery tests
 │       └── operations.test.ts           # Tag operations workflow & FSM tests
+├── web/                                 # Official responsive web showcase & interactive simulator
+│   ├── index.html                       # Web showcase landing page & interactive workspace
+│   ├── styles.css                       # Cyber-terminal high-contrast stylesheet
+│   ├── crypto-simulator.js              # In-browser WebCrypto AES-GCM, Cauchy RS GF(2^8), Web NFC
+│   └── app.js                           # UI controller, single-tag & bulk reconstruction simulators
 ├── __tests__/                           # Root-level test suites
 │   ├── App.test.tsx                     # App root rendering integration test
 │   └── crypto.test.ts                   # Cryptographic core unit tests
@@ -268,6 +275,15 @@ Ghost-Tag/
   - `navigation/RootNavigator.tsx`: React Navigation native stack container.
   - `navigation/types.ts`: Type-safe navigation routes and parameters.
   - `theme/index.ts`: High-contrast terminal color palette (`#000000` bg, `#00ff41` green).
+
+### 2.10 Web Showcase & Interactive Simulator (`web/`)
+- **Language**: HTML5, CSS3, JavaScript (ES6+ / WebCrypto / Web NFC)
+- **Purpose**: Official responsive product website, interactive cryptographic simulator, and Web NFC client for Android Chrome.
+- **Key Files**:
+  - `index.html`: Responsive single-page application showcasing features, simulators, documentation, and APK download.
+  - `styles.css`: High-contrast cyber-terminal theme with responsive card layouts and hex dump styling.
+  - `crypto-simulator.js`: In-browser cryptographic engine implementing AES-256-GCM, Cauchy Reed-Solomon over GF(2^8), SHA-256, 4-pass memory zeroization, and Web NFC NDEF read/write.
+  - `app.js`: UI controller for single-tag simulation, bulk file partitioning, random-order tag scanning, 72h offline cache countdown, and file reconstruction.
 
 ---
 

@@ -4,9 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Ghost-Tag // Encrypted NFC Storage</title>
-  <meta name="description" content="Encrypted NFC storage. Write. Scan. Decrypt. Minimal, zero-telemetry client-side vault.">
+  <meta name="description" content="Encrypted NFC storage. Write. Scan. Decrypt. Minimal client-side web application.">
   <meta name="theme-color" content="#000000">
   <link rel="stylesheet" href="styles.css">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg width='64' height='64' viewBox='0 0 64 64' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12 24 L24 10 L40 10 L52 24 L52 54 L44 46 L36 54 L28 46 L20 54 L12 46 Z' fill='%23ffffff'/%3E%3Crect x='22' y='24' width='6' height='10' fill='%23000000'/%3E%3Crect x='36' y='24' width='6' height='10' fill='%23000000'/%3E%3C/svg%3E">
 </head>
 <body>
 
@@ -30,22 +31,25 @@
 
     <!-- iOS Notice Banner -->
     <div id="iosNotice" class="alert-box alert-warning" style="display: none;">
-      <strong>iOS is not supported yet.</strong><br>
-      An iOS app will be available later. Ghost-Tag NFC scanning and writing require the future Ghost-Tag iOS app. You can still recover a vault or download files if you have an encrypted Ghost backup.
+      <strong>iOS is not supported yet.</strong> An iOS app will be available later.<br>
+      Ghost-Tag NFC scanning and writing require the future Ghost-Tag iOS app. You can still recover a vault or download files if you have an encrypted Ghost backup.
     </div>
 
     <!-- VIEW 1: LANDING PAGE -->
     <section id="view-landing" class="view-section active">
       <div style="text-align: center; padding: 60px 0 40px;">
-        <svg width="84" height="84" viewBox="0 0 64 64" fill="none" class="ghost-logo-svg" style="margin-bottom: 24px;" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 24 L24 10 L40 10 L52 24 L52 54 L44 46 L36 54 L28 46 L20 54 L12 46 Z" fill="currentColor"/>
-          <rect x="22" y="24" width="6" height="10" fill="#000000"/>
-          <rect x="36" y="24" width="6" height="10" fill="#000000"/>
-        </svg>
-        <h1 class="hero-heading">Encrypted NFC storage.</h1>
-        <p class="subheading" style="font-size: 18px; margin-bottom: 36px; color: var(--text-primary); letter-spacing: 0.5px;">Write. Scan. Decrypt.</p>
+        <div style="display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 24px;">
+          <span style="font-size: 32px; font-weight: 700; letter-spacing: 3px;">GHOST</span>
+          <svg width="44" height="44" viewBox="0 0 64 64" fill="none" class="ghost-logo-svg" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 24 L24 10 L40 10 L52 24 L52 54 L44 46 L36 54 L28 46 L20 54 L12 46 Z" fill="currentColor"/>
+            <rect x="22" y="24" width="6" height="10" fill="#000000"/>
+            <rect x="36" y="24" width="6" height="10" fill="#000000"/>
+          </svg>
+        </div>
+        <h1 class="hero-heading" style="font-size: 26px; margin-bottom: 8px;">Encrypted NFC storage.</h1>
+        <p class="subheading" style="font-size: 16px; margin-bottom: 36px; color: var(--text-primary); letter-spacing: 0.5px;">Write. Scan. Decrypt.</p>
 
-        <div class="btn-group" style="max-width: 320px; margin: 0 auto;">
+        <div class="btn-group" style="max-width: 300px; margin: 0 auto;">
           <button class="btn btn-primary" id="btnLaunch">Launch Web Version</button>
           <a class="btn btn-secondary" id="btnDownloadApk" href="https://github.com/FROSTY-MUG/Ghost-Tag/releases/download/v2.0.5/Ghost-Tag-v2.0.5.apk" target="_blank" rel="noopener">Download Android APK</a>
         </div>
@@ -71,7 +75,7 @@
       <p class="subheading">This protects your Ghost vault.</p>
 
       <div class="form-group">
-        <input type="password" id="newPassphraseInput" class="input-text" placeholder="Enter master passphrase" autocomplete="new-password">
+        <input type="password" id="newPassphraseInput" class="input-text" placeholder="Enter passphrase" autocomplete="new-password">
         <div class="input-helper">Minimum 16 characters.</div>
         <div id="createPassphraseError" class="alert-box alert-error" style="display: none; margin-top: 12px;"></div>
       </div>
@@ -100,7 +104,7 @@
     <!-- VIEW 5: CONFIRM RECOVERY PHRASE -->
     <section id="view-confirm-phrase" class="view-section">
       <h2 class="section-heading">Confirm your recovery phrase</h2>
-      <p class="subheading">Verify your offline backup by entering the requested words below.</p>
+      <p class="subheading">Verify your recovery words.</p>
 
       <div class="form-group">
         <label class="form-label" id="confirmLabel1">Enter word 4:</label>
@@ -125,15 +129,21 @@
 
     <!-- VIEW 6: VAULT CREATED -->
     <section id="view-vault-ready" class="view-section">
-      <div style="text-align: center; padding: 40px 0;">
-        <h2 class="hero-heading">Vault created.</h2>
-        <p class="subheading" style="color: #cccccc; margin-bottom: 32px;">Your Ghost vault is ready.</p>
+      <h2 class="section-heading">Vault created.</h2>
+      <p class="subheading">Your Ghost vault is ready.</p>
 
-        <div class="nav-card-grid">
-          <div class="nav-action-btn" data-action="go-app">
-            <span class="nav-action-label">Open Vault</span>
-            <span class="nav-action-arrow">→</span>
-          </div>
+      <div class="nav-card-grid">
+        <div class="nav-action-btn" onclick="GhostApp.showView('view-single-scan')">
+          <span class="nav-action-label">Scan Tag</span>
+          <span class="nav-action-arrow">→</span>
+        </div>
+        <div class="nav-action-btn" onclick="GhostApp.showView('view-bulk-scan')">
+          <span class="nav-action-label">Bulk File Vault</span>
+          <span class="nav-action-arrow">→</span>
+        </div>
+        <div class="nav-action-btn" onclick="GhostApp.showView('view-decrypt-scan')">
+          <span class="nav-action-label">Decrypt Now</span>
+          <span class="nav-action-arrow">→</span>
         </div>
       </div>
     </section>
@@ -141,7 +151,7 @@
     <!-- VIEW 7: APP MAIN DASHBOARD (Primary Actions) -->
     <section id="view-app" class="view-section">
       <h2 class="section-heading">Ghost Vault</h2>
-      <p class="subheading">Encrypted offline NFC storage manager.</p>
+      <p class="subheading">Encrypted NFC storage.</p>
 
       <div class="nav-card-grid">
         <div class="nav-action-btn" id="navActionSingle">
@@ -208,7 +218,7 @@
     <!-- VIEW 9: SINGLE-TAG WRITE -->
     <section id="view-single-write" class="view-section">
       <h2 class="section-heading">WRITE ENCRYPTED DATA</h2>
-      <p class="subheading">Choose what to store on this tag:</p>
+      <p class="subheading">Choose what to store:</p>
 
       <div class="tab-selector">
         <button class="tab-btn active" id="tabSingleText">Text</button>
@@ -219,8 +229,9 @@
       <div id="panelSingleText">
         <div class="form-group">
           <label class="form-label">Text:</label>
-          <textarea id="singleTextInput" class="input-text input-textarea" placeholder="Enter sensitive notes, passwords, or recovery instructions..."></textarea>
+          <textarea id="singleTextInput" class="input-text input-textarea" placeholder="Enter sensitive text..."></textarea>
           <div class="mono-readout" style="margin-top: 12px; font-size: 12px;">
+            <div class="status-line"><span class="mono-label">Estimated encrypted size:</span> <span class="mono-value" id="singleEstimatedSize">148 bytes</span></div>
             <div class="status-line"><span class="mono-label">Available writable space:</span> <span class="mono-value">496 bytes</span></div>
           </div>
         </div>
@@ -231,15 +242,18 @@
         <div class="form-group">
           <label class="form-label">SELECT FILE</label>
           <div class="file-dropzone" onclick="document.getElementById('singleFileInput').click()">
-            <div class="dropzone-label">Tap to select or drop any file (Text, Image, PDF, ZIP, Binary)</div>
+            <div class="dropzone-label">Select file (Text, Images, Videos, PDFs, ZIPs, Any file)</div>
             <input type="file" id="singleFileInput" style="display: none;">
           </div>
 
           <div id="singleFileInfo" class="mono-readout" style="display: none; font-size: 12px;"></div>
 
+          <div id="singleFileFitsMsg" class="alert-box alert-success" style="display: none;">
+            This file fits on one NFC tag.
+          </div>
+
           <div id="singleFileTooLargeAlert" class="alert-box alert-warning" style="display: none;">
-            <strong>This file needs more than one NFC tag.</strong><br>
-            Use Bulk File Vault to distribute this file across multiple tags.
+            <strong>This file needs more than one NFC tag. Use Bulk File Vault.</strong>
             <div style="margin-top: 10px;">
               <button class="btn btn-secondary btn-sm" onclick="GhostApp.showView('view-bulk-scan')">Use Bulk File Vault</button>
             </div>
@@ -275,7 +289,7 @@
 
       <div class="nfc-scan-target" style="padding: 32px 16px;">
         <div class="nfc-pulse-ring" style="width: 48px; height: 48px; margin-bottom: 12px;"></div>
-        <button class="btn btn-primary" id="btnStartBulkScan" style="max-width: 220px;">Scan NFC Tag</button>
+        <button class="btn btn-primary" id="btnStartBulkScan" style="max-width: 220px;">Start Scanning</button>
       </div>
 
       <div id="bulkScanReadout" style="display: none;">
@@ -299,8 +313,9 @@
           </div>
         </div>
 
-        <div class="btn-group">
-          <button class="btn btn-primary" id="btnBulkContinueToFiles">Continue to Files</button>
+        <div class="btn-group-row">
+          <button class="btn btn-secondary" onclick="document.getElementById('btnStartBulkScan').click()">Add Another Tag</button>
+          <button class="btn btn-primary" id="btnBulkContinueToFiles">Continue</button>
         </div>
       </div>
     </section>
@@ -308,39 +323,36 @@
     <!-- VIEW 12: BULK FILE SELECTION -->
     <section id="view-bulk-files" class="view-section">
       <h2 class="section-heading">SELECT FILES</h2>
-      <p class="subheading">Add one or more files to split across your scanned tags.</p>
+      <p class="subheading">Choose files to split across your scanned tags.</p>
 
-      <div class="file-dropzone" onclick="document.getElementById('bulkFileInput').click()">
-        <div class="dropzone-label">Tap to select files (Text, Images, Videos, PDFs, ZIPs, Archives)</div>
+      <div class="btn-group-row" style="margin-top: 0; margin-bottom: 16px;">
+        <button class="btn btn-secondary btn-sm" onclick="promptBulkAddText()">Add Text</button>
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('bulkFileInput').click()">Add File</button>
         <input type="file" id="bulkFileInput" multiple style="display: none;">
       </div>
 
       <div class="file-list" id="bulkFilesList"></div>
 
       <div id="bulkFilesTooLargeAlert" class="alert-box alert-warning" style="display: none;">
-        <strong>This selection is too large for the scanned tags.</strong><br>
-        Add more tags or remove files.
-        <div style="margin-top: 10px;">
-          <button class="btn btn-secondary btn-sm" onclick="GhostApp.showView('view-bulk-scan')">Add More Tags</button>
-        </div>
+        This selection is too large for the scanned tags. Add more tags or remove files.
       </div>
 
       <div id="bulkRequiredTagsBox" class="mono-readout" style="display: none;"></div>
 
       <div class="btn-group">
         <button class="btn btn-primary" id="btnBulkStartWrite" disabled>Encrypt and Write</button>
-        <button class="btn btn-ghost" onclick="GhostApp.showView('view-bulk-scan')">Back to Tags</button>
+        <button class="btn btn-ghost" onclick="GhostApp.showView('view-bulk-scan')">Back</button>
       </div>
     </section>
 
     <!-- VIEW 13: BULK PROGRESS & COMPLETION -->
     <section id="view-bulk-progress" class="view-section">
-      <h2 class="section-heading">Writing Bulk Vault</h2>
-      <div class="mono-readout" id="bulkWriteProgressText" style="text-align: center; font-size: 15px; padding: 24px;">
+      <h2 class="section-heading">Bulk Write Progress</h2>
+      <div class="mono-readout" id="bulkWriteProgressText" style="text-align: center; font-size: 15px; padding: 20px;">
         ENCRYPTING FILES...
       </div>
       <div class="mono-readout" id="bulkWriteProgressTally" style="font-size: 13px; text-align: center; white-space: pre-wrap;">
-        HOLD TAG NEAR PHONE
+        HOLD NEXT TAG NEAR PHONE
       </div>
 
       <div class="btn-group" id="btnBulkCompleteDone" style="display: none;">
@@ -351,11 +363,11 @@
     <!-- VIEW 14: DECRYPT NOW SCAN -->
     <section id="view-decrypt-scan" class="view-section">
       <h2 class="section-heading">DECRYPT NOW</h2>
-      <p class="subheading">Scan the Ghost-Tag NFC tags you want to decrypt in any order.</p>
+      <p class="subheading">Scan the Ghost-Tag NFC tags you want to decrypt.</p>
 
       <div class="nfc-scan-target">
         <div class="nfc-pulse-ring"></div>
-        <button class="btn btn-primary" id="btnStartDecryptScan" style="max-width: 220px;">Scan NFC Tag</button>
+        <button class="btn btn-primary" id="btnStartDecryptScan" style="max-width: 220px;">Start Scanning</button>
       </div>
 
       <div id="decryptScanReadout" class="mono-readout" style="display: none;">
@@ -366,23 +378,22 @@
         Ghost data is encrypted. Other NFC apps may not understand this record.
       </div>
 
-      <div class="btn-group">
-        <button class="btn btn-primary" id="btnTriggerDecrypt" disabled>Decrypt Now</button>
-        <button class="btn btn-ghost" onclick="GhostApp.showView('view-app')">Back to Home</button>
+      <div class="btn-group" id="decryptScanActions" style="display: none;">
+        <button class="btn btn-secondary" onclick="document.getElementById('btnStartDecryptScan').click()">Scan More Tags</button>
+        <button class="btn btn-primary" id="btnTriggerDecrypt">Decrypt Now</button>
       </div>
     </section>
 
     <!-- VIEW 15: DECRYPT COMPLETE -->
     <section id="view-decrypt-complete" class="view-section">
       <div class="alert-box alert-success">
-        <strong>DECRYPTION COMPLETE</strong><br>
-        All authentic chunks verified and reassembled successfully.
+        <strong>DECRYPTION COMPLETE</strong>
       </div>
 
-      <h3 class="section-heading" style="font-size: 16px; margin-top: 20px;">Recovered files:</h3>
+      <h3 class="section-heading" style="font-size: 15px; margin-top: 16px;">Recovered files:</h3>
       <div class="file-list" id="recoveredFilesList"></div>
 
-      <div class="btn-group" style="margin-top: 28px;">
+      <div class="btn-group" style="margin-top: 24px;">
         <button class="btn btn-secondary" onclick="GhostApp.showView('view-app')">Clear Temporary Data</button>
       </div>
     </section>
@@ -412,26 +423,39 @@
       </div>
     </section>
 
+    <!-- VIEW 17B: DECRYPT TAMPERED OR INVALID -->
+    <section id="view-decrypt-tampered" class="view-section">
+      <div class="alert-box alert-error">
+        <strong>DATA TAMPERED OR INVALID</strong><br>
+        One or more scanned Ghost records failed integrity verification.
+      </div>
+
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="GhostApp.showView('view-decrypt-scan')">Scan More Tags</button>
+        <button class="btn btn-ghost" onclick="GhostApp.showView('view-app')">Cancel</button>
+      </div>
+    </section>
+
     <!-- VIEW 18: UNLOCK VAULT -->
     <section id="view-unlock" class="view-section">
-      <h2 class="section-heading">Unlock Ghost Vault</h2>
+      <h2 class="section-heading">Unlock Vault</h2>
       <p class="subheading">Ghost vault already exists on this browser. Enter passphrase to unlock.</p>
 
       <div class="form-group">
-        <input type="password" id="unlockPassphraseInput" class="input-text" placeholder="Enter master passphrase">
+        <input type="password" id="unlockPassphraseInput" class="input-text" placeholder="Enter passphrase">
         <div id="unlockError" class="alert-box alert-error" style="display: none; margin-top: 12px;"></div>
       </div>
 
       <div class="btn-group">
         <button class="btn btn-primary" id="btnUnlockVault">Unlock Vault</button>
-        <button class="btn btn-ghost" id="btnUnlockReset">Start Over / Reset</button>
+        <button class="btn btn-ghost" id="btnUnlockReset">Start Over</button>
       </div>
     </section>
 
-    <!-- VIEW 19: RECOVERY SETTINGS -->
+    <!-- VIEW 19: RECOVERY -->
     <section id="view-recovery" class="view-section">
-      <h2 class="section-heading">Vault Recovery</h2>
-      <p class="subheading">Restore access to an existing vault using your 12-word recovery phrase.</p>
+      <h2 class="section-heading">Recovery</h2>
+      <p class="subheading">Restore access using your 12-word recovery phrase.</p>
 
       <div class="btn-group">
         <button class="btn btn-primary" onclick="GhostApp.showView('view-import-recovery')">Enter Recovery Phrase</button>
@@ -442,27 +466,28 @@
     <!-- VIEW 20: IMPORT RECOVERY PHRASE -->
     <section id="view-import-recovery" class="view-section">
       <h2 class="section-heading">Restore from Recovery Phrase</h2>
-      <p class="subheading">Enter your 12-word BIP-39 recovery phrase separated by spaces.</p>
+      <p class="subheading">Enter your 12-word recovery phrase separated by spaces.</p>
 
       <div class="form-group">
-        <textarea id="importRecoveryPhraseInput" class="input-text input-textarea" placeholder="abandon ability able about above absent absorb abstract absurd abuse access accident..."></textarea>
+        <textarea id="importRecoveryPhraseInput" class="input-text input-textarea" placeholder="word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12"></textarea>
+        <div id="importRecoveryError" class="alert-box alert-error" style="display: none; margin-top: 12px;"></div>
       </div>
 
       <div class="btn-group">
-        <button class="btn btn-primary" onclick="alert('Recovery phrase validated. Set new passphrase.')">Restore Vault</button>
+        <button class="btn btn-primary" id="btnSubmitImportRecovery">Restore Vault</button>
         <button class="btn btn-ghost" onclick="GhostApp.showView('view-landing')">Cancel</button>
       </div>
     </section>
 
     <!-- VIEW 21: SETTINGS -->
     <section id="view-settings" class="view-section">
-      <h2 class="section-heading">Vault Settings</h2>
-      <p class="subheading">Local browser profile configuration.</p>
+      <h2 class="section-heading">Settings</h2>
+      <p class="subheading">Local Ghost vault settings.</p>
 
       <div class="btn-group">
         <button class="btn btn-secondary" id="btnLockVault">Lock Vault</button>
         <button class="btn btn-danger" id="btnDeleteVaultSettings">Delete Local Vault</button>
-        <button class="btn btn-ghost" onclick="GhostApp.showView('view-app')">Back to Home</button>
+        <button class="btn btn-ghost" onclick="GhostApp.showView('view-app')">Back</button>
       </div>
     </section>
 
@@ -495,14 +520,13 @@
       </div>
     </div>
 
-    <!-- MODAL: TECHNICAL SPECIFICATIONS (Collapsible Drawer) -->
+    <!-- MODAL: TECHNICAL DRAWER -->
     <div class="modal-overlay" id="modalTechnical">
       <div class="modal-dialog technical-drawer">
-        <h3 class="modal-title">Ghost-Tag Technical Specifications</h3>
-        <p>Ghost-Tag v2.0.5 implements zero-knowledge encrypted physical storage across NFC Forum tags.</p>
+        <h3 class="modal-title">Technical Specifications</h3>
+        <p>Ghost-Tag v2.0.5 implements offline zero-knowledge encrypted NFC storage.</p>
 
-        <h3>Cryptographic Envelope Layout</h3>
-        <p>Every NFC tag contains a canonical binary envelope bound via Additional Authenticated Data (AAD):</p>
+        <h3>Canonical Envelope Structure</h3>
         <div class="mono-readout" style="font-size: 11px;">
 MAGIC (4B: "GHTG")
 FORMAT_VERSION (1B: 0x02)
@@ -514,17 +538,12 @@ AUTH_TAG (16B AES-GCM)
 CIPHERTEXT (Encrypted Payload)
         </div>
 
-        <h3>Key Derivation & Memory Security</h3>
+        <h3>Cryptographic Primitives</h3>
         <ul>
-          <li><strong>Argon2id / PBKDF2-SHA256</strong>: 100,000 iterations over 32-byte CSPRNG salt.</li>
-          <li><strong>AES-256-GCM</strong>: Authenticated encryption with 96-bit fresh random nonces per write.</li>
-          <li><strong>Zero-Secrets Invariant</strong>: No passphrases, KEKs, DEKs, or plaintext stored in cookies, localStorage, or server logs.</li>
-        </ul>
-
-        <h3>Erasure Coding & Partitioning</h3>
-        <ul>
-          <li><strong>Cauchy Reed-Solomon GF(2^8)</strong>: Deterministic recovery of $K$ data chunks from any $K$ out of $N$ tags in arbitrary order.</li>
-          <li><strong>MIME Types</strong>: <code>application/vnd.ghost.secure</code>, <code>application/vnd.ghost.bulk</code>.</li>
+          <li><strong>AES-256-GCM</strong>: Authenticated symmetric encryption with 96-bit CSPRNG nonces.</li>
+          <li><strong>PBKDF2-SHA256</strong>: 100,000 iterations over 32-byte salt for Key Encryption Key derivation.</li>
+          <li><strong>12-Word BIP-39</strong>: 128-bit entropy + 4-bit SHA256 checksum over English dictionary.</li>
+          <li><strong>Cauchy Reed-Solomon</strong>: Erasure coding over Galois Field $GF(2^8)$.</li>
         </ul>
 
         <div style="margin-top: 24px;">
@@ -533,24 +552,23 @@ CIPHERTEXT (Encrypted Payload)
       </div>
     </div>
 
-    <!-- MODAL: SECURITY POLICY -->
+    <!-- MODAL: SECURITY -->
     <div class="modal-overlay" id="modalSecurity">
       <div class="modal-dialog">
-        <h3 class="modal-title">Security Invariants</h3>
+        <h3 class="modal-title">Security</h3>
         <p class="modal-body">
-          Ghost-Tag operates exclusively client-side. There are no user accounts, no cloud endpoints, and no remote telemetry.
-          If you discover a cryptographic vulnerability, report it confidentially to <code>aryanarora26110@gmail.com</code>.
+          Ghost-Tag executes exclusively in local browser memory. No passphrases, KEKs, DEKs, or decrypted files are ever stored on disk or transmitted over networks.
         </p>
         <button class="btn btn-secondary btn-sm" data-dismiss="modal">Close</button>
       </div>
     </div>
 
-    <!-- MODAL: PRIVACY POLICY -->
+    <!-- MODAL: PRIVACY -->
     <div class="modal-overlay" id="modalPrivacy">
       <div class="modal-dialog">
-        <h3 class="modal-title">Privacy Policy</h3>
+        <h3 class="modal-title">Privacy</h3>
         <p class="modal-body">
-          Zero telemetry. Zero cookies. Zero server sync. All encryption, NFC writing, and recovery phrase derivations occur purely in local volatile memory.
+          Zero telemetry. Zero cookies. Zero external API calls. Offline-first local security utility.
         </p>
         <button class="btn btn-secondary btn-sm" data-dismiss="modal">Close</button>
       </div>
@@ -558,11 +576,11 @@ CIPHERTEXT (Encrypted Payload)
 
     <!-- Minimal Footer -->
     <footer class="app-footer">
-      <div>GHOST-TAG v2.0.5</div>
+      <div>Technical · Security · Privacy · Source</div>
       <div class="footer-nav">
-        <span class="footer-link" id="footerTechnicalLink">Technical</span>
-        <span class="footer-link" id="footerSecurityLink">Security</span>
-        <span class="footer-link" id="footerPrivacyLink">Privacy</span>
+        <span class="footer-link" id="footerTechnicalLink">Technical</span> ·
+        <span class="footer-link" id="footerSecurityLink">Security</span> ·
+        <span class="footer-link" id="footerPrivacyLink">Privacy</span> ·
         <a class="footer-link" href="https://github.com/FROSTY-MUG/Ghost-Tag" target="_blank" rel="noopener">Source</a>
       </div>
     </footer>

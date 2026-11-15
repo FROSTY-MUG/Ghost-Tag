@@ -439,8 +439,12 @@
     bindEvents();
     updateCacheDisplay();
 
-    // Default view: landing page
-    showView('view-landing');
+    // Default view: landing page or hash route
+    if (window.location.hash) {
+      handleHashRoute();
+    } else {
+      showView('view-landing');
+    }
   }
 
   // --- Event Bindings ---
@@ -903,6 +907,50 @@
       }
     });
 
+    // Real-time Single Text Estimate
+    const singleTextInput = document.getElementById('singleTextInput');
+    if (singleTextInput) {
+      singleTextInput.addEventListener('input', () => {
+        const text = singleTextInput.value || '';
+        const bytes = new TextEncoder().encode(text).length;
+        const estimated = bytes + 54;
+        const estEl = document.getElementById('singleEstimatedSize');
+        if (estEl) estEl.textContent = `${estimated} bytes`;
+      });
+    }
+
+    // Import Recovery Phrase Handler
+    const btnSubmitImportRecovery = document.getElementById('btnSubmitImportRecovery');
+    if (btnSubmitImportRecovery) {
+      btnSubmitImportRecovery.addEventListener('click', async () => {
+        const input = document.getElementById('importRecoveryPhraseInput');
+        const text = (input ? input.value : '').trim();
+        const words = text.split(/\s+/).filter(Boolean);
+        const errEl = document.getElementById('importRecoveryError');
+
+        if (words.length !== 12) {
+          if (errEl) {
+            errEl.textContent = 'Recovery phrase is invalid. (Must be exactly 12 words)';
+            errEl.style.display = 'block';
+          }
+          return;
+        }
+
+        const valid = await verify12WordPhrase(words);
+        if (!valid) {
+          if (errEl) {
+            errEl.textContent = 'Recovery phrase is invalid.';
+            errEl.style.display = 'block';
+          }
+          return;
+        }
+
+        if (errEl) errEl.style.display = 'none';
+        state.pendingRecoveryWords = words;
+        showView('view-create-passphrase');
+      });
+    }
+
     // Footer Drawers: Technical, Security, Privacy
     document.getElementById('footerTechnicalLink')?.addEventListener('click', () => {
       showModal('modalTechnical');
@@ -1165,6 +1213,11 @@
     `;
     listEl.style.display = 'block';
 
+    const actionsEl = document.getElementById('decryptScanActions');
+    if (actionsEl) {
+      actionsEl.style.display = totalScanned > 0 ? 'flex' : 'none';
+    }
+
     const btnTrigger = document.getElementById('btnTriggerDecrypt');
     btnTrigger.disabled = ghostCount === 0;
   }
@@ -1244,11 +1297,54 @@
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   }
 
+  window.promptBulkAddText = function() {
+    const title = prompt('Enter filename for text record (e.g. notes.txt):', 'notes.txt');
+    if (!title) return;
+    const content = prompt('Enter text content:');
+    if (content === null) return;
+    const blob = new Blob([content], { type: 'text/plain' });
+    const file = new File([blob], title, { type: 'text/plain' });
+    state.bulkFiles.push(file);
+    updateBulkFilesDisplay();
+  };
+
+  function handleHashRoute() {
+    const hash = window.location.hash.replace('#', '');
+    if (!hash) return;
+    if (hash === 'scan') {
+      resetSingleScanView();
+      showView('view-single-scan');
+    } else if (hash === 'write') {
+      showView('view-single-write');
+    } else if (hash === 'bulk') {
+      resetBulkScanView();
+      showView('view-bulk-scan');
+    } else if (hash === 'decrypt') {
+      resetDecryptView();
+      showView('view-decrypt-scan');
+    } else if (hash === 'recovery') {
+      showView('view-recovery');
+    } else if (hash === 'settings') {
+      showView('view-settings');
+    } else if (hash === 'app') {
+      if (state.vault && !state.isUnlocked) {
+        showView('view-unlock');
+      } else if (state.vault && state.isUnlocked) {
+        showView('view-app');
+      } else {
+        showView('view-welcome');
+      }
+    }
+  }
+
+  window.addEventListener('hashchange', handleHashRoute);
+
   // Global Exports & Bootstrap
   window.GhostApp = {
     state,
     showView,
-    init
+    init,
+    handleHashRoute
   };
 
   document.addEventListener('DOMContentLoaded', init);

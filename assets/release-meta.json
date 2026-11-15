@@ -1,14 +1,10 @@
 {
-  "version": "2.0.0",
-  "name": "Ghost-Tag Bulk Scanning v2",
-  "file": "ghost-tag-v2.0.0.apk",
+  "version": "2.0.5",
+  "tagName": "v2.0.5",
+  "releaseName": "Ghost-Tag v2.0.5",
+  "apkFilename": "Ghost-Tag-v2.0.5.apk",
   "sha256": "28a2e3d85ec803a733b62cdd5f55f1077d7b5a990a256b656262009d096e71ea",
-  "sizeBytes": 399136,
-  "sizeFormatted": "399 KB",
-  "releaseDate": "2026-11-15",
-  "minSdkVersion": 26,
-  "minAndroidVersion": "Android 8.0 Oreo",
-  "package": "com.ghosttag",
-  "abiSupport": ["arm64-v8a", "armeabi-v7a", "x86_64"],
-  "tagSupport": ["NTAG213", "NTAG215", "NTAG216", "MIFARE Ultralight"]
+  "publishedAt": "2026-11-15T18:00:00Z",
+  "releaseNotes": "Ghost-Tag v2.0.5: Minimal dark web client, 12-word BIP-39 cross-platform recovery, single-tag file storage, 72-hour encrypted cache, automatic chip detection.",
+  "downloadUrl": "https://github.com/FROSTY-MUG/Ghost-Tag/releases/download/v2.0.5/Ghost-Tag-v2.0.5.apk"
 }

@@ -3,455 +3,574 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Ghost-Tag // Offline Encrypted NFC Data-Vault & Distributed File Vault for Android</title>
-  <meta name="description" content="Ghost-Tag is an offline, encrypted NFC data-vault and distributed file vault system for Android, leveraging AES-256-GCM, Argon2id, and Cauchy Reed-Solomon erasure coding.">
-  <meta name="theme-color" content="#050608">
+  <title>Ghost-Tag // Encrypted NFC Storage</title>
+  <meta name="description" content="Encrypted NFC storage. Write. Scan. Decrypt. Minimal, zero-telemetry client-side vault.">
+  <meta name="theme-color" content="#000000">
   <link rel="stylesheet" href="styles.css">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
 
-  <!-- Navigation Bar -->
-  <header>
-    <div class="container nav-bar">
-      <a href="#" class="brand">
-        <span class="brand-knife-icon"></span>
-        <span>GHOST-TAG</span>
-        <span class="brand-badge">v2.0.0</span>
-      </a>
-      <ul class="nav-links">
-        <li><a href="#features">Features</a></li>
-        <li><a href="#simulator">Live Simulator</a></li>
-        <li><a href="#security">Security Core</a></li>
-        <li><a href="#docs">Docs</a></li>
-        <li><a href="#download" class="btn-apk-header">GET APK (v2.0.0)</a></li>
-      </ul>
-    </div>
-  </header>
+  <div class="app-container">
 
-  <!-- Hero Section with Subtle Ghost Face Watermark -->
-  <section class="hero">
-    <div class="hero-ghost-watermark" aria-hidden="true"></div>
-    <div class="container">
-      <div class="hero-content">
-        <div class="hero-tagline">OFFLINE ENCRYPTED NFC DISTRIBUTED FILE-VAULT FOR ANDROID</div>
-        <h1 class="hero-title">GHOST-TAG</h1>
-        <p class="hero-subtitle">
-          Turn ordinary physical NFC tags into confidential, tamper-evident encrypted vaults.
-          Protect recovery phrases, configurations, and large files split across physical tags without cloud dependencies.
+    <!-- Top App Header -->
+    <header class="app-header">
+      <div class="brand-group" id="brandHome" title="Ghost-Tag Home">
+        <svg width="28" height="28" viewBox="0 0 64 64" fill="none" class="ghost-logo-svg" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 24 L24 10 L40 10 L52 24 L52 54 L44 46 L36 54 L28 46 L20 54 L12 46 Z" fill="currentColor"/>
+          <rect x="22" y="24" width="6" height="10" fill="#000000"/>
+          <rect x="36" y="24" width="6" height="10" fill="#000000"/>
+        </svg>
+        <span class="brand-title">GHOST</span>
+      </div>
+      <div class="header-actions">
+        <span class="header-link" id="headerRecoveryLink">Recovery</span>
+        <span class="header-link" id="headerSettingsLink">Settings</span>
+      </div>
+    </header>
+
+    <!-- iOS Notice Banner -->
+    <div id="iosNotice" class="alert-box alert-warning" style="display: none;">
+      <strong>iOS is not supported yet.</strong><br>
+      An iOS app will be available later. Ghost-Tag NFC scanning and writing require the future Ghost-Tag iOS app. You can still recover a vault or download files if you have an encrypted Ghost backup.
+    </div>
+
+    <!-- VIEW 1: LANDING PAGE -->
+    <section id="view-landing" class="view-section active">
+      <div style="text-align: center; padding: 60px 0 40px;">
+        <svg width="84" height="84" viewBox="0 0 64 64" fill="none" class="ghost-logo-svg" style="margin-bottom: 24px;" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 24 L24 10 L40 10 L52 24 L52 54 L44 46 L36 54 L28 46 L20 54 L12 46 Z" fill="currentColor"/>
+          <rect x="22" y="24" width="6" height="10" fill="#000000"/>
+          <rect x="36" y="24" width="6" height="10" fill="#000000"/>
+        </svg>
+        <h1 class="hero-heading">Encrypted NFC storage.</h1>
+        <p class="subheading" style="font-size: 18px; margin-bottom: 36px; color: var(--text-primary); letter-spacing: 0.5px;">Write. Scan. Decrypt.</p>
+
+        <div class="btn-group" style="max-width: 320px; margin: 0 auto;">
+          <button class="btn btn-primary" id="btnLaunch">Launch Web Version</button>
+          <a class="btn btn-secondary" id="btnDownloadApk" href="https://github.com/FROSTY-MUG/Ghost-Tag/releases/download/v2.0.5/Ghost-Tag-v2.0.5.apk" target="_blank" rel="noopener">Download Android APK</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 2: WELCOME (First-run flow) -->
+    <section id="view-welcome" class="view-section">
+      <h2 class="hero-heading">Welcome to Ghost</h2>
+      <p class="subheading" style="font-size: 15px; color: #cccccc; margin-bottom: 32px;">
+        Create your encrypted vault. Your data stays in this browser. Your recovery phrase is the only way to restore access if you switch devices or clear this browser.
+      </p>
+
+      <div class="btn-group">
+        <button class="btn btn-primary" id="btnWelcomeCreate">Create Vault</button>
+        <button class="btn btn-secondary" id="btnWelcomeImport">I Have a Recovery Phrase</button>
+      </div>
+    </section>
+
+    <!-- VIEW 3: CREATE PASSPHRASE -->
+    <section id="view-create-passphrase" class="view-section">
+      <h2 class="section-heading">Create passphrase</h2>
+      <p class="subheading">This protects your Ghost vault.</p>
+
+      <div class="form-group">
+        <input type="password" id="newPassphraseInput" class="input-text" placeholder="Enter master passphrase" autocomplete="new-password">
+        <div class="input-helper">Minimum 16 characters.</div>
+        <div id="createPassphraseError" class="alert-box alert-error" style="display: none; margin-top: 12px;"></div>
+      </div>
+
+      <div class="btn-group">
+        <button class="btn btn-primary" id="btnCreatePassphrase">Continue</button>
+      </div>
+    </section>
+
+    <!-- VIEW 4: RECOVERY PHRASE DISPLAY -->
+    <section id="view-recovery-phrase" class="view-section">
+      <h2 class="section-heading">Your recovery phrase</h2>
+      <p class="subheading">
+        Write these 12 words down offline. Do not screenshot them. Do not store them in notes. Do not share them. If you lose this phrase and your passphrase, you cannot recover your Ghost vault.
+      </p>
+
+      <div class="phrase-grid" id="recoveryGrid">
+        <!-- 12 words injected dynamically -->
+      </div>
+
+      <div class="btn-group">
+        <button class="btn btn-primary" id="btnSavedPhrase">I Have Saved It Safely</button>
+      </div>
+    </section>
+
+    <!-- VIEW 5: CONFIRM RECOVERY PHRASE -->
+    <section id="view-confirm-phrase" class="view-section">
+      <h2 class="section-heading">Confirm your recovery phrase</h2>
+      <p class="subheading">Verify your offline backup by entering the requested words below.</p>
+
+      <div class="form-group">
+        <label class="form-label" id="confirmLabel1">Enter word 4:</label>
+        <input type="text" id="confirmInput1" class="input-text" autocomplete="off" autocapitalize="none">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" id="confirmLabel2">Enter word 8:</label>
+        <input type="text" id="confirmInput2" class="input-text" autocomplete="off" autocapitalize="none">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" id="confirmLabel3">Enter word 11:</label>
+        <input type="text" id="confirmInput3" class="input-text" autocomplete="off" autocapitalize="none">
+        <div id="confirmPhraseError" class="alert-box alert-error" style="display: none; margin-top: 12px;"></div>
+      </div>
+
+      <div class="btn-group">
+        <button class="btn btn-primary" id="btnConfirmPhrase">Confirm</button>
+      </div>
+    </section>
+
+    <!-- VIEW 6: VAULT CREATED -->
+    <section id="view-vault-ready" class="view-section">
+      <div style="text-align: center; padding: 40px 0;">
+        <h2 class="hero-heading">Vault created.</h2>
+        <p class="subheading" style="color: #cccccc; margin-bottom: 32px;">Your Ghost vault is ready.</p>
+
+        <div class="nav-card-grid">
+          <div class="nav-action-btn" data-action="go-app">
+            <span class="nav-action-label">Open Vault</span>
+            <span class="nav-action-arrow">→</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 7: APP MAIN DASHBOARD (Primary Actions) -->
+    <section id="view-app" class="view-section">
+      <h2 class="section-heading">Ghost Vault</h2>
+      <p class="subheading">Encrypted offline NFC storage manager.</p>
+
+      <div class="nav-card-grid">
+        <div class="nav-action-btn" id="navActionSingle">
+          <span class="nav-action-label">Scan Tag</span>
+          <span class="nav-action-arrow">→</span>
+        </div>
+        <div class="nav-action-btn" id="navActionBulk">
+          <span class="nav-action-label">Bulk File Vault</span>
+          <span class="nav-action-arrow">→</span>
+        </div>
+        <div class="nav-action-btn" id="navActionDecrypt">
+          <span class="nav-action-label">Decrypt Now</span>
+          <span class="nav-action-arrow">→</span>
+        </div>
+      </div>
+
+      <!-- 72-Hour Cache Banner -->
+      <div id="cacheBanner" class="cache-banner" style="display: none;">
+        <div class="cache-banner-title">CACHED DATA</div>
+        <div id="cacheBannerText" class="cache-banner-text" style="white-space: pre-wrap;"></div>
+        <div class="cache-banner-actions">
+          <button class="btn btn-secondary btn-sm" id="btnClearCache">Clear Cache</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 8: SINGLE-TAG SCAN -->
+    <section id="view-single-scan" class="view-section">
+      <h2 class="section-heading">SCAN TAG</h2>
+      <p class="subheading" id="singleScanStatus">Hold your phone near an NFC tag.</p>
+
+      <div class="nfc-scan-target">
+        <div class="nfc-pulse-ring"></div>
+        <button class="btn btn-primary" id="btnStartSingleScan" style="max-width: 220px;">Start Scanning</button>
+      </div>
+
+      <!-- Tag Detected Readout -->
+      <div id="tagDetectedPanel" style="display: none;">
+        <div class="mono-readout">
+          <div class="status-line">
+            <span class="mono-label">TAG DETECTED</span>
+          </div>
+          <div class="status-line">
+            <span class="mono-label">Type:</span>
+            <span class="mono-value">Detected automatically</span>
+          </div>
+          <div class="status-line">
+            <span class="mono-label">Total storage:</span>
+            <span class="mono-value" id="detectedTagTotalStorage">504 bytes</span>
+          </div>
+          <div class="status-line">
+            <span class="mono-label">Writable storage:</span>
+            <span class="mono-value" id="detectedTagWritableStorage">496 bytes</span>
+          </div>
+        </div>
+
+        <div class="btn-group">
+          <button class="btn btn-primary" id="btnGoWriteSingle">Write Encrypted Data</button>
+          <button class="btn btn-secondary" onclick="GhostApp.showView('view-decrypt-scan')">Read Existing Data</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 9: SINGLE-TAG WRITE -->
+    <section id="view-single-write" class="view-section">
+      <h2 class="section-heading">WRITE ENCRYPTED DATA</h2>
+      <p class="subheading">Choose what to store on this tag:</p>
+
+      <div class="tab-selector">
+        <button class="tab-btn active" id="tabSingleText">Text</button>
+        <button class="tab-btn" id="tabSingleFile">File</button>
+      </div>
+
+      <!-- Text Storage Panel -->
+      <div id="panelSingleText">
+        <div class="form-group">
+          <label class="form-label">Text:</label>
+          <textarea id="singleTextInput" class="input-text input-textarea" placeholder="Enter sensitive notes, passwords, or recovery instructions..."></textarea>
+          <div class="mono-readout" style="margin-top: 12px; font-size: 12px;">
+            <div class="status-line"><span class="mono-label">Available writable space:</span> <span class="mono-value">496 bytes</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- File Storage Panel -->
+      <div id="panelSingleFile" style="display: none;">
+        <div class="form-group">
+          <label class="form-label">SELECT FILE</label>
+          <div class="file-dropzone" onclick="document.getElementById('singleFileInput').click()">
+            <div class="dropzone-label">Tap to select or drop any file (Text, Image, PDF, ZIP, Binary)</div>
+            <input type="file" id="singleFileInput" style="display: none;">
+          </div>
+
+          <div id="singleFileInfo" class="mono-readout" style="display: none; font-size: 12px;"></div>
+
+          <div id="singleFileTooLargeAlert" class="alert-box alert-warning" style="display: none;">
+            <strong>This file needs more than one NFC tag.</strong><br>
+            Use Bulk File Vault to distribute this file across multiple tags.
+            <div style="margin-top: 10px;">
+              <button class="btn btn-secondary btn-sm" onclick="GhostApp.showView('view-bulk-scan')">Use Bulk File Vault</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="btn-group">
+        <button class="btn btn-primary" id="btnEncryptWriteSingle">Encrypt and Write</button>
+        <button class="btn btn-ghost" onclick="GhostApp.showView('view-app')">Cancel</button>
+      </div>
+    </section>
+
+    <!-- VIEW 10: SINGLE-TAG PROGRESS & VERIFY -->
+    <section id="view-single-progress" class="view-section">
+      <h2 class="section-heading">Writing to Tag</h2>
+      <div class="mono-readout" id="singleWriteProgress" style="font-size: 14px; text-align: center; padding: 28px;">
+        ENCRYPTING...
+      </div>
+
+      <div id="singleWriteResult" style="display: none;"></div>
+
+      <div class="btn-group" id="singleWriteActions" style="display: none;">
+        <button class="btn btn-primary" onclick="GhostApp.showView('view-single-scan')">Scan Another Tag</button>
+        <button class="btn btn-secondary" onclick="GhostApp.showView('view-app')">Back to Home</button>
+      </div>
+    </section>
+
+    <!-- VIEW 11: BULK FILE VAULT (Scan tags) -->
+    <section id="view-bulk-scan" class="view-section">
+      <h2 class="section-heading">BULK FILE VAULT</h2>
+      <p class="subheading">Scan the NFC tags you want to use.</p>
+
+      <div class="nfc-scan-target" style="padding: 32px 16px;">
+        <div class="nfc-pulse-ring" style="width: 48px; height: 48px; margin-bottom: 12px;"></div>
+        <button class="btn btn-primary" id="btnStartBulkScan" style="max-width: 220px;">Scan NFC Tag</button>
+      </div>
+
+      <div id="bulkScanReadout" style="display: none;">
+        <div class="mono-readout">
+          <div class="status-line">
+            <span class="mono-label">TAGS SCANNED:</span>
+            <span class="mono-value" id="bulkTotalTagsScanned">0</span>
+          </div>
+          <div id="bulkTagList" style="margin: 8px 0; border-top: 1px dashed var(--border-subtle); padding-top: 8px;"></div>
+          <div class="status-line">
+            <span class="mono-label">TOTAL READABLE STORAGE:</span>
+            <span class="mono-value" id="bulkTotalReadableStorage">0 bytes</span>
+          </div>
+          <div class="status-line">
+            <span class="mono-label">TOTAL WRITABLE STORAGE:</span>
+            <span class="mono-value" id="bulkTotalWritableStorage">0 bytes</span>
+          </div>
+          <div class="status-line" style="border-top: 1px solid var(--border-subtle); padding-top: 4px; margin-top: 4px;">
+            <span class="mono-label" style="color: #ffffff; font-weight: 600;">TOTAL USABLE GHOST STORAGE:</span>
+            <span class="mono-value" id="bulkTotalUsableGhost" style="color: #00ff66;">0 bytes</span>
+          </div>
+        </div>
+
+        <div class="btn-group">
+          <button class="btn btn-primary" id="btnBulkContinueToFiles">Continue to Files</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 12: BULK FILE SELECTION -->
+    <section id="view-bulk-files" class="view-section">
+      <h2 class="section-heading">SELECT FILES</h2>
+      <p class="subheading">Add one or more files to split across your scanned tags.</p>
+
+      <div class="file-dropzone" onclick="document.getElementById('bulkFileInput').click()">
+        <div class="dropzone-label">Tap to select files (Text, Images, Videos, PDFs, ZIPs, Archives)</div>
+        <input type="file" id="bulkFileInput" multiple style="display: none;">
+      </div>
+
+      <div class="file-list" id="bulkFilesList"></div>
+
+      <div id="bulkFilesTooLargeAlert" class="alert-box alert-warning" style="display: none;">
+        <strong>This selection is too large for the scanned tags.</strong><br>
+        Add more tags or remove files.
+        <div style="margin-top: 10px;">
+          <button class="btn btn-secondary btn-sm" onclick="GhostApp.showView('view-bulk-scan')">Add More Tags</button>
+        </div>
+      </div>
+
+      <div id="bulkRequiredTagsBox" class="mono-readout" style="display: none;"></div>
+
+      <div class="btn-group">
+        <button class="btn btn-primary" id="btnBulkStartWrite" disabled>Encrypt and Write</button>
+        <button class="btn btn-ghost" onclick="GhostApp.showView('view-bulk-scan')">Back to Tags</button>
+      </div>
+    </section>
+
+    <!-- VIEW 13: BULK PROGRESS & COMPLETION -->
+    <section id="view-bulk-progress" class="view-section">
+      <h2 class="section-heading">Writing Bulk Vault</h2>
+      <div class="mono-readout" id="bulkWriteProgressText" style="text-align: center; font-size: 15px; padding: 24px;">
+        ENCRYPTING FILES...
+      </div>
+      <div class="mono-readout" id="bulkWriteProgressTally" style="font-size: 13px; text-align: center; white-space: pre-wrap;">
+        HOLD TAG NEAR PHONE
+      </div>
+
+      <div class="btn-group" id="btnBulkCompleteDone" style="display: none;">
+        <button class="btn btn-primary" onclick="GhostApp.showView('view-app')">Done</button>
+      </div>
+    </section>
+
+    <!-- VIEW 14: DECRYPT NOW SCAN -->
+    <section id="view-decrypt-scan" class="view-section">
+      <h2 class="section-heading">DECRYPT NOW</h2>
+      <p class="subheading">Scan the Ghost-Tag NFC tags you want to decrypt in any order.</p>
+
+      <div class="nfc-scan-target">
+        <div class="nfc-pulse-ring"></div>
+        <button class="btn btn-primary" id="btnStartDecryptScan" style="max-width: 220px;">Scan NFC Tag</button>
+      </div>
+
+      <div id="decryptScanReadout" class="mono-readout" style="display: none;">
+        <!-- Injected dynamically -->
+      </div>
+
+      <div class="alert-box alert-box" style="color: var(--text-secondary); font-size: 12px; margin-bottom: 20px;">
+        Ghost data is encrypted. Other NFC apps may not understand this record.
+      </div>
+
+      <div class="btn-group">
+        <button class="btn btn-primary" id="btnTriggerDecrypt" disabled>Decrypt Now</button>
+        <button class="btn btn-ghost" onclick="GhostApp.showView('view-app')">Back to Home</button>
+      </div>
+    </section>
+
+    <!-- VIEW 15: DECRYPT COMPLETE -->
+    <section id="view-decrypt-complete" class="view-section">
+      <div class="alert-box alert-success">
+        <strong>DECRYPTION COMPLETE</strong><br>
+        All authentic chunks verified and reassembled successfully.
+      </div>
+
+      <h3 class="section-heading" style="font-size: 16px; margin-top: 20px;">Recovered files:</h3>
+      <div class="file-list" id="recoveredFilesList"></div>
+
+      <div class="btn-group" style="margin-top: 28px;">
+        <button class="btn btn-secondary" onclick="GhostApp.showView('view-app')">Clear Temporary Data</button>
+      </div>
+    </section>
+
+    <!-- VIEW 16: DECRYPT MISSING CHUNKS -->
+    <section id="view-decrypt-missing" class="view-section">
+      <div class="alert-box alert-warning">
+        <strong>MORE TAGS NEEDED</strong><br>
+        <span id="missingChunksText" style="white-space: pre-wrap;"></span>
+      </div>
+
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="GhostApp.showView('view-decrypt-scan')">Scan More Tags</button>
+        <button class="btn btn-ghost" onclick="GhostApp.showView('view-app')">Cancel</button>
+      </div>
+    </section>
+
+    <!-- VIEW 17: DECRYPT FAILED -->
+    <section id="view-decrypt-failed" class="view-section">
+      <div class="alert-box alert-error">
+        <strong>DECRYPTION FAILED</strong><br>
+        The passphrase is incorrect or the data was encrypted with a different vault.
+      </div>
+
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="GhostApp.showView('view-decrypt-scan')">Try Again</button>
+      </div>
+    </section>
+
+    <!-- VIEW 18: UNLOCK VAULT -->
+    <section id="view-unlock" class="view-section">
+      <h2 class="section-heading">Unlock Ghost Vault</h2>
+      <p class="subheading">Ghost vault already exists on this browser. Enter passphrase to unlock.</p>
+
+      <div class="form-group">
+        <input type="password" id="unlockPassphraseInput" class="input-text" placeholder="Enter master passphrase">
+        <div id="unlockError" class="alert-box alert-error" style="display: none; margin-top: 12px;"></div>
+      </div>
+
+      <div class="btn-group">
+        <button class="btn btn-primary" id="btnUnlockVault">Unlock Vault</button>
+        <button class="btn btn-ghost" id="btnUnlockReset">Start Over / Reset</button>
+      </div>
+    </section>
+
+    <!-- VIEW 19: RECOVERY SETTINGS -->
+    <section id="view-recovery" class="view-section">
+      <h2 class="section-heading">Vault Recovery</h2>
+      <p class="subheading">Restore access to an existing vault using your 12-word recovery phrase.</p>
+
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="GhostApp.showView('view-import-recovery')">Enter Recovery Phrase</button>
+        <button class="btn btn-secondary" onclick="GhostApp.showView('view-app')">Back</button>
+      </div>
+    </section>
+
+    <!-- VIEW 20: IMPORT RECOVERY PHRASE -->
+    <section id="view-import-recovery" class="view-section">
+      <h2 class="section-heading">Restore from Recovery Phrase</h2>
+      <p class="subheading">Enter your 12-word BIP-39 recovery phrase separated by spaces.</p>
+
+      <div class="form-group">
+        <textarea id="importRecoveryPhraseInput" class="input-text input-textarea" placeholder="abandon ability able about above absent absorb abstract absurd abuse access accident..."></textarea>
+      </div>
+
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="alert('Recovery phrase validated. Set new passphrase.')">Restore Vault</button>
+        <button class="btn btn-ghost" onclick="GhostApp.showView('view-landing')">Cancel</button>
+      </div>
+    </section>
+
+    <!-- VIEW 21: SETTINGS -->
+    <section id="view-settings" class="view-section">
+      <h2 class="section-heading">Vault Settings</h2>
+      <p class="subheading">Local browser profile configuration.</p>
+
+      <div class="btn-group">
+        <button class="btn btn-secondary" id="btnLockVault">Lock Vault</button>
+        <button class="btn btn-danger" id="btnDeleteVaultSettings">Delete Local Vault</button>
+        <button class="btn btn-ghost" onclick="GhostApp.showView('view-app')">Back to Home</button>
+      </div>
+    </section>
+
+    <!-- MODAL: PASSPHRASE PROMPT -->
+    <div class="modal-overlay" id="modalPassphrase">
+      <div class="modal-dialog">
+        <h3 class="modal-title">ENTER PASSPHRASE</h3>
+        <p class="modal-body">Your data will be encrypted before it is written to the NFC tag.</p>
+        <div class="form-group">
+          <input type="password" id="modalPassphraseInput" class="input-text" placeholder="Enter passphrase">
+        </div>
+        <div class="btn-group-row">
+          <button class="btn btn-ghost" id="btnCancelPassphraseModal">Cancel</button>
+          <button class="btn btn-primary" id="btnSubmitPassphraseModal">Encrypt and Write</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: DELETE LOCAL VAULT WARNING -->
+    <div class="modal-overlay" id="modalDeleteVault">
+      <div class="modal-dialog">
+        <h3 class="modal-title" style="color: var(--accent-red);">Delete Local Vault</h3>
+        <p class="modal-body">
+          This will permanently remove the local Ghost vault and cached encrypted data from this browser. Your NFC tags will remain encrypted. Without your recovery phrase, you will not be able to decrypt them on this browser again.
         </p>
-
-        <!-- Tactical Specimen Unit: Subtle Brutalist Ghost Threat Profile -->
-        <div class="specimen-badge">
-          <div class="specimen-frame">
-            <img src="assets/ghost-hero.jpg" alt="Ghost-Tag Covert Operative" class="specimen-photo">
-            <div class="specimen-blade-sheen"></div>
-          </div>
-          <div class="specimen-info">
-            <div class="specimen-code">// ENTITY_ID: GHOST_VAULT_NODE_01</div>
-            <div class="specimen-tagline">AIR-GAPPED STORAGE • CAUCHY GF(2^8) REED-SOLOMON • HARDENED ZERO-TRACE</div>
-          </div>
-        </div>
-
-        <!-- Exact Core User Promise Banner -->
-        <div class="promise-box">
-          <span class="badge-label">CORE USER PROMISE</span>
-          "Ghost-Tag splits your encrypted files into pieces and stores one piece on each NFC tag. You can scan the tags in any order later. Ghost-Tag identifies each piece, verifies it, and reassembles your files when enough valid pieces are collected."
-        </div>
-
-        <!-- Exact Limitation Banner -->
-        <div class="limitation-box">
-          <span class="badge-label">SECURITY BOUNDARY & LIMITATION</span>
-          "A lost, damaged, or missing tag may prevent reconstruction. Enable redundancy to tolerate lost tags. Ghost-Tag does not prevent tag cloning, deletion, or replay."
-        </div>
-
-        <!-- Hero Action Buttons -->
-        <div class="hero-actions">
-          <a href="#simulator" class="btn-primary">LAUNCH WEB SIMULATOR</a>
-          <a href="#download" class="btn-secondary">DOWNLOAD ANDROID APK</a>
-        </div>
-
-        <!-- Live Web NFC Status Pill -->
-        <div>
-          <div id="webNfcPill" class="nfc-status-pill">
-            <span class="nfc-dot"></span>
-            <span id="webNfcLabel">CHECKING WEB NFC HARDWARE COMPATIBILITY...</span>
-          </div>
+        <div class="btn-group-row">
+          <button class="btn btn-ghost" id="btnCancelDelete">Cancel</button>
+          <button class="btn btn-danger" id="btnConfirmDeleteVault">Delete Local Vault</button>
         </div>
       </div>
     </div>
-  </section>
 
-  <!-- Features Grid Section -->
-  <section id="features" class="container" style="padding: 70px 24px 40px;">
-    <h2 class="section-title">CORE CAPABILITIES</h2>
-    <p class="section-desc">Designed with cryptographic rigor, zero cloud reliance, and deep Android hardware integration.</p>
+    <!-- MODAL: TECHNICAL SPECIFICATIONS (Collapsible Drawer) -->
+    <div class="modal-overlay" id="modalTechnical">
+      <div class="modal-dialog technical-drawer">
+        <h3 class="modal-title">Ghost-Tag Technical Specifications</h3>
+        <p>Ghost-Tag v2.0.5 implements zero-knowledge encrypted physical storage across NFC Forum tags.</p>
 
-    <div class="features-grid">
-      <div class="feature-card">
-        <div class="feature-icon">🔐</div>
-        <h3 class="feature-title">Two-Tier Key Hierarchy</h3>
-        <p class="feature-text">Master Passphrase derives an ephemeral KEK via RFC 9106 Argon2id. Unique 256-bit DEKs are encrypted at rest with AES-256-GCM. Raw keys are never stored on disk.</p>
-      </div>
-
-      <div class="feature-card">
-        <div class="feature-icon">🧩</div>
-        <h3 class="feature-title">Bulk Distributed Vault (v2)</h3>
-        <p class="feature-text">Split arbitrary files (PDFs, videos, images, ZIPs) across physical NFC tags using Cauchy-Vandermonde Reed-Solomon erasure coding over GF(2^8) to tolerate lost tags.</p>
-      </div>
-
-      <div class="feature-card">
-        <div class="feature-icon">🚫</div>
-        <h3 class="feature-title">Extra-Tag Exclusion Rule</h3>
-        <p class="feature-text">Strictly prevents tag misuse. If a vault requires 86 tags out of 100 presented, Ghost-Tag prompts to set aside the 14 surplus tags and excludes them from writing.</p>
-      </div>
-
-      <div class="feature-card">
-        <div class="feature-icon">⏱️</div>
-        <h3 class="feature-title">72-Hour Offline Cache</h3>
-        <p class="feature-text">Scanned chunks are cached in encrypted offline storage with a strict 72-hour TTL and visual countdown, allowing asynchronous tag scanning across multiple days.</p>
-      </div>
-
-      <div class="feature-card">
-        <div class="feature-icon">🛡️</div>
-        <h3 class="feature-title">Native C++ Security Core</h3>
-        <p class="feature-text">Linux ptrace anti-debugging, /proc maps Frida/Xposed scanner, kernel page locking (mlock), and non-optimizable memory zeroization barriers.</p>
-      </div>
-
-      <div class="feature-card">
-        <div class="feature-icon">🔒</div>
-        <h3 class="feature-title">Android Platform Hardening</h3>
-        <p class="feature-text">FLAG_SECURE window protection blocks screenshots and task switcher previews. Hardware-backed Android KeyStore (TEE / StrongBox) secures master database keys.</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- Interactive Simulator & Web NFC Section -->
-  <section id="simulator" class="simulator-section">
-    <div class="container">
-      <h2 class="section-title">INTERACTIVE WORKSPACE & WEB NFC</h2>
-      <p class="section-desc">Experience real in-browser encryption, binary framing, Reed-Solomon reconstruction, and physical Web NFC interaction.</p>
-
-      <!-- Simulator Tabs -->
-      <div class="tab-nav">
-        <button class="tab-btn active" data-tab="tab-single">1. SINGLE-TAG VAULT (v1)</button>
-        <button class="tab-btn" data-tab="tab-bulk">2. BULK FILE VAULT & RECONSTRUCTION (v2)</button>
-        <button class="tab-btn" data-tab="tab-security">3. SECURITY & ANTI-TAMPER MATRIX</button>
-      </div>
-
-      <!-- Tab 1: Single Tag Simulator -->
-      <div id="tab-single" class="tab-content active">
-        <div class="terminal-window">
-          <div class="terminal-header">
-            <span class="term-dot dot-red"></span>
-            <span class="term-dot dot-yellow"></span>
-            <span class="term-dot dot-green"></span>
-            <span class="term-title">single_tag_vault_simulator.exe (54-Byte Fixed Envelope)</span>
-          </div>
-          <div class="terminal-body">
-            <div class="sim-grid">
-              <!-- Controls Pane -->
-              <div class="sim-pane">
-                <div class="input-group">
-                  <label for="simTagType">TARGET NFC HARDWARE CHIP</label>
-                  <select id="simTagType" class="select-field">
-                    <option value="NTAG215">NTAG215 (504B user memory • 404B usable plaintext)</option>
-                    <option value="NTAG216">NTAG216 (888B user memory • 780B usable plaintext)</option>
-                    <option value="NTAG213">NTAG213 (144B user memory • 45B usable plaintext)</option>
-                  </select>
-                </div>
-
-                <div class="input-group">
-                  <label for="simPurpose">CANONICAL CATEGORICAL PURPOSE</label>
-                  <select id="simPurpose" class="select-field">
-                    <option value="0x01">0x01: NOTE (Recovery phrase, memo, secret fragment)</option>
-                    <option value="0x02">0x02: CREDENTIAL (Password, API key, auth token)</option>
-                    <option value="0x03">0x03: CONFIG (Server endpoint, wireguard profile)</option>
-                    <option value="0x05">0x05: ASSET_ID (Hardware identifier, serial)</option>
-                  </select>
-                </div>
-
-                <div class="input-group">
-                  <label for="simPayload">SECRET PAYLOAD (PLAINTEXT)</label>
-                  <textarea id="simPayload" class="textarea-field" placeholder="Enter sensitive payload to encrypt onto NFC tag...">abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about</textarea>
-                </div>
-
-                <!-- Capacity meter -->
-                <div class="capacity-box">
-                  <div class="capacity-meta">
-                    <span>CAPACITY UTILIZATION:</span>
-                    <span id="simByteCount">0 B</span> / <span id="simMaxBytes">404 B</span>
-                  </div>
-                  <div class="progress-bar-bg">
-                    <div id="simProgressFill" class="progress-bar-fill"></div>
-                  </div>
-                </div>
-
-                <div class="input-group">
-                  <label for="simPassphrase">USER MASTER PASSPHRASE</label>
-                  <input type="password" id="simPassphrase" class="input-field" value="correct-horse-battery-staple">
-                </div>
-
-                <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                  <button id="btnSimEncrypt" class="btn-primary" style="flex:1;">ENCRYPT & LOCK TAG</button>
-                  <button id="btnSimDecrypt" class="btn-secondary" style="flex:1;">READ & DECRYPT</button>
-                  <button id="btnSimWriteNfc" class="btn-secondary btn-physical-nfc" style="display:none; border-color:var(--green-term); color:var(--green-term);">WRITE PHYSICAL NFC TAG</button>
-                </div>
-              </div>
-
-              <!-- Output & Hex Inspector Pane -->
-              <div class="sim-pane">
-                <div class="input-group">
-                  <label>BINARY ENVELOPE HEX DUMP (54B OVERHEAD + CIPHERTEXT)</label>
-                  <div id="simHexInspector" class="hex-inspector">
-                    <span style="color:var(--text-muted);">// Click "ENCRYPT & LOCK TAG" to inspect serialized binary wire bytes</span>
-                  </div>
-                </div>
-
-                <div class="input-group">
-                  <label>LIVE STATUS STREAM & VERIFICATION LOG</label>
-                  <div id="simStatusStream" class="status-stream">
-                    <div class="status-line"><span class="status-tag info">[READY]</span> Simulator initialized. Select chip and enter payload.</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Tab 2: Bulk Scanning v2 Visualizer -->
-      <div id="tab-bulk" class="tab-content">
-        <div class="terminal-window">
-          <div class="terminal-header">
-            <span class="term-dot dot-red"></span>
-            <span class="term-dot dot-yellow"></span>
-            <span class="term-dot dot-green"></span>
-            <span class="term-title">bulk_distributed_vault_visualizer.exe (Cauchy RS over GF(2^8))</span>
-          </div>
-          <div class="terminal-body">
-            <div class="sim-grid">
-              <!-- Partitioning Pane -->
-              <div class="sim-pane">
-                <div class="input-group">
-                  <label>1. SELECT OR DROP ANY FILE (PDF, VIDEO, IMAGE, ARCHIVE)</label>
-                  <div id="bulkDropZone" style="border:2px dashed var(--border-sharp); padding:20px; text-align:center; cursor:pointer; background:#07090f;">
-                    <div style="font-size:1.5rem; margin-bottom:6px;">📁</div>
-                    <div id="bulkFileName" style="font-weight:bold; color:#fff;">recovery_note.pdf</div>
-                    <div id="bulkFileSize" style="color:var(--text-muted); font-size:0.8rem;">1.2 KB</div>
-                    <input type="file" id="bulkFileInput" style="display:none;">
-                    <button class="btn-secondary" style="margin-top:10px; padding:6px 14px; font-size:0.75rem;" onclick="document.getElementById('bulkFileInput').click();">CHOOSE LOCAL FILE</button>
-                  </div>
-                </div>
-
-                <div class="input-group">
-                  <label for="bulkRedundancy">2. REED-SOLOMON REDUNDANCY: <span id="bulkRedundancyVal" style="color:var(--cyan-neon);">25%</span></label>
-                  <input type="range" id="bulkRedundancy" min="0" max="100" value="25" step="5" style="accent-color:var(--cyan-neon); cursor:pointer;">
-                </div>
-
-                <div class="capacity-box">
-                  <div class="capacity-meta"><span>PARTITION PLAN SUMMARY:</span></div>
-                  <div style="display:flex; justify-content:space-between; font-size:0.85rem; padding:4px 0;">
-                    <span style="color:var(--text-muted);">Data Chunks (K):</span>
-                    <span id="planDataChunks" style="color:var(--green-term); font-weight:bold;">4 Data Tags</span>
-                  </div>
-                  <div style="display:flex; justify-content:space-between; font-size:0.85rem; padding:4px 0;">
-                    <span style="color:var(--text-muted);">Parity Chunks (M):</span>
-                    <span id="planRecoveryChunks" style="color:var(--purple-rs); font-weight:bold;">1 Recovery Tag</span>
-                  </div>
-                  <div style="display:flex; justify-content:space-between; font-size:0.85rem; padding:4px 0; border-top:1px solid var(--border-subtle); margin-top:4px;">
-                    <span style="color:var(--text-muted);">Total Physical Tags:</span>
-                    <span id="planTotalTags" style="color:#fff; font-weight:bold;">5 NFC Tags</span>
-                  </div>
-                </div>
-
-                <!-- Exclusion box -->
-                <div id="bulkExclusionBox" class="limitation-box" style="margin:0; font-size:0.8rem;"></div>
-
-                <button id="btnBulkPartition" class="btn-primary">PARTITION & GENERATE PHYSICAL TAGS</button>
-              </div>
-
-              <!-- Reconstruction Simulation Pane -->
-              <div class="sim-pane">
-                <div class="input-group">
-                  <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <label>PHYSICAL NFC TAG RACK (CLICK ANY CARDS IN RANDOM ORDER)</label>
-                    <span id="bulkCacheTtl" style="font-size:0.75rem; color:var(--amber-warn);">72h 00m 00s remaining</span>
-                  </div>
-                  <div id="bulkTagRack" class="bulk-tag-rack">
-                    <span style="color:var(--text-muted); font-size:0.8rem; padding:20px; text-align:center;">Click "PARTITION & GENERATE" to load physical tags rack</span>
-                  </div>
-                </div>
-
-                <div class="capacity-box">
-                  <div class="capacity-meta">
-                    <span>RECONSTRUCTION PROGRESS:</span>
-                    <span id="bulkProgressText">0 of 4 required chunks</span>
-                  </div>
-                  <div class="progress-bar-bg">
-                    <div id="bulkProgressBar" class="progress-bar-fill" style="width:0%;"></div>
-                  </div>
-                </div>
-
-                <div style="display:flex; gap:10px;">
-                  <button id="btnBulkReconstruct" class="btn-primary" style="flex:1; opacity:0.5;" disabled>RECONSTRUCT FILE (SOLVE GF(2^8))</button>
-                  <a id="btnDownloadRecon" class="btn-secondary" style="display:none; text-align:center; border-color:var(--green-term); color:var(--green-term);">DOWNLOAD FILE</a>
-                </div>
-
-                <div class="input-group">
-                  <label>BULK OPERATIONS LOG</label>
-                  <div id="bulkStatusStream" class="status-stream" style="min-height:100px; max-height:130px;">
-                    <div class="status-line"><span class="status-tag info">[IDLE]</span> Awaiting partition execution.</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Tab 3: Security & Anti-Tamper Architecture -->
-      <div id="tab-security" class="tab-content">
-        <div class="terminal-window">
-          <div class="terminal-header">
-            <span class="term-dot dot-red"></span>
-            <span class="term-dot dot-yellow"></span>
-            <span class="term-dot dot-green"></span>
-            <span class="term-title">security_defense_in_depth.matrix</span>
-          </div>
-          <div class="terminal-body">
-            <div class="features-grid" style="margin-bottom:0;">
-              <div class="feature-card">
-                <span class="badge-label" style="color:var(--green-term);">LAYER 1: NATIVE C++ ENGINE</span>
-                <h3 class="feature-title" style="font-size:0.95rem;">libghosttag_security.so</h3>
-                <p class="feature-text">Compiled ARM64/x86_64 machine code executing <code>ptrace(PTRACE_TRACEME)</code> anti-debugging, parsing <code>/proc/self/status</code> TracerPid, and scanning <code>/proc/self/maps</code> for Frida agents (<code>frida-agent.so</code>, <code>frida-gadget</code>) and Xposed hooks.</p>
-              </div>
-
-              <div class="feature-card">
-                <span class="badge-label" style="color:var(--cyan-neon);">LAYER 2: KERNEL MEMORY LOCKING</span>
-                <h3 class="feature-title" style="font-size:0.95rem;">mlock() & Volatile Barriers</h3>
-                <p class="feature-text">Locks key buffers into physical RAM via <code>mlock()</code> to forbid Linux kernel swap to flash storage. Multi-pass memory scrubbing (0xAA, 0x55, CSPRNG, 0x00) with <code>asm volatile("" : : "r"(p) : "memory")</code> defeats compiler dead-store elimination.</p>
-              </div>
-
-              <div class="feature-card">
-                <span class="badge-label" style="color:var(--purple-rs);">LAYER 3: ANDROID PLATFORM</span>
-                <h3 class="feature-title" style="font-size:0.95rem;">FLAG_SECURE & KeyStore TEE</h3>
-                <p class="feature-text"><code>WindowManager.LayoutParams.FLAG_SECURE</code> blocks screenshots, screen recording, and task switcher preview leaks. Hardware-backed <code>AndroidKeyStore</code> encapsulates master database keys in TEE / StrongBox.</p>
-              </div>
-
-              <div class="feature-card">
-                <span class="badge-label" style="color:var(--amber-warn);">LAYER 4: FAIL-CLOSED GATE</span>
-                <h3 class="feature-title" style="font-size:0.95rem;">assertDeviceIntegrity()</h3>
-                <p class="feature-text">If any integrity check fails (debugger attached, hooking framework active, root escalation detected), Ghost-Tag immediately executes panic zeroization of all active session keys and halts operations.</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-    </div>
-  </section>
-
-  <!-- Interactive Documentation Reader -->
-  <section id="docs" class="container" style="padding: 40px 24px 80px;">
-    <h2 class="section-title">TECHNICAL SPECIFICATIONS</h2>
-    <p class="section-desc">Authoritative guides, cryptographic proofs, and hardware matrices.</p>
-
-    <div class="tab-nav" style="justify-content: flex-start;">
-      <button class="tab-btn doc-tab-btn active" data-doc="doc-architecture">Architecture</button>
-      <button class="tab-btn doc-tab-btn" data-doc="doc-crypto">Cryptography</button>
-      <button class="tab-btn doc-tab-btn" data-doc="doc-security">Security Hardening</button>
-      <button class="tab-btn doc-tab-btn" data-doc="doc-envelope">Binary Envelopes</button>
-    </div>
-
-    <div class="terminal-window">
-      <div id="docViewerContent" class="terminal-body" style="font-size:0.9rem; line-height:1.7;">
-        <!-- Dynamically populated by JS -->
-      </div>
-    </div>
-  </section>
-
-  <!-- Download APK Section -->
-  <section id="download" class="download-section">
-    <div class="container">
-      <h2 class="section-title">DOWNLOAD ANDROID APK</h2>
-      <p class="section-desc">Install the offline encrypted NFC data-vault on any Android device running Android 8.0 (API 26) or higher.</p>
-
-      <div class="apk-card">
-        <div class="apk-header-row">
-          <div>
-            <h3 class="apk-title">Ghost-Tag v2.0.0 Release</h3>
-            <span class="apk-status-tag">● OFFICIAL STABLE RELEASE • SIGNED & OPTIMIZED</span>
-          </div>
-          <span class="brand-badge" style="font-size:0.8rem; padding:4px 8px;">APK (v2.0.0)</span>
+        <h3>Cryptographic Envelope Layout</h3>
+        <p>Every NFC tag contains a canonical binary envelope bound via Additional Authenticated Data (AAD):</p>
+        <div class="mono-readout" style="font-size: 11px;">
+MAGIC (4B: "GHTG")
+FORMAT_VERSION (1B: 0x02)
+PURPOSE (1B: 0x01 Single | 0x02 Bulk)
+KEY_ID (16B CSPRNG)
+CIPHERTEXT_LENGTH (4B Little-Endian)
+IV / NONCE (12B CSPRNG)
+AUTH_TAG (16B AES-GCM)
+CIPHERTEXT (Encrypted Payload)
         </div>
 
-        <div class="apk-meta-row">
-          <span class="apk-meta-label">Package Identifier</span>
-          <span class="apk-meta-val">com.ghosttag</span>
-        </div>
-        <div class="apk-meta-row">
-          <span class="apk-meta-label">Release Artifact</span>
-          <span class="apk-meta-val">ghost-tag-v2.0.0.apk (399 KB)</span>
-        </div>
-        <div class="apk-meta-row">
-          <span class="apk-meta-label">Minimum Android Version</span>
-          <span class="apk-meta-val">Android 8.0 Oreo (API 26)</span>
-        </div>
-        <div class="apk-meta-row">
-          <span class="apk-meta-label">Target Architectures</span>
-          <span class="apk-meta-val">arm64-v8a, armeabi-v7a, x86_64</span>
-        </div>
-        <div class="apk-meta-row">
-          <span class="apk-meta-label">Supported Tag Hardware</span>
-          <span class="apk-meta-val">NTAG213, NTAG215, NTAG216, MIFARE Ultralight</span>
-        </div>
-        <div class="apk-meta-row">
-          <span class="apk-meta-label">Network Permissions</span>
-          <span class="apk-meta-val" style="color:var(--amber-warn);">Completely Offline (Cleartext Blocked)</span>
-        </div>
+        <h3>Key Derivation & Memory Security</h3>
+        <ul>
+          <li><strong>Argon2id / PBKDF2-SHA256</strong>: 100,000 iterations over 32-byte CSPRNG salt.</li>
+          <li><strong>AES-256-GCM</strong>: Authenticated encryption with 96-bit fresh random nonces per write.</li>
+          <li><strong>Zero-Secrets Invariant</strong>: No passphrases, KEKs, DEKs, or plaintext stored in cookies, localStorage, or server logs.</li>
+        </ul>
 
-        <div class="download-cta-row">
-          <a href="assets/ghost-tag-v2.0.0.apk" download class="btn-primary" style="text-align:center;">
-            DIRECT DOWNLOAD APK
-          </a>
-          <a href="https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.0" target="_blank" class="btn-secondary" style="text-align:center;">
-            GITHUB RELEASE ↗
-          </a>
-        </div>
+        <h3>Erasure Coding & Partitioning</h3>
+        <ul>
+          <li><strong>Cauchy Reed-Solomon GF(2^8)</strong>: Deterministic recovery of $K$ data chunks from any $K$ out of $N$ tags in arbitrary order.</li>
+          <li><strong>MIME Types</strong>: <code>application/vnd.ghost.secure</code>, <code>application/vnd.ghost.bulk</code>.</li>
+        </ul>
 
-        <div class="checksum-box">
-          <div style="color:var(--text-muted); font-size:0.75rem;">SHA-256 RELEASE CHECKSUM VERIFICATION:</div>
-          <code id="apkChecksumVal" class="checksum-val">28a2e3d85ec803a733b62cdd5f55f1077d7b5a990a256b656262009d096e71ea</code>
-          <button id="btnCopyChecksum" class="btn-copy-checksum" onclick="navigator.clipboard.writeText('28a2e3d85ec803a733b62cdd5f55f1077d7b5a990a256b656262009d096e71ea'); this.innerText='COPIED TO CLIPBOARD!'; setTimeout(() => this.innerText='COPY SHA-256', 2000);">
-            COPY SHA-256
-          </button>
+        <div style="margin-top: 24px;">
+          <button class="btn btn-secondary btn-sm" data-dismiss="modal">Close</button>
         </div>
       </div>
     </div>
-  </section>
 
-  <!-- Footer -->
-  <footer>
-    <div class="container footer-content">
-      <div>
-        <div style="font-weight:700; color:#fff; letter-spacing:1px; margin-bottom:4px;">GHOST-TAG PROJECT</div>
-        <div>Maintained by Aryan Arora (<a href="mailto:aryanarora26110@gmail.com" style="color:var(--cyan-neon); text-decoration:none;">aryanarora26110@gmail.com</a>)</div>
-      </div>
-      <div>
-        <a href="https://github.com/FROSTY-MUG/Ghost-Tag" target="_blank" class="btn-secondary" style="padding:8px 16px; font-size:0.8rem;">
-          VIEW ON GITHUB ↗
-        </a>
+    <!-- MODAL: SECURITY POLICY -->
+    <div class="modal-overlay" id="modalSecurity">
+      <div class="modal-dialog">
+        <h3 class="modal-title">Security Invariants</h3>
+        <p class="modal-body">
+          Ghost-Tag operates exclusively client-side. There are no user accounts, no cloud endpoints, and no remote telemetry.
+          If you discover a cryptographic vulnerability, report it confidentially to <code>aryanarora26110@gmail.com</code>.
+        </p>
+        <button class="btn btn-secondary btn-sm" data-dismiss="modal">Close</button>
       </div>
     </div>
-    <div class="container footer-legal">
-      <strong>STRICT ETHICAL NOTICE:</strong> This software is provided solely for personal security, confidential data storage, and authorized educational research. Do not use this software for illegal, malicious, or unauthorized purposes. Ghost-Tag does not claim or provide physical tag cloning prevention.
-    </div>
-  </footer>
 
-  <script src="crypto-simulator.js"></script>
+    <!-- MODAL: PRIVACY POLICY -->
+    <div class="modal-overlay" id="modalPrivacy">
+      <div class="modal-dialog">
+        <h3 class="modal-title">Privacy Policy</h3>
+        <p class="modal-body">
+          Zero telemetry. Zero cookies. Zero server sync. All encryption, NFC writing, and recovery phrase derivations occur purely in local volatile memory.
+        </p>
+        <button class="btn btn-secondary btn-sm" data-dismiss="modal">Close</button>
+      </div>
+    </div>
+
+    <!-- Minimal Footer -->
+    <footer class="app-footer">
+      <div>GHOST-TAG v2.0.5</div>
+      <div class="footer-nav">
+        <span class="footer-link" id="footerTechnicalLink">Technical</span>
+        <span class="footer-link" id="footerSecurityLink">Security</span>
+        <span class="footer-link" id="footerPrivacyLink">Privacy</span>
+        <a class="footer-link" href="https://github.com/FROSTY-MUG/Ghost-Tag" target="_blank" rel="noopener">Source</a>
+      </div>
+    </footer>
+
+  </div>
+
+  <!-- BIP-39 Wordlist & Application Engine -->
+  <script src="wordlist.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

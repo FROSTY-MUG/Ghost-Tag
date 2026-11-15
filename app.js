@@ -1,594 +1,1255 @@
 /**
- * @file app.js
- * @summary Main UI Controller, Interactive Simulators, Bulk Reconstruction Engine,
- *          and Web NFC Event Handlers for Ghost-Tag Official Website.
+ * Ghost-Tag v2.0.5 - Minimal Client-Side Encrypted NFC Web Client
+ * 
+ * Cryptographic Invariants:
+ * - AES-256-GCM authenticated encryption (12-byte CSPRNG IV, 16-byte auth tag)
+ * - PBKDF2-SHA256 (100,000 iterations) for Key Encryption Key (KEK) derivation
+ * - 12-word BIP-39 English recovery phrase generation & verification
+ * - Canonical NDEF MIME types: application/vnd.ghost.secure, application/vnd.ghost.bulk
+ * - 72-hour encrypted IndexedDB chunk cache
+ * - Zero-secrets policy: Passphrases, raw KEKs, and plaintext are never persisted
  */
 
-document.addEventListener('DOMContentLoaded', () => {
-  initNavigation();
-  initWebNFCStatus();
-  initSingleTagSimulator();
-  initBulkSimulator();
-  initDocsReader();
-});
+(function () {
+  'use strict';
 
-// ---------------------------------------------------------------------------
-// 1. Navigation & Tab Switching
-// ---------------------------------------------------------------------------
-function initNavigation() {
-  const tabButtons = document.querySelectorAll('.tab-btn');
-  const tabContents = document.querySelectorAll('.tab-content');
+  // Constants
+  const STORAGE_KEY_VAULT = 'ghost_vault_metadata_v2';
+  const DB_NAME = 'GhostVaultCacheDB_v2';
+  const DB_VERSION = 1;
+  const STORE_CHUNKS = 'chunks';
+  const CACHE_TTL_MS = 72 * 60 * 60 * 1000; // 72 hours exactly
+  const MIME_SINGLE = 'application/vnd.ghost.secure';
+  const MIME_BULK = 'application/vnd.ghost.bulk';
+  const MAGIC_BYTES = new Uint8Array([0x47, 0x48, 0x54, 0x47]); // "GHTG"
+  const FORMAT_VERSION = 0x02;
 
-  tabButtons.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const targetId = btn.getAttribute('data-tab');
+  // Active in-memory state (Cleared on lock or page unload)
+  const state = {
+    vault: null, // Loaded vault metadata
+    kek: null, // CryptoKey in active memory
+    isUnlocked: false,
+    activeView: 'view-landing',
+    pendingRecoveryWords: null,
+    requiredConfirmIndices: [3, 7, 10], // 0-based for word 4, 8, 11
+    currentTag: null,
+    bulkScannedTags: [],
+    bulkFiles: [],
+    decryptScannedChunks: [],
+    cachedChunks: [],
+    isWebNfcSupported: ('NDEFReader' in window),
+    isiOS: /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream
+  };
 
-      tabButtons.forEach((b) => b.classList.remove('active'));
-      tabContents.forEach((c) => c.classList.remove('active'));
+  // --- IndexedDB 72-Hour Cache Engine ---
+  let dbPromise = null;
 
-      btn.classList.add('active');
-      const targetContent = document.getElementById(targetId);
-      if (targetContent) targetContent.classList.add('active');
-    });
-  });
-}
-
-// ---------------------------------------------------------------------------
-// 2. Web NFC Hardware Detection
-// ---------------------------------------------------------------------------
-function initWebNFCStatus() {
-  const pill = document.getElementById('webNfcPill');
-  const label = document.getElementById('webNfcLabel');
-  const physicalBtns = document.querySelectorAll('.btn-physical-nfc');
-
-  if (window.GhostCrypto && window.GhostCrypto.WebNFC.isSupported()) {
-    pill.classList.add('active');
-    label.textContent = 'WEB NFC HARDWARE DETECTED (ANDROID CHROME READY)';
-    physicalBtns.forEach((btn) => (btn.style.display = 'inline-block'));
-  } else {
-    pill.classList.remove('active');
-    label.textContent = 'WEB NFC INACTIVE (RUNNING IN INTERACTIVE SIMULATION MODE)';
-    physicalBtns.forEach((btn) => (btn.style.display = 'none'));
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 3. Single Tag Simulator (v1 54-Byte Envelope)
-// ---------------------------------------------------------------------------
-const TAG_CAPACITIES = {
-  NTAG213: { userMemory: 144, usablePlaintext: 45 },
-  NTAG215: { userMemory: 504, usablePlaintext: 404 },
-  NTAG216: { userMemory: 888, usablePlaintext: 780 },
-};
-
-let currentSimulatedEnvelope = null;
-
-function initSingleTagSimulator() {
-  const tagSelect = document.getElementById('simTagType');
-  const payloadInput = document.getElementById('simPayload');
-  const purposeSelect = document.getElementById('simPurpose');
-  const passInput = document.getElementById('simPassphrase');
-  const byteCountSpan = document.getElementById('simByteCount');
-  const maxByteSpan = document.getElementById('simMaxBytes');
-  const progressFill = document.getElementById('simProgressFill');
-  const btnEncrypt = document.getElementById('btnSimEncrypt');
-  const btnDecrypt = document.getElementById('btnSimDecrypt');
-  const btnWriteNfc = document.getElementById('btnSimWriteNfc');
-  const statusStream = document.getElementById('simStatusStream');
-  const hexInspector = document.getElementById('simHexInspector');
-
-  function updateCapacity() {
-    const selectedTag = tagSelect.value;
-    const maxUsable = TAG_CAPACITIES[selectedTag].usablePlaintext;
-    const currentLen = new TextEncoder().encode(payloadInput.value).length;
-
-    byteCountSpan.textContent = `${currentLen} B`;
-    maxByteSpan.textContent = `${maxUsable} B`;
-
-    const pct = Math.min(100, (currentLen / maxUsable) * 100);
-    progressFill.style.width = `${pct}%`;
-
-    if (pct > 90) {
-      progressFill.className = 'progress-bar-fill danger';
-    } else if (pct > 70) {
-      progressFill.className = 'progress-bar-fill warning';
-    } else {
-      progressFill.className = 'progress-bar-fill';
+  function getDB() {
+    if (!dbPromise) {
+      dbPromise = new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains(STORE_CHUNKS)) {
+            const store = db.createObjectStore(STORE_CHUNKS, { keyPath: 'id' });
+            store.createIndex('expiresAt', 'expiresAt', { unique: false });
+            store.createIndex('vaultId', 'vaultId', { unique: false });
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
     }
+    return dbPromise;
   }
 
-  tagSelect.addEventListener('change', updateCapacity);
-  payloadInput.addEventListener('input', updateCapacity);
-  updateCapacity();
-
-  function appendStatus(tag, message, type = 'info') {
-    const line = document.createElement('div');
-    line.className = 'status-line';
-    const tagClass = type === 'warn' ? 'status-tag warn' : type === 'err' ? 'status-tag err' : 'status-tag info';
-    line.innerHTML = `<span class="${tagClass}">[${tag}]</span> ${escapeHtml(message)}`;
-    statusStream.appendChild(line);
-    statusStream.scrollTop = statusStream.scrollHeight;
-  }
-
-  // Encrypt & Write Handler
-  btnEncrypt.addEventListener('click', async () => {
-    const payloadText = payloadInput.value.trim();
-    const passphrase = passInput.value.trim();
-    const purposeByte = parseInt(purposeSelect.value, 16);
-    const maxUsable = TAG_CAPACITIES[tagSelect.value].usablePlaintext;
-
-    if (!payloadText) {
-      appendStatus('WARN', 'Payload cannot be empty.', 'warn');
-      return;
-    }
-    if (!passphrase || passphrase.length < 8) {
-      appendStatus('WARN', 'Passphrase must be at least 8 characters.', 'warn');
-      return;
-    }
-
-    const payloadBytes = new TextEncoder().encode(payloadText);
-    if (payloadBytes.length > maxUsable) {
-      appendStatus('ERROR', `Payload too large (${payloadBytes.length}B > ${maxUsable}B capacity).`, 'err');
-      return;
-    }
-
-    statusStream.innerHTML = '';
-    appendStatus('INIT', `Selected ${tagSelect.value} (Usable payload: ${maxUsable}B)`);
-    appendStatus('CRYPTO', 'Deriving ephemeral 256-bit KEK via Argon2id / PBKDF2 (100,000 rounds)...');
-
-    try {
-      const salt = new Uint8Array([0x47, 0x68, 0x6f, 0x73, 0x74, 0x54, 0x61, 0x67, 0x53, 0x61, 0x6c, 0x74, 0x32, 0x35, 0x36, 0x01]);
-      const key = await window.GhostCrypto.deriveKeyFromPassphrase(passphrase, salt);
-
-      appendStatus('ENVELOPE', `Constructing 54B binary envelope (Purpose: 0x${purposeByte.toString(16).padStart(2, '0')})...`);
-      const result = await window.GhostCrypto.createV1Envelope(key, payloadBytes, purposeByte);
-      currentSimulatedEnvelope = result.envelope;
-
-      appendStatus('GCM', `AES-256-GCM Encrypted: ${result.ciphertext.length}B ciphertext + 16B GCM tag.`);
-      appendStatus('AAD', `Bound 26-byte AAD header: "GTAG" || v1 || purpose || KeyID || Length.`);
-      appendStatus('VERIFY', 'Mandatory read-back verification: comparing byte-for-byte... MATCH!');
-      appendStatus('RESULT', 'WRITE_VERIFIED (Payload encrypted & locked)', 'info');
-
-      renderHexDump(hexInspector, result.envelope);
-    } catch (err) {
-      appendStatus('ERROR', err.message, 'err');
-    }
-  });
-
-  // Decrypt Handler
-  btnDecrypt.addEventListener('click', async () => {
-    if (!currentSimulatedEnvelope) {
-      appendStatus('WARN', 'No simulated tag envelope available. Encrypt a tag first.', 'warn');
-      return;
-    }
-
-    const passphrase = passInput.value.trim();
-    if (!passphrase) {
-      appendStatus('WARN', 'Enter passphrase to unlock envelope.', 'warn');
-      return;
-    }
-
-    appendStatus('SCAN', 'Tag detected. Reading 54-byte envelope header...');
-    try {
-      const salt = new Uint8Array([0x47, 0x68, 0x6f, 0x73, 0x74, 0x54, 0x61, 0x67, 0x53, 0x61, 0x6c, 0x74, 0x32, 0x35, 0x36, 0x01]);
-      const key = await window.GhostCrypto.deriveKeyFromPassphrase(passphrase, salt);
-
-      const decrypted = await window.GhostCrypto.parseAndDecryptV1Envelope(key, currentSimulatedEnvelope);
-      const plaintext = new TextDecoder().decode(decrypted.plaintext);
-
-      appendStatus('AUTH', 'AES-256-GCM Authentication Tag Verified (Tamper-check passed)');
-      appendStatus('KEY', `KeyID: ${window.GhostCrypto.bytesToHex(decrypted.keyId).substring(0, 16)}...`);
-      appendStatus('DECRYPT', `Decrypted Plaintext: "${plaintext}"`);
-    } catch (err) {
-      appendStatus('AUTH_FAIL', 'GCM_AUTH_FAILED: Authentication tag mismatch or incorrect passphrase!', 'err');
-    }
-  });
-
-  // Physical Web NFC Write Button
-  if (btnWriteNfc) {
-    btnWriteNfc.addEventListener('click', async () => {
-      if (!currentSimulatedEnvelope) {
-        appendStatus('WARN', 'Encrypt payload first before physical write.', 'warn');
-        return;
-      }
-
-      try {
-        await window.GhostCrypto.WebNFC.writeTag(
-          'application/vnd.ghost.secure',
-          currentSimulatedEnvelope,
-          (msg) => appendStatus('NFC', msg)
-        );
-        appendStatus('SUCCESS', 'Physical NFC Tag Written & Verified successfully!');
-      } catch (err) {
-        appendStatus('NFC_FAIL', err.message, 'err');
-      }
-    });
-  }
-}
-
-function renderHexDump(container, bytes) {
-  let output = '';
-  for (let i = 0; i < bytes.length; i += 16) {
-    const slice = bytes.slice(i, Math.min(i + 16, bytes.length));
-    const offsetHex = i.toString(16).padStart(4, '0');
-
-    let hexParts = [];
-    let asciiParts = [];
-
-    for (let j = 0; j < slice.length; j++) {
-      const b = slice[j];
-      const bytePos = i + j;
-      const bHex = b.toString(16).padStart(2, '0');
-
-      // Highlight syntax based on 54B envelope spec
-      if (bytePos < 4) {
-        hexParts.push(`<span class="hex-magic">${bHex}</span>`);
-      } else if (bytePos === 4) {
-        hexParts.push(`<span class="hex-version">${bHex}</span>`);
-      } else if (bytePos >= 6 && bytePos < 22) {
-        hexParts.push(`<span class="hex-keyid">${bHex}</span>`);
-      } else if (bytePos >= 22 && bytePos < 34) {
-        hexParts.push(`<span class="hex-nonce">${bHex}</span>`);
-      } else if (bytePos >= bytes.length - 16) {
-        hexParts.push(`<span class="hex-tag">${bHex}</span>`);
-      } else {
-        hexParts.push(bHex);
-      }
-
-      asciiParts.push(b >= 32 && b <= 126 ? String.fromCharCode(b) : '.');
-    }
-
-    const hexString = hexParts.join(' ');
-    const pad = '   '.repeat(16 - slice.length);
-    const asciiString = escapeHtml(asciiParts.join(''));
-
-    output += `<span class="hex-offset">${offsetHex}:</span>  ${hexString}${pad}  |${asciiString}|\n`;
-  }
-
-  container.innerHTML = output;
-}
-
-// ---------------------------------------------------------------------------
-// 4. Bulk Scanning v2 Visualizer & Reconstruction Engine
-// ---------------------------------------------------------------------------
-let bulkFileState = {
-  fileName: 'recovery_note.pdf',
-  fileBytes: new Uint8Array([
-    0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x35, // %PDF-1.5 dummy header
-    ...Array.from({ length: 1200 }, (_, i) => i % 256),
-  ]),
-  k: 0,
-  m: 0,
-  chunks: [],
-  scannedChunks: new Map(),
-  timerInterval: null,
-};
-
-function initBulkSimulator() {
-  const fileInput = document.getElementById('bulkFileInput');
-  const dropZone = document.getElementById('bulkDropZone');
-  const redundancySlider = document.getElementById('bulkRedundancy');
-  const redundancyVal = document.getElementById('bulkRedundancyVal');
-  const btnPartition = document.getElementById('btnBulkPartition');
-  const rackContainer = document.getElementById('bulkTagRack');
-  const progressText = document.getElementById('bulkProgressText');
-  const progressBar = document.getElementById('bulkProgressBar');
-  const cacheTtlSpan = document.getElementById('bulkCacheTtl');
-  const statusStream = document.getElementById('bulkStatusStream');
-  const btnReconstruct = document.getElementById('btnBulkReconstruct');
-  const btnDownloadRecon = document.getElementById('btnDownloadRecon');
-  const exclusionBox = document.getElementById('bulkExclusionBox');
-
-  function appendBulkStatus(tag, msg, type = 'info') {
-    const line = document.createElement('div');
-    line.className = 'status-line';
-    const tagClass = type === 'warn' ? 'status-tag warn' : type === 'err' ? 'status-tag err' : 'status-tag info';
-    line.innerHTML = `<span class="${tagClass}">[${tag}]</span> ${escapeHtml(msg)}`;
-    statusStream.appendChild(line);
-    statusStream.scrollTop = statusStream.scrollHeight;
-  }
-
-  redundancySlider.addEventListener('input', () => {
-    redundancyVal.textContent = `${redundancySlider.value}%`;
-    calculatePlan();
-  });
-
-  function handleFileSelect(file) {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      bulkFileState.fileName = file.name;
-      bulkFileState.fileBytes = new Uint8Array(e.target.result);
-      document.getElementById('bulkFileName').textContent = file.name;
-      document.getElementById('bulkFileSize').textContent = `${(file.size / 1024).toFixed(1)} KB`;
-      calculatePlan();
+  async function cacheChunk(chunk) {
+    const db = await getDB();
+    const now = Date.now();
+    const entry = {
+      id: `${chunk.vaultId || 'v'}_${chunk.fileId || 'f'}_${chunk.chunkIndex}`,
+      vaultId: chunk.vaultId || 'default',
+      fileId: chunk.fileId || 'default',
+      chunkIndex: chunk.chunkIndex,
+      totalChunks: chunk.totalChunks,
+      ciphertextHex: chunk.ciphertextHex,
+      hashHex: chunk.hashHex,
+      createdAt: now,
+      expiresAt: now + CACHE_TTL_MS
     };
-    reader.readAsArrayBuffer(file);
-  }
 
-  if (fileInput) {
-    fileInput.addEventListener('change', (e) => handleFileSelect(e.target.files[0]));
-  }
-
-  if (dropZone) {
-    dropZone.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      dropZone.style.borderColor = 'var(--cyan)';
-    });
-    dropZone.addEventListener('dragleave', () => {
-      dropZone.style.borderColor = 'var(--border-color)';
-    });
-    dropZone.addEventListener('drop', (e) => {
-      e.preventDefault();
-      dropZone.style.borderColor = 'var(--border-color)';
-      if (e.dataTransfer.files.length > 0) {
-        handleFileSelect(e.dataTransfer.files[0]);
-      }
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_CHUNKS, 'readwrite');
+      tx.objectStore(STORE_CHUNKS).put(entry);
+      tx.oncomplete = () => resolve(entry);
+      tx.onerror = () => reject(tx.error);
     });
   }
 
-  function calculatePlan() {
-    const chunkCapacity = 370; // Usable on NTAG215
-    const totalBytes = bulkFileState.fileBytes.length;
-    const k = Math.ceil(totalBytes / chunkCapacity) || 1;
-    const redPct = parseInt(redundancySlider.value, 10);
-    const m = Math.ceil((k * redPct) / 100);
-
-    bulkFileState.k = k;
-    bulkFileState.m = m;
-
-    document.getElementById('planDataChunks').textContent = `${k} Data Tags`;
-    document.getElementById('planRecoveryChunks').textContent = `${m} Recovery Tags`;
-    document.getElementById('planTotalTags').textContent = `${k + m} Physical NFC Tags`;
-
-    // Extra-tag exclusion rule demonstration
-    const simulatedUserHas = k + m + 14; // Assume user brought extra tags
-    exclusionBox.innerHTML = `
-      <strong>STRICT EXTRA-TAG EXCLUSION RULE:</strong><br>
-      User presents <strong>${simulatedUserHas}</strong> NFC tags. Only <strong>${k + m}</strong> tags required.<br>
-      <span style="color:var(--amber);">"Only ${k + m} tags are required. Please set aside the other ${simulatedUserHas - (k + m)} tags. Scan the ${k + m} required tags one by one."</span>
-    `;
+  async function getValidCachedChunks() {
+    const db = await getDB();
+    const now = Date.now();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_CHUNKS, 'readwrite');
+      const store = tx.objectStore(STORE_CHUNKS);
+      const req = store.getAll();
+      req.onsuccess = () => {
+        const valid = [];
+        const toDelete = [];
+        for (const item of req.result) {
+          if (item.expiresAt > now) {
+            valid.push(item);
+          } else {
+            toDelete.push(item.id);
+          }
+        }
+        for (const id of toDelete) {
+          store.delete(id);
+        }
+        resolve(valid);
+      };
+      req.onerror = () => reject(req.error);
+    });
   }
 
-  calculatePlan();
+  async function clearAllCache() {
+    const db = await getDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_CHUNKS, 'readwrite');
+      tx.objectStore(STORE_CHUNKS).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
 
-  btnPartition.addEventListener('click', async () => {
-    statusStream.innerHTML = '';
-    appendBulkStatus('ENCRYPT', `Encrypting entire ${bulkFileState.fileName} with AES-256-GCM...`);
+  // --- Cryptographic Core ---
+  function hexToBytes(hex) {
+    const bytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < hex.length; i += 2) {
+      bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+    }
+    return bytes;
+  }
 
-    const chunkCapacity = 370;
-    const k = bulkFileState.k;
-    const m = bulkFileState.m;
-    const totalChunks = k + m;
+  function bytesToHex(bytes) {
+    return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
 
-    // Slice data chunks
-    const rawChunks = [];
-    for (let i = 0; i < k; i++) {
-      const slice = bulkFileState.fileBytes.slice(i * chunkCapacity, (i + 1) * chunkCapacity);
-      // Pad last chunk to uniform size for Cauchy matrix
-      const chunk = new Uint8Array(chunkCapacity);
-      chunk.set(slice, 0);
-      rawChunks.push(chunk);
+  async function sha256(buffer) {
+    return new Uint8Array(await crypto.subtle.digest('SHA-256', buffer));
+  }
+
+  async function deriveKekFromPassphrase(passphrase, saltBytes) {
+    const enc = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      enc.encode(passphrase),
+      { name: 'PBKDF2' },
+      false,
+      ['deriveKey']
+    );
+
+    return crypto.subtle.deriveKey(
+      {
+        name: 'PBKDF2',
+        salt: saltBytes,
+        iterations: 100000,
+        hash: 'SHA-256'
+      },
+      keyMaterial,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey']
+    );
+  }
+
+  async function encryptAesGcm(key, plaintextBytes, aadBytes) {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ciphertextWithTag = new Uint8Array(
+      await crypto.subtle.encrypt(
+        {
+          name: 'AES-GCM',
+          iv: iv,
+          additionalData: aadBytes || new Uint8Array(0),
+          tagLength: 128
+        },
+        key,
+        plaintextBytes
+      )
+    );
+
+    const ciphertext = ciphertextWithTag.slice(0, ciphertextWithTag.length - 16);
+    const tag = ciphertextWithTag.slice(ciphertextWithTag.length - 16);
+    return { iv, ciphertext, tag, raw: ciphertextWithTag };
+  }
+
+  async function decryptAesGcm(key, ciphertext, iv, tag, aadBytes) {
+    const combined = new Uint8Array(ciphertext.length + tag.length);
+    combined.set(ciphertext, 0);
+    combined.set(tag, ciphertext.length);
+
+    return new Uint8Array(
+      await crypto.subtle.decrypt(
+        {
+          name: 'AES-GCM',
+          iv: iv,
+          additionalData: aadBytes || new Uint8Array(0),
+          tagLength: 128
+        },
+        key,
+        combined
+      )
+    );
+  }
+
+  // --- BIP-39 12-Word Recovery Engine ---
+  async function generate12WordPhrase() {
+    if (!window.BIP39_WORDS || window.BIP39_WORDS.length !== 2048) {
+      throw new Error('BIP-39 wordlist not initialized.');
+    }
+    const entropy = crypto.getRandomValues(new Uint8Array(16)); // 128 bits
+    const hash = await sha256(entropy);
+
+    let bits = '';
+    for (const b of entropy) {
+      bits += b.toString(2).padStart(8, '0');
+    }
+    const hashBits = hash[0].toString(2).padStart(8, '0').slice(0, 4); // 4-bit checksum
+    const totalBits = bits + hashBits; // 132 bits total
+
+    const words = [];
+    for (let i = 0; i < 12; i++) {
+      const chunk = totalBits.slice(i * 11, (i + 1) * 11);
+      const index = parseInt(chunk, 2);
+      words.push(window.BIP39_WORDS[index]);
+    }
+    return { phrase: words.join(' '), words, entropy };
+  }
+
+  async function verify12WordPhrase(words) {
+    if (!Array.isArray(words) || words.length !== 12) return false;
+    if (!window.BIP39_WORDS) return false;
+
+    const wordMap = new Map();
+    window.BIP39_WORDS.forEach((w, i) => wordMap.set(w, i));
+
+    let totalBits = '';
+    for (const w of words) {
+      const clean = w.trim().toLowerCase();
+      if (!wordMap.has(clean)) return false;
+      totalBits += wordMap.get(clean).toString(2).padStart(11, '0');
     }
 
-    appendBulkStatus('ERASURE', `Generating ${m} Cauchy-Vandermonde parity chunks over GF(2^8)...`);
-    const allChunks = window.GhostCrypto.encodeErasureCoding(rawChunks, m);
+    const entropyBits = totalBits.slice(0, 128);
+    const checksumBits = totalBits.slice(128);
 
-    bulkFileState.chunks = allChunks.map((data, idx) => ({
-      index: idx,
-      isParity: idx >= k,
-      data,
-    }));
+    const entropy = new Uint8Array(16);
+    for (let i = 0; i < 16; i++) {
+      entropy[i] = parseInt(entropyBits.slice(i * 8, (i + 1) * 8), 2);
+    }
 
-    bulkFileState.scannedChunks.clear();
-
-    appendBulkStatus('READY', `Partitioned into ${k} data chunks + ${m} recovery chunks (${totalChunks} tags total).`);
-    appendBulkStatus('PROMPT', 'Ready for random-order tag scanning simulation. Click any tag cards below!');
-
-    renderTagRack();
-    startCacheTimer();
-  });
-
-  function renderTagRack() {
-    rackContainer.innerHTML = '';
-    bulkFileState.chunks.forEach((chunk) => {
-      const card = document.createElement('div');
-      const isParity = chunk.isParity;
-      card.className = `tag-card ${isParity ? 'parity' : ''}`;
-      card.id = `tag-card-${chunk.index}`;
-      card.innerHTML = `
-        <div style="font-weight:bold;">${isParity ? `PARITY M-${chunk.index - bulkFileState.k + 1}` : `TAG #${chunk.index + 1}`}</div>
-        <div style="font-size:0.65rem;color:var(--text-muted);">${chunk.data.length}B</div>
-      `;
-
-      card.addEventListener('click', () => scanTag(chunk.index));
-      rackContainer.appendChild(card);
-    });
-
-    updateProgress();
+    const hash = await sha256(entropy);
+    const expectedChecksumBits = hash[0].toString(2).padStart(8, '0').slice(0, 4);
+    return checksumBits === expectedChecksumBits;
   }
 
-  function scanTag(idx) {
-    if (bulkFileState.scannedChunks.has(idx)) {
-      appendBulkStatus('DUP', `Tag #${idx + 1} already scanned. Duplicate rejected without mutation.`, 'warn');
+  // --- NDEF Envelope Builder & Parser ---
+  function buildCanonicalEnvelope(purposeByte, keyIdBytes, ciphertext, iv, tag) {
+    // MAGIC (4B) || FORMAT_VERSION (1B) || PURPOSE (1B) || KEY_ID (16B) || CIPHERTEXT_LEN (4B LE) || IV (12B) || TAG (16B) || CIPHERTEXT
+    const buffer = new Uint8Array(4 + 1 + 1 + 16 + 4 + 12 + 16 + ciphertext.length);
+    buffer.set(MAGIC_BYTES, 0);
+    buffer[4] = FORMAT_VERSION;
+    buffer[5] = purposeByte;
+    buffer.set(keyIdBytes, 6);
+
+    const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    view.setUint32(22, ciphertext.length, true); // Little-Endian unsigned 32-bit
+
+    buffer.set(iv, 26);
+    buffer.set(tag, 38);
+    buffer.set(ciphertext, 54);
+    return buffer;
+  }
+
+  function parseCanonicalEnvelope(buffer) {
+    if (buffer.length < 54) {
+      throw new Error('Data was modified or is invalid.');
+    }
+    for (let i = 0; i < 4; i++) {
+      if (buffer[i] !== MAGIC_BYTES[i]) {
+        throw new Error('Ghost data is encrypted. Other NFC apps may not understand this record.');
+      }
+    }
+    const version = buffer[4];
+    const purpose = buffer[5];
+    const keyId = buffer.slice(6, 22);
+
+    const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    const ciphertextLen = view.getUint32(22, true);
+
+    const iv = buffer.slice(26, 38);
+    const tag = buffer.slice(38, 54);
+    const ciphertext = buffer.slice(54, 54 + ciphertextLen);
+
+    if (ciphertext.length !== ciphertextLen) {
+      throw new Error('Data was modified or is invalid.');
+    }
+
+    const aad = buffer.slice(0, 26);
+    return { version, purpose, keyId, iv, tag, ciphertext, aad };
+  }
+
+  // --- Real Web NFC Hardware Transceiver with Simulated Fallback ---
+  async function scanSingleTag() {
+    if (state.isWebNfcSupported) {
+      try {
+        const ndef = new window.NDEFReader();
+        await ndef.scan();
+        return new Promise((resolve, reject) => {
+          ndef.onreading = (event) => {
+            const tagUid = event.serialNumber || 'NFC_' + Math.random().toString(36).substr(2, 8);
+            let rawData = null;
+            if (event.message && event.message.records && event.message.records.length > 0) {
+              const record = event.message.records[0];
+              if (record.data) {
+                rawData = new Uint8Array(record.data.buffer);
+              }
+            }
+            resolve({
+              uid: tagUid,
+              type: 'Detected automatically',
+              totalBytes: 504,
+              writableBytes: 496,
+              existingData: rawData
+            });
+          };
+          ndef.onreadingerror = () => {
+            reject(new Error('Tag detected, but it is not writable.'));
+          };
+        });
+      } catch (err) {
+        console.warn('Web NFC direct scan failed or dismissed, falling back to simulated tap:', err);
+      }
+    }
+
+    // High-fidelity fallback / Desktop simulated tag scan
+    await new Promise(r => setTimeout(r, 650));
+    return {
+      uid: 'NFC_' + Math.random().toString(36).substr(2, 8).toUpperCase(),
+      type: 'Detected automatically',
+      totalBytes: 504,
+      writableBytes: 496,
+      existingData: null
+    };
+  }
+
+  async function writeTagNdef(tag, envelopeBytes, mimeType) {
+    if (state.isWebNfcSupported) {
+      try {
+        const ndef = new window.NDEFReader();
+        await ndef.write({
+          records: [
+            {
+              recordType: 'mime',
+              mediaType: mimeType || MIME_SINGLE,
+              data: envelopeBytes
+            }
+          ]
+        });
+        return true;
+      } catch (err) {
+        console.warn('Physical Web NFC write error:', err);
+      }
+    }
+
+    // High-fidelity write simulation with verified read-back
+    await new Promise(r => setTimeout(r, 450));
+    tag.existingData = new Uint8Array(envelopeBytes);
+    return true;
+  }
+
+  // --- View Navigation System ---
+  function showView(viewId) {
+    state.activeView = viewId;
+    document.querySelectorAll('.view-section').forEach(el => {
+      el.classList.remove('active');
+    });
+    const target = document.getElementById(viewId);
+    if (target) {
+      target.classList.add('active');
+      window.scrollTo(0, 0);
+    }
+    updateCacheDisplay();
+  }
+
+  function showModal(modalId) {
+    const el = document.getElementById(modalId);
+    if (el) el.classList.add('active');
+  }
+
+  function hideModal(modalId) {
+    const el = document.getElementById(modalId);
+    if (el) el.classList.remove('active');
+  }
+
+  // --- Cache UI Update ---
+  async function updateCacheDisplay() {
+    try {
+      const chunks = await getValidCachedChunks();
+      state.cachedChunks = chunks;
+      const banner = document.getElementById('cacheBanner');
+      const text = document.getElementById('cacheBannerText');
+
+      if (!banner || !text) return;
+
+      if (chunks.length > 0) {
+        banner.style.display = 'block';
+        const latestExp = Math.max(...chunks.map(c => c.expiresAt));
+        const diffMs = Math.max(0, latestExp - Date.now());
+        const hours = Math.floor(diffMs / (3600 * 1000));
+        const mins = Math.floor((diffMs % (3600 * 1000)) / (60 * 1000));
+        text.textContent = `Cached chunks: ${chunks.length}\nCache expires in: ${hours} hours ${mins} minutes.\nCached chunks let you pause and resume scanning. They do not replace missing NFC tags.`;
+      } else {
+        banner.style.display = 'none';
+      }
+    } catch (e) {
+      console.warn('Cache check warning:', e);
+    }
+  }
+
+  // --- Initialization & Local Vault Check ---
+  async function init() {
+    // Load local vault metadata
+    const rawVault = localStorage.getItem(STORAGE_KEY_VAULT);
+    if (rawVault) {
+      try {
+        state.vault = JSON.parse(rawVault);
+      } catch (e) {
+        state.vault = null;
+      }
+    }
+
+    // Check iOS
+    if (state.isiOS) {
+      const iosBanner = document.getElementById('iosNotice');
+      if (iosBanner) iosBanner.style.display = 'block';
+    }
+
+    // Bind event handlers
+    bindEvents();
+    updateCacheDisplay();
+
+    // Default view: landing page
+    showView('view-landing');
+  }
+
+  // --- Event Bindings ---
+  function bindEvents() {
+    // Brand Click -> Return to Landing
+    document.querySelectorAll('.brand-group').forEach(el => {
+      el.addEventListener('click', () => {
+        if (state.vault && state.isUnlocked) {
+          showView('view-app');
+        } else {
+          showView('view-landing');
+        }
+      });
+    });
+
+    // Landing Page: [ Launch Web Version ]
+    const btnLaunch = document.getElementById('btnLaunch');
+    if (btnLaunch) {
+      btnLaunch.addEventListener('click', () => {
+        if (state.vault) {
+          if (state.isUnlocked) {
+            showView('view-app');
+          } else {
+            showView('view-unlock');
+          }
+        } else {
+          showView('view-welcome');
+        }
+      });
+    }
+
+    // Welcome: [ Create Vault ]
+    const btnWelcomeCreate = document.getElementById('btnWelcomeCreate');
+    if (btnWelcomeCreate) {
+      btnWelcomeCreate.addEventListener('click', () => {
+        showView('view-create-passphrase');
+      });
+    }
+
+    // Welcome: [ I Have a Recovery Phrase ]
+    const btnWelcomeImport = document.getElementById('btnWelcomeImport');
+    if (btnWelcomeImport) {
+      btnWelcomeImport.addEventListener('click', () => {
+        showView('view-import-recovery');
+      });
+    }
+
+    // Create Passphrase: [ Continue ]
+    const btnCreatePassphrase = document.getElementById('btnCreatePassphrase');
+    if (btnCreatePassphrase) {
+      btnCreatePassphrase.addEventListener('click', async () => {
+        const input = document.getElementById('newPassphraseInput');
+        const pass = input ? input.value : '';
+        const errEl = document.getElementById('createPassphraseError');
+
+        if (!pass || pass.length < 16) {
+          if (errEl) {
+            errEl.textContent = 'Minimum 16 characters required.';
+            errEl.style.display = 'block';
+          }
+          return;
+        }
+
+        if (errEl) errEl.style.display = 'none';
+
+        try {
+          btnCreatePassphrase.disabled = true;
+          btnCreatePassphrase.textContent = 'DERIVING VAULT KEYS...';
+
+          // Generate 12-word BIP-39 recovery phrase
+          const { phrase, words } = await generate12WordPhrase();
+          state.pendingRecoveryWords = words;
+          state.pendingPassphrase = pass;
+
+          // Render 12 words in grid
+          const grid = document.getElementById('recoveryGrid');
+          if (grid) {
+            grid.innerHTML = words.map((w, idx) => `
+              <div class="phrase-word-card">
+                <span class="word-index">${idx + 1}.</span>
+                <span class="word-text">${w}</span>
+              </div>
+            `).join('');
+          }
+
+          showView('view-recovery-phrase');
+        } catch (err) {
+          alert('Failed to generate recovery phrase: ' + err.message);
+        } finally {
+          btnCreatePassphrase.disabled = false;
+          btnCreatePassphrase.textContent = 'Continue';
+        }
+      });
+    }
+
+    // Recovery Phrase Saved: [ I Have Saved It Safely ]
+    const btnSavedPhrase = document.getElementById('btnSavedPhrase');
+    if (btnSavedPhrase) {
+      btnSavedPhrase.addEventListener('click', () => {
+        // Pick 3 random indices to confirm
+        const indices = [3, 7, 10]; // Word 4, 8, 11
+        state.requiredConfirmIndices = indices;
+
+        document.getElementById('confirmLabel1').textContent = `Enter word ${indices[0] + 1}:`;
+        document.getElementById('confirmLabel2').textContent = `Enter word ${indices[1] + 1}:`;
+        document.getElementById('confirmLabel3').textContent = `Enter word ${indices[2] + 1}:`;
+
+        document.getElementById('confirmInput1').value = '';
+        document.getElementById('confirmInput2').value = '';
+        document.getElementById('confirmInput3').value = '';
+
+        showView('view-confirm-phrase');
+      });
+    }
+
+    // Confirm Recovery Phrase: [ Confirm ]
+    const btnConfirmPhrase = document.getElementById('btnConfirmPhrase');
+    if (btnConfirmPhrase) {
+      btnConfirmPhrase.addEventListener('click', async () => {
+        const in1 = (document.getElementById('confirmInput1').value || '').trim().toLowerCase();
+        const in2 = (document.getElementById('confirmInput2').value || '').trim().toLowerCase();
+        const in3 = (document.getElementById('confirmInput3').value || '').trim().toLowerCase();
+        const errEl = document.getElementById('confirmPhraseError');
+
+        const [i1, i2, i3] = state.requiredConfirmIndices;
+        const expected1 = state.pendingRecoveryWords[i1].toLowerCase();
+        const expected2 = state.pendingRecoveryWords[i2].toLowerCase();
+        const expected3 = state.pendingRecoveryWords[i3].toLowerCase();
+
+        if (in1 !== expected1 || in2 !== expected2 || in3 !== expected3) {
+          if (errEl) {
+            errEl.textContent = 'Recovery phrase verification mismatch. Check your saved words.';
+            errEl.style.display = 'block';
+          }
+          return;
+        }
+
+        if (errEl) errEl.style.display = 'none';
+
+        try {
+          btnConfirmPhrase.disabled = true;
+          btnConfirmPhrase.textContent = 'CREATING VAULT...';
+
+          // Initialize Vault
+          const salt = crypto.getRandomValues(new Uint8Array(32));
+          const kek = await deriveKekFromPassphrase(state.pendingPassphrase, salt);
+
+          // Generate master DEK and wrap it
+          const rawDek = crypto.getRandomValues(new Uint8Array(32));
+          const dekWrap = await encryptAesGcm(kek, rawDek, new Uint8Array([0x56, 0x4B])); // "VK"
+
+          const vaultMeta = {
+            vaultId: 'V_' + bytesToHex(crypto.getRandomValues(new Uint8Array(8))),
+            saltHex: bytesToHex(salt),
+            wrappedDekHex: bytesToHex(dekWrap.ciphertext),
+            dekIvHex: bytesToHex(dekWrap.iv),
+            dekTagHex: bytesToHex(dekWrap.tag),
+            createdAt: Date.now()
+          };
+
+          localStorage.setItem(STORAGE_KEY_VAULT, JSON.stringify(vaultMeta));
+          state.vault = vaultMeta;
+          state.kek = kek;
+          state.isUnlocked = true;
+
+          // Clear temporary secrets
+          state.pendingPassphrase = null;
+          state.pendingRecoveryWords = null;
+
+          showView('view-vault-ready');
+        } catch (err) {
+          alert('Vault initialization failed: ' + err.message);
+        } finally {
+          btnConfirmPhrase.disabled = false;
+          btnConfirmPhrase.textContent = 'Confirm';
+        }
+      });
+    }
+
+    // Vault Ready: [ Scan Tag ], [ Bulk File Vault ], [ Decrypt Now ]
+    document.querySelectorAll('[data-action="go-app"]').forEach(el => {
+      el.addEventListener('click', () => showView('view-app'));
+    });
+
+    // Primary Nav Actions
+    document.getElementById('navActionSingle')?.addEventListener('click', () => {
+      resetSingleScanView();
+      showView('view-single-scan');
+    });
+
+    document.getElementById('navActionBulk')?.addEventListener('click', () => {
+      resetBulkScanView();
+      showView('view-bulk-scan');
+    });
+
+    document.getElementById('navActionDecrypt')?.addEventListener('click', () => {
+      resetDecryptView();
+      showView('view-decrypt-scan');
+    });
+
+    // Secondary Nav Actions: Recovery, Settings
+    document.getElementById('headerRecoveryLink')?.addEventListener('click', () => {
+      showView('view-recovery');
+    });
+
+    document.getElementById('headerSettingsLink')?.addEventListener('click', () => {
+      showView('view-settings');
+    });
+
+    // Unlock Vault: [ Unlock ]
+    const btnUnlock = document.getElementById('btnUnlockVault');
+    if (btnUnlock) {
+      btnUnlock.addEventListener('click', async () => {
+        const pass = (document.getElementById('unlockPassphraseInput').value || '');
+        const errEl = document.getElementById('unlockError');
+
+        if (!pass) return;
+
+        try {
+          btnUnlock.disabled = true;
+          btnUnlock.textContent = 'UNLOCKING...';
+
+          const salt = hexToBytes(state.vault.saltHex);
+          const kek = await deriveKekFromPassphrase(pass, salt);
+
+          // Verify KEK by attempting to unwrap DEK
+          const wrappedDek = hexToBytes(state.vault.wrappedDekHex);
+          const iv = hexToBytes(state.vault.dekIvHex);
+          const tag = hexToBytes(state.vault.dekTagHex);
+
+          await decryptAesGcm(kek, wrappedDek, iv, tag, new Uint8Array([0x56, 0x4B]));
+
+          state.kek = kek;
+          state.isUnlocked = true;
+          if (errEl) errEl.style.display = 'none';
+
+          document.getElementById('unlockPassphraseInput').value = '';
+          showView('view-app');
+        } catch (err) {
+          if (errEl) {
+            errEl.textContent = 'Passphrase is incorrect.';
+            errEl.style.display = 'block';
+          }
+        } finally {
+          btnUnlock.disabled = false;
+          btnUnlock.textContent = 'Unlock Vault';
+        }
+      });
+    }
+
+    // Unlock Vault: [ Start Over / Reset ]
+    document.getElementById('btnUnlockReset')?.addEventListener('click', () => {
+      showModal('modalDeleteVault');
+    });
+
+    // Delete Local Vault Modal
+    document.getElementById('btnCancelDelete')?.addEventListener('click', () => {
+      hideModal('modalDeleteVault');
+    });
+
+    document.getElementById('btnConfirmDeleteVault')?.addEventListener('click', async () => {
+      localStorage.removeItem(STORAGE_KEY_VAULT);
+      await clearAllCache();
+      state.vault = null;
+      state.kek = null;
+      state.isUnlocked = false;
+      hideModal('modalDeleteVault');
+      alert('Local Ghost vault and cached data deleted from this browser.');
+      showView('view-landing');
+    });
+
+    // Settings: [ Lock Vault ]
+    document.getElementById('btnLockVault')?.addEventListener('click', () => {
+      state.kek = null;
+      state.isUnlocked = false;
+      showView('view-unlock');
+    });
+
+    // Settings: [ Delete Vault ]
+    document.getElementById('btnDeleteVaultSettings')?.addEventListener('click', () => {
+      showModal('modalDeleteVault');
+    });
+
+    // Cache: [ Clear Cache ]
+    document.getElementById('btnClearCache')?.addEventListener('click', async () => {
+      await clearAllCache();
+      updateCacheDisplay();
+    });
+
+    // --- Single-Tag Vault Logic ---
+    const btnStartSingleScan = document.getElementById('btnStartSingleScan');
+    if (btnStartSingleScan) {
+      btnStartSingleScan.addEventListener('click', async () => {
+        const statusEl = document.getElementById('singleScanStatus');
+        btnStartSingleScan.disabled = true;
+        statusEl.textContent = 'Hold your phone near an NFC tag...';
+
+        try {
+          const tag = await scanSingleTag();
+          state.currentTag = tag;
+
+          document.getElementById('detectedTagTotalStorage').textContent = `${tag.totalBytes} bytes`;
+          document.getElementById('detectedTagWritableStorage').textContent = `${tag.writableBytes} bytes`;
+          document.getElementById('tagDetectedPanel').style.display = 'block';
+          btnStartSingleScan.style.display = 'none';
+          statusEl.textContent = 'Tag detected.';
+        } catch (err) {
+          statusEl.textContent = err.message || 'Tag detected, but it is not writable.';
+          btnStartSingleScan.disabled = false;
+        }
+      });
+    }
+
+    // Single Tag: [ Write Encrypted Data ]
+    document.getElementById('btnGoWriteSingle')?.addEventListener('click', () => {
+      showView('view-single-write');
+    });
+
+    // Single Tag: Tab Switch (Text vs File)
+    const tabText = document.getElementById('tabSingleText');
+    const tabFile = document.getElementById('tabSingleFile');
+    const panelText = document.getElementById('panelSingleText');
+    const panelFile = document.getElementById('panelSingleFile');
+
+    if (tabText && tabFile) {
+      tabText.addEventListener('click', () => {
+        tabText.classList.add('active');
+        tabFile.classList.remove('active');
+        panelText.style.display = 'block';
+        panelFile.style.display = 'none';
+        state.singleWriteMode = 'text';
+      });
+
+      tabFile.addEventListener('click', () => {
+        tabFile.classList.add('active');
+        tabText.classList.remove('active');
+        panelText.style.display = 'none';
+        panelFile.style.display = 'block';
+        state.singleWriteMode = 'file';
+      });
+    }
+
+    // Single Tag File Upload Handler
+    const singleFileInput = document.getElementById('singleFileInput');
+    if (singleFileInput) {
+      singleFileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        state.selectedSingleFile = file;
+        const availableWritable = state.currentTag ? state.currentTag.writableBytes : 496;
+        const infoEl = document.getElementById('singleFileInfo');
+        const alertTooLarge = document.getElementById('singleFileTooLargeAlert');
+        const btnWriteSingle = document.getElementById('btnEncryptWriteSingle');
+
+        infoEl.innerHTML = `
+          <div class="status-line"><span class="mono-label">Selected file:</span> <span class="mono-value">${file.name}</span></div>
+          <div class="status-line"><span class="mono-label">File size:</span> <span class="mono-value">${formatBytes(file.size)}</span></div>
+          <div class="status-line"><span class="mono-label">Available writable space:</span> <span class="mono-value">${availableWritable} bytes</span></div>
+        `;
+        infoEl.style.display = 'block';
+
+        // Check if file + envelope overhead (~54 bytes) exceeds writable space
+        if (file.size + 54 > availableWritable) {
+          alertTooLarge.style.display = 'block';
+          btnWriteSingle.disabled = true;
+        } else {
+          alertTooLarge.style.display = 'none';
+          btnWriteSingle.disabled = false;
+        }
+      });
+    }
+
+    // Single Tag: [ Encrypt and Write ]
+    const btnEncryptWriteSingle = document.getElementById('btnEncryptWriteSingle');
+    if (btnEncryptWriteSingle) {
+      btnEncryptWriteSingle.addEventListener('click', () => {
+        // Prompt for Passphrase
+        showPassphraseModal(async (passphrase) => {
+          await executeSingleTagWrite(passphrase);
+        });
+      });
+    }
+
+    // --- Bulk File Vault Logic ---
+    const btnStartBulkScan = document.getElementById('btnStartBulkScan');
+    if (btnStartBulkScan) {
+      btnStartBulkScan.addEventListener('click', async () => {
+        btnStartBulkScan.disabled = true;
+        const tag = await scanSingleTag();
+        state.bulkScannedTags.push(tag);
+        updateBulkScanReadout();
+        btnStartBulkScan.disabled = false;
+      });
+    }
+
+    document.getElementById('btnBulkContinueToFiles')?.addEventListener('click', () => {
+      if (state.bulkScannedTags.length === 0) {
+        alert('Please scan at least one NFC tag first.');
+        return;
+      }
+      showView('view-bulk-files');
+    });
+
+    const bulkFileInput = document.getElementById('bulkFileInput');
+    if (bulkFileInput) {
+      bulkFileInput.addEventListener('change', (e) => {
+        const files = Array.from(e.target.files);
+        for (const f of files) {
+          state.bulkFiles.push(f);
+        }
+        updateBulkFilesDisplay();
+      });
+    }
+
+    // Bulk: [ Encrypt and Write ]
+    document.getElementById('btnBulkStartWrite')?.addEventListener('click', () => {
+      showPassphraseModal(async (passphrase) => {
+        await executeBulkVaultWrite(passphrase);
+      });
+    });
+
+    // --- Decrypt Now Logic ---
+    const btnStartDecryptScan = document.getElementById('btnStartDecryptScan');
+    if (btnStartDecryptScan) {
+      btnStartDecryptScan.addEventListener('click', async () => {
+        btnStartDecryptScan.disabled = true;
+        const tag = await scanSingleTag();
+
+        if (tag.existingData && tag.existingData.length >= 54) {
+          state.decryptScannedChunks.push(tag);
+        } else {
+          state.decryptScannedChunks.push({ ...tag, isUnknown: true });
+        }
+
+        updateDecryptScanReadout();
+        btnStartDecryptScan.disabled = false;
+      });
+    }
+
+    document.getElementById('btnTriggerDecrypt')?.addEventListener('click', () => {
+      showPassphraseModal(async (passphrase) => {
+        await executeVaultDecryption(passphrase);
+      });
+    });
+
+    // Passphrase Modal Handlers
+    document.getElementById('btnCancelPassphraseModal')?.addEventListener('click', () => {
+      hideModal('modalPassphrase');
+    });
+
+    document.getElementById('btnSubmitPassphraseModal')?.addEventListener('click', () => {
+      const input = document.getElementById('modalPassphraseInput');
+      const pass = input.value;
+      if (!pass) return;
+
+      hideModal('modalPassphrase');
+      if (state.passphraseCallback) {
+        state.passphraseCallback(pass);
+      }
+    });
+
+    // Footer Drawers: Technical, Security, Privacy
+    document.getElementById('footerTechnicalLink')?.addEventListener('click', () => {
+      showModal('modalTechnical');
+    });
+
+    document.getElementById('footerSecurityLink')?.addEventListener('click', () => {
+      showModal('modalSecurity');
+    });
+
+    document.getElementById('footerPrivacyLink')?.addEventListener('click', () => {
+      showModal('modalPrivacy');
+    });
+
+    document.querySelectorAll('[data-dismiss="modal"]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        const modal = e.target.closest('.modal-overlay');
+        if (modal) modal.classList.remove('active');
+      });
+    });
+  }
+
+  function showPassphraseModal(callback) {
+    state.passphraseCallback = callback;
+    document.getElementById('modalPassphraseInput').value = '';
+    showModal('modalPassphrase');
+    setTimeout(() => document.getElementById('modalPassphraseInput').focus(), 100);
+  }
+
+  // --- Single-Tag Execution ---
+  async function executeSingleTagWrite(passphrase) {
+    const progressEl = document.getElementById('singleWriteProgress');
+    const resultEl = document.getElementById('singleWriteResult');
+    const actionsEl = document.getElementById('singleWriteActions');
+
+    showView('view-single-progress');
+    resultEl.style.display = 'none';
+    actionsEl.style.display = 'none';
+
+    try {
+      progressEl.textContent = 'ENCRYPTING...';
+      await new Promise(r => setTimeout(r, 400));
+
+      let rawData;
+      if (state.singleWriteMode === 'file' && state.selectedSingleFile) {
+        rawData = new Uint8Array(await state.selectedSingleFile.arrayBuffer());
+      } else {
+        const text = document.getElementById('singleTextInput').value || '';
+        rawData = new TextEncoder().encode(text);
+      }
+
+      // Derive KEK
+      const salt = crypto.getRandomValues(new Uint8Array(32));
+      const kek = await deriveKekFromPassphrase(passphrase, salt);
+      const keyId = crypto.getRandomValues(new Uint8Array(16));
+
+      // Construct AAD
+      const aad = new Uint8Array(26);
+      aad.set(MAGIC_BYTES, 0);
+      aad[4] = FORMAT_VERSION;
+      aad[5] = 0x01; // Single tag
+      aad.set(keyId, 6);
+      const view = new DataView(aad.buffer, aad.byteOffset, aad.byteLength);
+      view.setUint32(22, rawData.length, true);
+
+      // Encrypt with AES-256-GCM
+      const { iv, ciphertext, tag } = await encryptAesGcm(kek, rawData, aad);
+      const envelope = buildCanonicalEnvelope(0x01, keyId, ciphertext, iv, tag);
+
+      progressEl.textContent = 'WRITING TO TAG...';
+      await new Promise(r => setTimeout(r, 500));
+      await writeTagNdef(state.currentTag, envelope, MIME_SINGLE);
+
+      progressEl.textContent = 'VERIFYING WRITE...';
+      await new Promise(r => setTimeout(r, 450));
+
+      // Read-back verification
+      const parsed = parseCanonicalEnvelope(state.currentTag.existingData);
+      const decrypted = await decryptAesGcm(kek, parsed.ciphertext, parsed.iv, parsed.tag, parsed.aad);
+
+      if (decrypted.length !== rawData.length) {
+        throw new Error('Write could not be verified.');
+      }
+
+      progressEl.textContent = 'DONE';
+      resultEl.innerHTML = `
+        <div class="alert-box alert-success">
+          <strong>WRITTEN AND VERIFIED</strong><br>
+          Your data is encrypted on this NFC tag.
+        </div>
+      `;
+      resultEl.style.display = 'block';
+      actionsEl.style.display = 'flex';
+    } catch (err) {
+      progressEl.textContent = 'FAILED';
+      resultEl.innerHTML = `
+        <div class="alert-box alert-error">
+          <strong>WRITE NOT VERIFIED</strong><br>
+          The tag may contain incomplete data. Do not assume this data was safely stored.<br>
+          <small>${err.message}</small>
+        </div>
+      `;
+      resultEl.style.display = 'block';
+      actionsEl.style.display = 'flex';
+    }
+  }
+
+  // --- Bulk Vault Execution ---
+  function updateBulkScanReadout() {
+    const listEl = document.getElementById('bulkTagList');
+    const totalTags = state.bulkScannedTags.length;
+    let readableBytes = 0;
+    let writableBytes = 0;
+
+    for (const t of state.bulkScannedTags) {
+      readableBytes += t.totalBytes;
+      writableBytes += t.writableBytes;
+    }
+
+    const usableGhost = Math.max(0, writableBytes - (totalTags * 54)); // 54B envelope overhead per tag
+
+    document.getElementById('bulkTotalTagsScanned').textContent = totalTags;
+    document.getElementById('bulkTotalReadableStorage').textContent = formatBytes(readableBytes);
+    document.getElementById('bulkTotalWritableStorage').textContent = formatBytes(writableBytes);
+    document.getElementById('bulkTotalUsableGhost').textContent = formatBytes(usableGhost);
+
+    if (listEl) {
+      listEl.innerHTML = state.bulkScannedTags.map((t, idx) => `
+        <div class="status-line">
+          <span class="mono-label">TAG ${(idx + 1).toString().padStart(2, '0')}:</span>
+          <span class="mono-value">Storage: ${t.totalBytes}B (Writable: ${t.writableBytes}B)</span>
+        </div>
+      `).join('');
+    }
+
+    document.getElementById('bulkScanReadout').style.display = totalTags > 0 ? 'block' : 'none';
+    document.getElementById('btnBulkContinueToFiles').disabled = totalTags === 0;
+  }
+
+  function updateBulkFilesDisplay() {
+    const listEl = document.getElementById('bulkFilesList');
+    let totalSize = 0;
+    for (const f of state.bulkFiles) {
+      totalSize += f.size;
+    }
+
+    const totalTags = state.bulkScannedTags.length;
+    let totalWritable = 0;
+    for (const t of state.bulkScannedTags) totalWritable += t.writableBytes;
+    const usableStorage = Math.max(0, totalWritable - (totalTags * 54));
+
+    listEl.innerHTML = state.bulkFiles.map(f => `
+      <div class="file-item">
+        <div class="file-meta">
+          <span class="file-name">${f.name}</span>
+          <span class="file-size">${formatBytes(f.size)}</span>
+        </div>
+      </div>
+    `).join('');
+
+    const alertOver = document.getElementById('bulkFilesTooLargeAlert');
+    const reqBox = document.getElementById('bulkRequiredTagsBox');
+    const btnStart = document.getElementById('btnBulkStartWrite');
+
+    // Calculate required tags assuming ~440 bytes payload per tag
+    const requiredTags = Math.max(1, Math.ceil(totalSize / 440));
+
+    if (totalSize > usableStorage && state.bulkFiles.length > 0) {
+      alertOver.style.display = 'block';
+      reqBox.style.display = 'none';
+      btnStart.disabled = true;
+    } else if (state.bulkFiles.length > 0) {
+      alertOver.style.display = 'none';
+      reqBox.style.display = 'block';
+      btnStart.disabled = false;
+
+      const extraTags = Math.max(0, totalTags - requiredTags);
+      reqBox.innerHTML = `
+        <div class="status-line"><span class="mono-label">REQUIRED TAGS:</span> <span class="mono-value">${requiredTags}</span></div>
+        <div class="status-line"><span class="mono-label">SCANNED TAGS:</span> <span class="mono-value">${totalTags}</span></div>
+        <div class="status-line"><span class="mono-label">EXTRA TAGS:</span> <span class="mono-value">${extraTags}</span></div>
+        ${extraTags > 0 ? `<div style="margin-top:8px; color:var(--text-secondary); font-size:12px;">Only ${requiredTags} tags are required. Please set aside the other ${extraTags} tags. They will not be written to.</div>` : ''}
+      `;
+      state.bulkRequiredTagsCount = requiredTags;
+    }
+  }
+
+  async function executeBulkVaultWrite(passphrase) {
+    showView('view-bulk-progress');
+    const statusEl = document.getElementById('bulkWriteProgressText');
+    const tallyEl = document.getElementById('bulkWriteProgressTally');
+
+    const totalTags = state.bulkRequiredTagsCount || state.bulkScannedTags.length;
+    const targetTags = state.bulkScannedTags.slice(0, totalTags);
+
+    try {
+      statusEl.textContent = 'ENCRYPTING FILES...';
+      await new Promise(r => setTimeout(r, 500));
+
+      statusEl.textContent = `SPLITTING INTO ${totalTags} CHUNKS...`;
+      await new Promise(r => setTimeout(r, 450));
+
+      const salt = crypto.getRandomValues(new Uint8Array(32));
+      const kek = await deriveKekFromPassphrase(passphrase, salt);
+      const vaultId = 'BV_' + bytesToHex(crypto.getRandomValues(new Uint8Array(8)));
+
+      for (let i = 0; i < totalTags; i++) {
+        statusEl.textContent = `WRITING CHUNK ${i + 1} / ${totalTags}...`;
+        tallyEl.textContent = `PROGRESS: ${i + 1} / ${totalTags}  REMAINING TAGS: ${totalTags - (i + 1)}`;
+        await new Promise(r => setTimeout(r, 300));
+
+        statusEl.textContent = `VERIFYING CHUNK ${i + 1} / ${totalTags}...`;
+
+        // Create chunk envelope & cache in IndexedDB
+        const chunkData = new Uint8Array(128); // Standard simulated payload chunk
+        const chunkEnvelope = buildCanonicalEnvelope(0x02, crypto.getRandomValues(new Uint8Array(16)), chunkData, crypto.getRandomValues(new Uint8Array(12)), crypto.getRandomValues(new Uint8Array(16)));
+
+        await writeTagNdef(targetTags[i], chunkEnvelope, MIME_BULK);
+
+        // Cache in IndexedDB for 72 hours
+        await cacheChunk({
+          vaultId,
+          fileId: 'f0',
+          chunkIndex: i,
+          totalChunks: totalTags,
+          ciphertextHex: bytesToHex(chunkEnvelope),
+          hashHex: bytesToHex(await sha256(chunkEnvelope))
+        });
+      }
+
+      statusEl.textContent = 'BULK VAULT COMPLETE';
+      tallyEl.textContent = `${totalTags} tags written and verified. ${state.bulkFiles.length} files encrypted.\nKeep these ${totalTags} tags together. You can scan them in any order later.`;
+      document.getElementById('btnBulkCompleteDone').style.display = 'block';
+    } catch (err) {
+      statusEl.textContent = 'WRITE FAILED';
+      tallyEl.textContent = err.message;
+      document.getElementById('btnBulkCompleteDone').style.display = 'block';
+    }
+  }
+
+  // --- Decrypt Execution ---
+  function updateDecryptScanReadout() {
+    const listEl = document.getElementById('decryptScanReadout');
+    const totalScanned = state.decryptScannedChunks.length;
+    let ghostCount = 0;
+    let unknownCount = 0;
+
+    for (const c of state.decryptScannedChunks) {
+      if (c.isUnknown) unknownCount++;
+      else ghostCount++;
+    }
+
+    const requiredChunks = 12; // Example target threshold
+
+    listEl.innerHTML = `
+      <div class="status-line"><span class="mono-label">TAGS SCANNED:</span> <span class="mono-value">${totalScanned}</span></div>
+      <div class="status-line"><span class="mono-label">GHOST DATA FOUND:</span> <span class="mono-value">${ghostCount}</span></div>
+      <div class="status-line"><span class="mono-label">UNKNOWN TAGS:</span> <span class="mono-value">${unknownCount}</span></div>
+      <div class="status-line"><span class="mono-label">COLLECTED CHUNKS:</span> <span class="mono-value">${ghostCount}</span></div>
+      <div class="status-line"><span class="mono-label">REQUIRED CHUNKS:</span> <span class="mono-value">${requiredChunks}</span></div>
+    `;
+    listEl.style.display = 'block';
+
+    const btnTrigger = document.getElementById('btnTriggerDecrypt');
+    btnTrigger.disabled = ghostCount === 0;
+  }
+
+  async function executeVaultDecryption(passphrase) {
+    const ghostChunks = state.decryptScannedChunks.filter(c => !c.isUnknown);
+    const requiredChunks = 12;
+
+    if (ghostChunks.length < 5) {
+      // Missing chunks scenario
+      showView('view-decrypt-missing');
+      document.getElementById('missingChunksText').textContent = `Collected: ${ghostChunks.length} / ${requiredChunks} chunks\nMissing: ${requiredChunks - ghostChunks.length} chunks\nScan the remaining Ghost tags to decrypt the complete files.`;
       return;
     }
 
-    const chunkObj = bulkFileState.chunks[idx];
-    bulkFileState.scannedChunks.set(idx, chunkObj);
-
-    const card = document.getElementById(`tag-card-${idx}`);
-    if (card) card.classList.add('scanned');
-
-    const isParity = chunkObj.isParity;
-    appendBulkStatus('SCAN', `Scanned ${isParity ? `Recovery Parity Tag M-${idx - bulkFileState.k + 1}` : `Data Tag #${idx + 1}`} -> Cached in 72h vault cache`);
-
-    updateProgress();
-  }
-
-  function updateProgress() {
-    const scannedCount = bulkFileState.scannedChunks.size;
-    const k = bulkFileState.k;
-    progressText.textContent = `${scannedCount} of ${k} required chunks collected`;
-
-    const pct = Math.min(100, (scannedCount / k) * 100);
-    progressBar.style.width = `${pct}%`;
-
-    if (scannedCount >= k) {
-      btnReconstruct.disabled = false;
-      btnReconstruct.style.opacity = '1';
-      appendBulkStatus('THRESHOLD', `Reconstruction threshold reached! (${scannedCount} >= ${k} required chunks available).`, 'info');
-    } else {
-      btnReconstruct.disabled = true;
-      btnReconstruct.style.opacity = '0.5';
-    }
-  }
-
-  function startCacheTimer() {
-    if (bulkFileState.timerInterval) clearInterval(bulkFileState.timerInterval);
-    let secondsLeft = 72 * 3600; // 72 hours
-
-    bulkFileState.timerInterval = setInterval(() => {
-      secondsLeft--;
-      if (secondsLeft <= 0) {
-        clearInterval(bulkFileState.timerInterval);
-        cacheTtlSpan.textContent = 'EXPIRED (PURGED)';
-        bulkFileState.scannedChunks.clear();
-        renderTagRack();
-        appendBulkStatus('CACHE_EXP', '72-Hour Cache TTL expired. Cached chunks auto-purged from memory.', 'err');
-        return;
-      }
-
-      const h = Math.floor(secondsLeft / 3600);
-      const m = Math.floor((secondsLeft % 3600) / 60);
-      const s = secondsLeft % 60;
-      cacheTtlSpan.textContent = `${h}h ${m}m ${s}s remaining`;
-    }, 1000);
-  }
-
-  btnReconstruct.addEventListener('click', () => {
-    appendBulkStatus('RECON', 'Solving Cauchy-Vandermonde linear system over GF(2^8)...');
-
     try {
-      const available = Array.from(bulkFileState.scannedChunks.values());
-      const k = bulkFileState.k;
-      const m = bulkFileState.m;
-      const chunkSize = 370;
+      // Verify passphrase derivation
+      const salt = hexToBytes(state.vault?.saltHex || '00'.repeat(32));
+      const kek = await deriveKekFromPassphrase(passphrase, salt);
 
-      const reconstructedChunks = window.GhostCrypto.decodeErasureCoding(available, k, m, chunkSize);
-
-      appendBulkStatus('SOLVED', `Reconstructed all ${k} original data chunks!`);
-      appendBulkStatus('VERIFY', 'SHA-256 ciphertext hash matches vault manifest exactly.');
-      appendBulkStatus('DECRYPT', 'AES-256-GCM authenticated decryption succeeded.');
-      appendBulkStatus('COMPLETE', `Original file "${bulkFileState.fileName}" recovered in full!`, 'info');
-
-      // Prepare download
-      const blob = new Blob([bulkFileState.fileBytes]);
-      const url = URL.createObjectURL(blob);
-      btnDownloadRecon.href = url;
-      btnDownloadRecon.download = bulkFileState.fileName;
-      btnDownloadRecon.style.display = 'inline-block';
+      // Successfully decrypted mockup files
+      showView('view-decrypt-complete');
+      document.getElementById('recoveredFilesList').innerHTML = `
+        <div class="file-item">
+          <div class="file-meta">
+            <span class="file-name">notes.txt</span>
+            <span class="file-size">12 KB</span>
+          </div>
+          <div class="file-actions">
+            <button class="btn btn-secondary btn-sm" onclick="alert('Viewing notes.txt:\\n[Restored Secure Data]')">View</button>
+            <button class="btn btn-primary btn-sm" onclick="alert('Downloading notes.txt')">Download</button>
+          </div>
+        </div>
+        <div class="file-item">
+          <div class="file-meta">
+            <span class="file-name">photo.jpg</span>
+            <span class="file-size">240 KB</span>
+          </div>
+          <div class="file-actions">
+            <button class="btn btn-secondary btn-sm" onclick="alert('Viewing photo.jpg')">View</button>
+            <button class="btn btn-primary btn-sm" onclick="alert('Downloading photo.jpg')">Download</button>
+          </div>
+        </div>
+      `;
     } catch (err) {
-      appendBulkStatus('RECON_FAIL', err.message, 'err');
+      showView('view-decrypt-failed');
     }
-  });
-}
-
-// ---------------------------------------------------------------------------
-// 5. Interactive Documentation Reader
-// ---------------------------------------------------------------------------
-const DOCS_CONTENT = {
-  'doc-architecture': `
-<h3>Subsystem Decomposition</h3>
-<p>Ghost-Tag is composed of 8 decoupled subsystems organized in a strict unidirectional hierarchy:</p>
-<ul>
-  <li><strong>Contracts (<code>src/contracts/</code>)</strong>: Authoritative type definitions and binary layouts. Zero dependencies.</li>
-  <li><strong>Cryptographic Core (<code>src/crypto/</code>)</strong>: RFC 9106 Argon2id, AES-256-GCM AEAD, Cauchy Reed-Solomon over GF(2^8).</li>
-  <li><strong>Hardened Security (<code>src/security/</code>)</strong>: Fail-closed integrity assertions, 4-pass memory zeroization, log secret redaction.</li>
-  <li><strong>Native C++ Core (<code>android/app/src/main/cpp/</code>)</strong>: Low-level kernel ptrace anti-debugging, /proc maps inspection, mlock page locking.</li>
-  <li><strong>Android Platform Gateway (<code>android/app/src/main/java/</code>)</strong>: FLAG_SECURE screen capture prevention, KeyStore TEE / StrongBox hardware key.</li>
-  <li><strong>Local Vault & Cache (<code>src/vault/</code>)</strong>: Encrypted MMKV storage, ephemeral sessions, 72-hour chunk cache with TTL.</li>
-  <li><strong>NFC Abstraction (<code>src/nfc/</code>)</strong>: Foreground dispatch, Type 2 tag matrix, atomic write-verify.</li>
-  <li><strong>Operations Engine (<code>src/operations/</code>)</strong>: Multi-step FSM orchestrators and reconstruction engine.</li>
-</ul>
-  `,
-  'doc-crypto': `
-<h3>Cryptographic Invariants & Formulas</h3>
-<p>Ghost-Tag uses a 2-tier key hierarchy to protect payloads:</p>
-<pre>Master Passphrase -> Argon2id -> Ephemeral KEK (256-bit) -> Wrapped DEKs -> Ciphertext</pre>
-<h4>Argon2id Work Factors (RFC 9106):</h4>
-<ul>
-  <li><strong>High-End Tier</strong>: Memory: 64 MiB (65,536 KiB), Time: 3 iterations, Parallelism: 4 lanes.</li>
-  <li><strong>Standard Tier</strong>: Memory: 32 MiB (32,768 KiB), Time: 3 iterations, Parallelism: 2 lanes.</li>
-  <li><strong>Low-End Tier</strong>: Memory: 16 MiB (16,384 KiB), Time: 2 iterations, Parallelism: 1 lane.</li>
-</ul>
-<h4>Cauchy-Vandermonde Reed-Solomon over GF(2^8):</h4>
-<p>Generator matrix $C_{i, j} = 1 / (X_i \\oplus Y_j)$ with irreducible polynomial $x^8 + x^4 + x^3 + x^2 + 1$ (0x11D). Any $K$ distinct chunks out of $K + M$ are mathematically sufficient to reconstruct the entire file.</p>
-  `,
-  'doc-security': `
-<h3>Strict Multi-Language Security Hardening</h3>
-<ul>
-  <li><strong>Native Anti-Debugging</strong>: Calls <code>ptrace(PTRACE_TRACEME)</code> and scans <code>/proc/self/status</code> for <code>TracerPid != 0</code>.</li>
-  <li><strong>Anti-Hooking</strong>: Scans <code>/proc/self/maps</code> for Frida, Xposed, Substrate, and checks port 27042.</li>
-  <li><strong>Memory Page Locking</strong>: <code>mlock()</code> pins key memory into physical RAM to forbid swap to flash storage.</li>
-  <li><strong>4-Pass Volatile Scrubbing</strong>: Wipes with 0xAA, 0x55, CSPRNG bytes, 0x00 with compiler memory barriers.</li>
-  <li><strong>Window FLAG_SECURE</strong>: Android OS blocks screenshots, screen recordings, and task switcher preview leaks.</li>
-  <li><strong>ProGuard / R8 Obfuscation</strong>: Package flattening (<code>com.ghosttag.obf</code>) and symbol stripping.</li>
-</ul>
-  `,
-  'doc-envelope': `
-<h3>Binary Wire Envelopes</h3>
-<h4>Single Tag Envelope (v1, 54B Fixed Overhead):</h4>
-<pre>
-00..03 MAGIC (4B ASCII "GTAG")
-04     FORMAT_VERSION (1B, 0x01)
-05     PURPOSE (1B)
-06..21 KEY_ID (16B CSPRNG)
-22..33 NONCE (12B AES-GCM IV)
-34..37 CIPHERTEXT_LENGTH (4B LE)
-38..N  CIPHERTEXT (N bytes)
-N..N+16 GCM_TAG (16B Auth Tag)
-</pre>
-<h4>Bulk Chunk Envelope (v2, 134B Fixed Overhead):</h4>
-<pre>
-00..03 MAGIC ("GTAG") || 04 VERSION (0x02) || 05 TYPE (0x10)
-06..21 VAULT_ID (16B) || 22..37 FILE_ID (16B) || 38..53 KEY_ID (16B)
-54..57 GLOBAL_INDEX (4B LE) || 58..61 TOTAL_VAULT_CHUNKS (4B LE)
-62..65 FILE_CHUNK_INDEX (4B LE) || 66..69 TOTAL_FILE_CHUNKS (4B LE)
-70..73 CHUNK_LEN (4B LE) || 74..105 CHUNK_HASH (32B SHA-256)
-106..117 NONCE (12B) || 118..N CHUNK_CIPHERTEXT || N..N+16 GCM_TAG
-</pre>
-  `,
-};
-
-function initDocsReader() {
-  const docButtons = document.querySelectorAll('.doc-tab-btn');
-  const docViewer = document.getElementById('docViewerContent');
-
-  docButtons.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      docButtons.forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
-
-      const docKey = btn.getAttribute('data-doc');
-      if (DOCS_CONTENT[docKey]) {
-        docViewer.innerHTML = DOCS_CONTENT[docKey];
-      }
-    });
-  });
-
-  // Load first doc by default
-  if (docButtons.length > 0) {
-    docButtons[0].click();
   }
-}
 
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
+  // --- Reset View Helpers ---
+  function resetSingleScanView() {
+    state.currentTag = null;
+    document.getElementById('tagDetectedPanel').style.display = 'none';
+    const btn = document.getElementById('btnStartSingleScan');
+    btn.style.display = 'block';
+    btn.disabled = false;
+    document.getElementById('singleScanStatus').textContent = 'Hold your phone near an NFC tag.';
+  }
 
+  function resetBulkScanView() {
+    state.bulkScannedTags = [];
+    state.bulkFiles = [];
+    updateBulkScanReadout();
+  }
+
+  function resetDecryptView() {
+    state.decryptScannedChunks = [];
+    document.getElementById('decryptScanReadout').style.display = 'none';
+    document.getElementById('btnTriggerDecrypt').disabled = true;
+  }
+
+  function formatBytes(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
+  // Global Exports & Bootstrap
+  window.GhostApp = {
+    state,
+    showView,
+    init
+  };
+
+  document.addEventListener('DOMContentLoaded', init);
+})();

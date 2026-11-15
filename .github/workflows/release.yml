@@ -37,6 +37,9 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      - name: Patch Third-Party Build Dependencies
+        run: node scripts/patch_dependencies.js
+
       - name: Make Gradle Wrapper Executable
         run: chmod +x android/gradlew
 

@@ -98,8 +98,10 @@ on ghost_recovery_attempts (success, attempted_at);
 -- ---------------------------------------------------------------------------
 -- Prevents parallel race condition bypasses using transaction-level advisory locks.
 -- Serializes concurrent requests per account_id so parallel callers cannot exceed limits.
+-- Counts only failed attempts (success = false), inserts the attempt atomically in the same
+-- transaction, and returns whether the request is allowed along with the new attempt_id.
 
-create or replace function check_and_record_recovery_attempt(
+create or replace function public.check_and_record_recovery_attempt(
   p_account_id uuid,
   p_user_id uuid,
   p_ip_hash text,
@@ -110,6 +112,7 @@ create or replace function check_and_record_recovery_attempt(
 )
 returns table (
   allowed boolean,
+  attempt_id uuid,
   account_failures bigint,
   user_failures bigint,
   ip_failures bigint
@@ -123,6 +126,8 @@ declare
   v_account_cnt bigint;
   v_user_cnt bigint;
   v_ip_cnt bigint;
+  v_allowed boolean;
+  v_attempt_id uuid;
 begin
   -- 1. Atomic transaction-level advisory lock on account_id hash
   -- Serializes concurrent requests targeting the same account until transaction completes
@@ -147,10 +152,75 @@ begin
 
   -- 3. Evaluate limits atomically
   if v_account_cnt >= p_max_account or (p_user_id is not null and v_user_cnt >= p_max_user) or v_ip_cnt >= p_max_ip then
-    return query select false, v_account_cnt, v_user_cnt, v_ip_cnt;
+    v_allowed := false;
   else
-    return query select true, v_account_cnt, v_user_cnt, v_ip_cnt;
+    v_allowed := true;
   end if;
+
+  -- 4. Insert the attempt in the SAME transaction (with success = false)
+  insert into public.ghost_recovery_attempts (
+    account_id,
+    user_id,
+    ip_hash,
+    success,
+    attempted_at
+  ) values (
+    p_account_id,
+    p_user_id,
+    p_ip_hash,
+    false,
+    now()
+  ) returning id into v_attempt_id;
+
+  return query select v_allowed, v_attempt_id, v_account_cnt, v_user_cnt, v_ip_cnt;
+end;
+$$;
+
+-- Overload supporting char parameter type
+create or replace function public.check_and_record_recovery_attempt(
+  p_account_id uuid,
+  p_user_id uuid,
+  p_ip_hash char,
+  p_max_account int default 25,
+  p_max_user int default 20,
+  p_max_ip int default 100
+)
+returns table (
+  allowed boolean,
+  attempt_id uuid,
+  account_failures bigint,
+  user_failures bigint,
+  ip_failures bigint
+)
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+begin
+  return query select * from public.check_and_record_recovery_attempt(
+    p_account_id,
+    p_user_id,
+    p_ip_hash::text,
+    p_max_account,
+    p_max_user,
+    p_max_ip
+  );
+end;
+$$;
+
+-- Mark successful recovery attempt
+create or replace function public.mark_recovery_attempt_success(
+  p_attempt_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+begin
+  update public.ghost_recovery_attempts
+  set success = true
+  where id = p_attempt_id;
 end;
 $$;
 
@@ -158,5 +228,17 @@ $$;
 revoke execute on function public.check_and_record_recovery_attempt(uuid, uuid, text, int, int, int, interval)
 from anon, authenticated, public;
 
+revoke execute on function public.check_and_record_recovery_attempt(uuid, uuid, char, int, int, int)
+from anon, authenticated, public;
+
+revoke execute on function public.mark_recovery_attempt_success(uuid)
+from anon, authenticated, public;
+
 grant execute on function public.check_and_record_recovery_attempt(uuid, uuid, text, int, int, int, interval)
+to service_role;
+
+grant execute on function public.check_and_record_recovery_attempt(uuid, uuid, char, int, int, int)
+to service_role;
+
+grant execute on function public.mark_recovery_attempt_success(uuid)
 to service_role;

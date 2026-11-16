@@ -12,6 +12,14 @@ const { getCardUid, readTagNdef, writeTagNdefAndVerify } = require('./apdu');
 const PORT = 41789;
 const HOST = '127.0.0.1';
 
+const ALLOWED_ORIGINS = new Set([
+  'https://frosty-mug.github.io',
+  'http://localhost:8080',
+  'http://localhost:3000',
+  'http://127.0.0.1:8080',
+  'http://127.0.0.1:3000',
+]);
+
 class GhostBridgeServer {
   constructor() {
     this.connectedReaders = new Map();
@@ -31,10 +39,21 @@ class GhostBridgeServer {
 
   initHttpServer() {
     this.server = http.createServer((req, res) => {
-      // CORS headers strictly for local web client
-      res.setHeader('Access-Control-Allow-Origin', '*');
+      const origin = req.headers['origin'];
+
+      // Reject unauthorized cross-origin requests with HTTP 403
+      if (origin && !ALLOWED_ORIGINS.has(origin)) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'FORBIDDEN_ORIGIN' }));
+        return;
+      }
+
+      if (origin && ALLOWED_ORIGINS.has(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+      }
       res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      res.setHeader('Vary', 'Origin');
 
       if (req.method === 'OPTIONS') {
         res.writeHead(204);

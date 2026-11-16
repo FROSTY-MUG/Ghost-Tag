@@ -194,6 +194,8 @@ serve(async (req: Request) => {
       );
     }
 
+    const currentAttemptId = rateResult ? rateResult.attempt_id : null;
+
     // 5. Global Monitoring Check (Alert-Only, Non-Blocking to Prevent Denial of Service)
     const windowStart = new Date(Date.now() - 15 * 60 * 1000).toISOString();
     const { count: globalFailures } = await adminClient
@@ -220,13 +222,6 @@ serve(async (req: Request) => {
       // Execute maintained constant-time comparison to prevent timing account enumeration
       timingSafeEqual(Buffer.from(candidateVerifierBytes), Buffer.from(dummyVerifierBytes));
 
-      await adminClient.from("ghost_recovery_attempts").insert({
-        account_id,
-        user_id: authenticatedUserId,
-        ip_hash: clientIpHash,
-        success: false,
-      });
-
       return new Response(
         JSON.stringify({ error: "RECOVERY_FAILED" }),
         { status: 403, headers: responseHeaders }
@@ -251,21 +246,14 @@ serve(async (req: Request) => {
     }
 
     if (!isMatch) {
-      await adminClient.from("ghost_recovery_attempts").insert({
-        account_id,
-        user_id: authenticatedUserId,
-        ip_hash: clientIpHash,
-        success: false,
-      });
-
       return new Response(
         JSON.stringify({ error: "RECOVERY_FAILED" }),
         { status: 403, headers: responseHeaders }
       );
     }
 
-    // 8. Verification Succeeded: Reassign owner_user_id and log success
-    // Do not delete attempt history; mark the successful attempt with success = true
+    // 8. Verification Succeeded: Reassign owner_user_id and mark attempt success = true
+    // Do not delete attempt history; mark the atomically recorded attempt as success = true
     await adminClient
       .from("ghost_vaults")
       .update({
@@ -274,12 +262,12 @@ serve(async (req: Request) => {
       })
       .eq("account_id", account_id);
 
-    await adminClient.from("ghost_recovery_attempts").insert({
-      account_id,
-      user_id: authenticatedUserId,
-      ip_hash: clientIpHash,
-      success: true,
-    });
+    if (currentAttemptId) {
+      await adminClient
+        .from("ghost_recovery_attempts")
+        .update({ success: true })
+        .eq("id", currentAttemptId);
+    }
 
     // 9. Explicitly encode bytea encrypted_vault_blob to base64
     let encryptedBlobBase64 = "";

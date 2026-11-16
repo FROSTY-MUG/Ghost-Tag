@@ -164,10 +164,11 @@ const inMemoryVaultSyncStore = new Map<string, StoredVaultEntry>();
  */
 interface RateLimitRecord {
   failedAttempts: number;
+  successfulAttempts: number;
   firstAttemptTime: number;
 }
 const recoveryAttemptTracker = new Map<string, RateLimitRecord>();
-const MAX_FAILED_RECOVERY_ATTEMPTS = 5;
+const MAX_FAILED_RECOVERY_ATTEMPTS = 25; // Raised threshold prevents DoS lockouts
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 mins
 
 /**
@@ -339,7 +340,7 @@ export async function recoverVaultWithVerifier(
   }
 
   // Atomically register this attempt immediately before async execution
-  const current = rateRecord || { failedAttempts: 0, firstAttemptTime: now };
+  const current: RateLimitRecord = rateRecord || { failedAttempts: 0, successfulAttempts: 0, firstAttemptTime: now };
   current.failedAttempts += 1;
   recoveryAttemptTracker.set(accountId, current);
 
@@ -366,7 +367,9 @@ export async function recoverVaultWithVerifier(
       }
 
       const data = await resp.json();
-      recoveryAttemptTracker.delete(accountId);
+      if (rateRecord) {
+        rateRecord.successfulAttempts = (rateRecord.successfulAttempts || 0) + 1;
+      }
       return {
         accountId: data.account_id,
         encryptedBlob: data.encrypted_vault_blob,
@@ -394,10 +397,12 @@ export async function recoverVaultWithVerifier(
     throw new Error('RECOVERY_FAILED');
   }
 
-  // Verification succeeded: reassign owner_user_id and clear rate limit
+  // Verification succeeded: reassign owner_user_id and mark success (retaining attempt history)
   localEntry.owner_user_id = newOwnerUserId;
   localEntry.updated_at = new Date().toISOString();
-  recoveryAttemptTracker.delete(accountId);
+  if (rateRecord) {
+    rateRecord.successfulAttempts = (rateRecord.successfulAttempts || 0) + 1;
+  }
 
   return {
     accountId: localEntry.account_id,

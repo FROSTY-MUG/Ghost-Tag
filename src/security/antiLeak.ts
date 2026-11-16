@@ -8,7 +8,17 @@
  */
 
 import QuickCrypto from 'react-native-quick-crypto';
+import { Buffer } from 'buffer';
 import { GhostTagError } from '../contracts/errors';
+
+declare const require: any;
+let nodeCrypto: any = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  nodeCrypto = typeof require !== 'undefined' ? require('crypto') : null;
+} catch {
+  // Ignored in environments where node crypto is not available
+}
 
 /**
  * Regular expression matching 64-character continuous hexadecimal strings
@@ -46,8 +56,8 @@ export function redactSensitiveData(input: string): string {
 }
 
 /**
- * Compares two byte arrays in constant time to prevent side-channel timing attacks.
- * Uses QuickCrypto.timingSafeEqual when available, with a constant-time fallback.
+ * Compares two byte arrays in constant time using maintained cryptographic implementations.
+ * Uses crypto.timingSafeEqual in Node/CI/Server and QuickCrypto.timingSafeEqual in React Native.
  *
  * @param a First byte buffer.
  * @param b Second byte buffer.
@@ -62,18 +72,20 @@ export function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
     return false;
   }
 
-  try {
-    const bufA = QuickCrypto.Buffer.from(a.buffer as ArrayBuffer, a.byteOffset, a.byteLength);
-    const bufB = QuickCrypto.Buffer.from(b.buffer as ArrayBuffer, b.byteOffset, b.byteLength);
-    return QuickCrypto.timingSafeEqual(bufA, bufB);
-  } catch {
-    // Constant-time bitwise accumulator fallback
-    let diff = 0;
-    for (let i = 0; i < a.length; i++) {
-      diff |= a[i] ^ b[i];
-    }
-    return diff === 0;
+  if (nodeCrypto && typeof nodeCrypto.timingSafeEqual === 'function') {
+    return nodeCrypto.timingSafeEqual(
+      Buffer.from((a.buffer as unknown) as ArrayBuffer, a.byteOffset, a.byteLength),
+      Buffer.from((b.buffer as unknown) as ArrayBuffer, b.byteOffset, b.byteLength)
+    );
   }
+
+  if (QuickCrypto && typeof QuickCrypto.timingSafeEqual === 'function') {
+    const bufA = QuickCrypto.Buffer.from((a.buffer as unknown) as ArrayBuffer, a.byteOffset, a.byteLength);
+    const bufB = QuickCrypto.Buffer.from((b.buffer as unknown) as ArrayBuffer, b.byteOffset, b.byteLength);
+    return QuickCrypto.timingSafeEqual(bufA, bufB);
+  }
+
+  throw new Error('Maintained constant-time timingSafeEqual is not available in current runtime environment.');
 }
 
 /**

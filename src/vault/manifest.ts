@@ -20,6 +20,7 @@ import { RecoveryEnvelope } from '../contracts/recovery';
 import { AuditEntry } from '../contracts/vault';
 import { validateParams } from '../crypto/argon2';
 import { bytesToHex } from '../crypto/keyWrap';
+import { timingSafeEqual } from '../security/antiLeak';
 
 /** Canonical domain separation string for manifest HMAC derivation. */
 const MANIFEST_HMAC_DOMAIN_STRING = 'GhostTag-Vault-Manifest-Auth-v1';
@@ -332,17 +333,10 @@ export class VaultManifest {
   }
 
   /**
-   * Constant-time equality check for byte arrays.
+   * Constant-time equality check for byte arrays via maintained cryptographic implementation.
    */
   private timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
-    if (a.length !== b.length) {
-      return false;
-    }
-    let mismatch = 0;
-    for (let i = 0; i < a.length; i++) {
-      mismatch |= a[i] ^ b[i];
-    }
-    return mismatch === 0;
+    return timingSafeEqual(a, b);
   }
 }
 

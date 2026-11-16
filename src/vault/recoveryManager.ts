@@ -37,6 +37,7 @@ import { deriveKEK } from '../crypto/argon2';
 import { encrypt, decrypt } from '../crypto/aesGcm';
 import { unwrapDEK, bytesToHex, hexToBytes } from '../crypto/keyWrap';
 import { zeroize, zeroizeAll } from '../crypto/secureMemory';
+import { timingSafeEqual } from '../security/antiLeak';
 import { getWord, getWordIndex, isValidWord } from './wordlist';
 import { VaultDatabase } from './database';
 
@@ -557,17 +558,10 @@ export class RecoveryManager {
   }
 
   /**
-   * Constant-time equality comparison between two byte buffers.
+   * Constant-time equality comparison between two byte buffers using maintained crypto.
    */
   private timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
-    if (a.length !== b.length) {
-      return false;
-    }
-    let mismatch = 0;
-    for (let i = 0; i < a.length; i++) {
-      mismatch |= a[i] ^ b[i];
-    }
-    return mismatch === 0;
+    return timingSafeEqual(a, b);
   }
 
   /**

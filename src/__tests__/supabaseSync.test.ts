@@ -161,14 +161,14 @@ describe('Ghost-Tag Supabase Anonymous Sync', () => {
 
       const wrongVerifierHex = 'ff'.repeat(32);
 
-      // Attempt 5 bad recoveries (threshold)
-      for (let i = 0; i < 5; i++) {
+      // Attempt 25 bad recoveries (threshold to prevent DoS lockouts)
+      for (let i = 0; i < 25; i++) {
         await expect(
           recoverVaultWithVerifier(accountId, wrongVerifierHex, 'attacker')
         ).rejects.toThrow('RECOVERY_FAILED');
       }
 
-      // 6th attempt must trigger rate limit and fail closed with generic error
+      // 26th attempt must trigger rate limit and fail closed with generic error
       await expect(
         recoverVaultWithVerifier(accountId, wrongVerifierHex, 'attacker')
       ).rejects.toThrow('RECOVERY_FAILED');

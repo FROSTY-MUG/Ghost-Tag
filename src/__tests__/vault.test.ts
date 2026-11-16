@@ -241,7 +241,7 @@ describe('Phase 3 Vault Subsystem', () => {
       expect(
         recoveryManager.verifyConfirmationWords(
           words,
-          'wrong',
+          words[3] + '_mismatch',
           words[7],
           words[10]
         )

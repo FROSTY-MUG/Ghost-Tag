@@ -24,8 +24,8 @@ export const BulkScanScreen: React.FC<BulkScanScreenProps> = ({
   totalRequiredChunks,
   onProceedToReconstruction,
 }) => {
-  const [collectedIndices, setCollectedIndices] = useState<number[]>([]);
-  const [logs, setLogs] = useState<string[]>([
+  const [collectedIndices, _setCollectedIndices] = useState<number[]>([]);
+  const [logs, _setLogs] = useState<string[]>([
     `[SCAN] Initializing bulk scan session. Total required: ${totalRequiredChunks}`,
     `[CACHE] Local encrypted chunk cache active (72h TTL).`,
     `[PROMPT] Present any vault tag to the NFC antenna in any order...`,

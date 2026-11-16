@@ -27,6 +27,11 @@ jobs:
       - name: Install Node Dependencies
         run: npm ci
 
+      - name: Dependency Vulnerability Audit
+        run: |
+          npm audit --audit-level=high
+          npm --prefix web audit --audit-level=high
+
       - name: Verify TypeScript Invariants
         run: npx tsc --noEmit
 

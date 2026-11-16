@@ -35,7 +35,7 @@ export interface BulkVaultCreationScreenProps {
 export const BulkVaultCreationScreen: React.FC<BulkVaultCreationScreenProps> = ({
   onProceedToBulkWrite,
 }) => {
-  const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([
+  const [selectedFiles, _setSelectedFiles] = useState<SelectedFile[]>([
     { id: '1', name: 'holiday.mp4', sizeBytes: 8 * 1024 * 1024, mimeType: 'video/mp4' },
     { id: '2', name: 'report.pdf', sizeBytes: 1024 * 1024, mimeType: 'application/pdf' },
     { id: '3', name: 'notes.txt', sizeBytes: 500 * 1024, mimeType: 'text/plain' },
@@ -43,7 +43,7 @@ export const BulkVaultCreationScreen: React.FC<BulkVaultCreationScreenProps> = (
   const [redundancyM, setRedundancyM] = useState<number>(0);
 
   // Example capacity baseline for NTAG213 / standard Type 2 Tag (~110 KB chunks or ~134B fixed overhead)
-  const totalSizeBytes = selectedFiles.reduce((acc, f) => acc + f.sizeBytes, 0);
+  const _totalSizeBytes = selectedFiles.reduce((acc, f) => acc + f.sizeBytes, 0);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>

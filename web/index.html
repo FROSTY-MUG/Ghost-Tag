@@ -75,6 +75,13 @@
       <button class="btn btn-secondary btn-sm" id="btnContinueWithoutNfc" style="margin-top: 10px; width: auto;">Continue Without NFC</button>
     </div>
 
+    <!-- Hardware Notice Banner (Real Hardware Status Enforcement) -->
+    <div id="hardwareNoticeBanner" class="alert-box alert-warning" style="display: none; margin-bottom: 20px;">
+      <strong id="hardwareNoticeTitle">NO NFC READER DETECTED</strong>
+      <div id="hardwareNoticeBody" style="margin-top: 6px; font-size: 13px; line-height: 1.5;"></div>
+      <div id="hardwareNoticeActions" class="btn-group-row" style="margin-top: 12px; display: none;"></div>
+    </div>
+
     <!-- VIEW 1: LANDING PAGE -->
     <section id="view-landing" class="view-section active">
       <div style="text-align: center; padding: 60px 0 40px;">
@@ -84,7 +91,8 @@
           <rect x="22" y="24" width="6" height="10" fill="#000000"/>
           <rect x="36" y="24" width="6" height="10" fill="#000000"/>
         </svg>
-        <h1 class="hero-heading" style="font-size: 24px; margin-bottom: 32px; font-weight: 600; letter-spacing: 0.5px;">Encrypted NFC storage.</h1>
+        <h1 class="hero-heading" style="font-size: 24px; margin-bottom: 8px; font-weight: 600; letter-spacing: 0.5px;">Encrypted NFC storage.</h1>
+        <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 32px; letter-spacing: 2px; text-transform: uppercase;">Create. Encrypt. Scan. Decrypt.</p>
 
         <div class="btn-group" style="max-width: 280px; margin: 0 auto 36px;">
           <button class="btn btn-primary" id="btnLaunch">Launch Web Version</button>
@@ -498,6 +506,27 @@
         <div id="cloudSyncActions" class="btn-group" style="margin-bottom: 0;"></div>
       </div>
 
+      <!-- OPT-IN SCAN HISTORY CARD -->
+      <div class="settings-card" id="scanHistoryCard" style="background: #0d0d0d; border: 1px solid #222; border-radius: 6px; padding: 20px; margin-bottom: 24px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <div style="font-family: monospace; font-size: 13px; font-weight: bold; color: var(--accent-green); letter-spacing: 1.5px;">SCAN HISTORY (OPT-IN)</div>
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #aaa; cursor: pointer;">
+            <input type="checkbox" id="scanHistoryToggle" style="accent-color: var(--accent-green);">
+            <span>Enable</span>
+          </label>
+        </div>
+        <div style="font-size: 12px; color: #888; margin-bottom: 14px; line-height: 1.5;">
+          Records metadata only (timestamp, redacted UID, chunk index, action). Zero plaintext or keys.
+        </div>
+        <div id="scanHistoryRecordsContainer" style="display: none;">
+          <div id="scanHistoryList" style="max-height: 220px; overflow-y: auto; font-family: var(--font-mono); font-size: 11px; border: 1px solid #1a1a1a; padding: 8px; border-radius: 4px; margin-bottom: 12px; background: #050505;"></div>
+          <div class="btn-group-row" style="margin-top: 10px;">
+            <button class="btn btn-secondary btn-sm" id="btnExportScanHistory">Export Redacted Report</button>
+            <button class="btn btn-ghost btn-sm" id="btnClearScanHistory" style="color: var(--accent-red);">Clear History</button>
+          </div>
+        </div>
+      </div>
+
       <div class="btn-group">
         <button class="btn btn-secondary" id="btnLockVault">Lock Vault</button>
         <button class="btn btn-danger" id="btnDeleteVaultSettings">Delete Local Vault</button>
@@ -582,6 +611,19 @@
         <div class="btn-group-row">
           <button class="btn btn-ghost" data-dismiss="modal">Cancel</button>
           <button class="btn btn-danger" id="btnConfirmDeleteVault">Delete Local Vault</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: VIEW DECRYPTED ENTRY -->
+    <div class="modal-overlay" id="modalViewEntry">
+      <div class="modal-dialog" style="max-width: 560px;">
+        <h3 class="modal-title" id="viewEntryModalTitle">VIEW ENTRY</h3>
+        <div id="viewEntryModalMeta" style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;"></div>
+        <div id="viewEntryModalBody" style="margin: 12px 0; max-height: 380px; overflow-y: auto; font-family: var(--font-mono); font-size: 13px; background: #050505; border: 1px solid var(--border-subtle); padding: 12px; border-radius: 4px; white-space: pre-wrap; word-break: break-all;"></div>
+        <div class="btn-group-row">
+          <button class="btn btn-ghost" data-dismiss="modal">Close</button>
+          <button class="btn btn-primary" id="btnDownloadFromViewModal">Download File</button>
         </div>
       </div>
     </div>

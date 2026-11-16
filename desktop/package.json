@@ -1,0 +1,33 @@
+{
+  "name": "ghost-bridge",
+  "version": "2.0.5",
+  "description": "Native desktop PC/SC USB NFC reader companion bridge for Ghost-Tag",
+  "main": "src/index.js",
+  "bin": {
+    "ghost-bridge": "bin/ghost-bridge.js"
+  },
+  "scripts": {
+    "start": "node bin/ghost-bridge.js",
+    "test": "node test/bridge.test.js"
+  },
+  "keywords": [
+    "ghost-tag",
+    "nfc",
+    "acr122u",
+    "pcsc",
+    "smartcard",
+    "usb-nfc-reader",
+    "ndef"
+  ],
+  "author": "Ghost-Tag Core Architecture Team",
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "optionalDependencies": {
+    "@pokusew/pcsclite": "^2.1.0"
+  },
+  "engines": {
+    "node": ">= 18.0.0"
+  }
+}

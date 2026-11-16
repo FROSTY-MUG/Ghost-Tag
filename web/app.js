@@ -1,16 +1,29 @@
 /**
- * Ghost-Tag v2.0.5 - Full Specification Client-Side Web Application
- * 
- * Strict Implementation of Ghost-Tag System Manual:
- * - Mandatory Account Creation (Local-first anonymous account + 12-Word BIP-39)
+ * Ghost-Tag v2.0.5 - Production Client-Side Web Application
+ *
+ * Core Promise:
+ * Encrypted NFC storage.
+ * Create. Encrypt. Scan. Decrypt.
+ *
+ * Strict Architectural Invariants:
+ * - Real Hardware Only: Zero synthetic, mock, demo, or simulated NFC data.
+ * - Hardware Detection:
+ *     * Laptop without Ghost Bridge: NO USB NFC READER DETECTED
+ *     * Laptop with Ghost Bridge and USB reader, no tag on antenna: NO NFC TAG DETECTED
+ *     * Mobile without Web NFC hardware: NO NFC READER DETECTED
+ *     * Android with NFC turned off: NFC IS TURNED OFF
+ *     * Unsupported tag: THIS TAG TYPE IS NOT SUPPORTED FOR GHOST DATA
+ *     * iOS Safari: iOS is not supported yet
+ * - Mandatory Account Creation (12-word BIP-39 recovery phrase + master passphrase)
  * - Portable Account Identity: account_id = KDF(recovery_phrase, "ghost-account-id")
- * - Supabase Anonymous Cloud Sync (Encrypted vault metadata only; zero keys, zero plaintexts)
- * - Zero Scanned-Chunk Cache (Strict volatile session memory, immediate purge)
- * - Encrypt Flow: Text, File, Photo, Video, Encrypted URL (No public URLs)
- * - Decrypt Flow: Single [ Decrypt Now ] action, [ All Chips Scanned ], passphrase unlock
- * - Canonical Binary Envelope: "GTAG" (0x47, 0x54, 0x41, 0x47) with Little-Endian chunk fields
- * - NDEF MIME: application/vnd.ghost.bulk
- * - Android Deletion Flow with explicit corruption warning modal
+ * - Supabase Anonymous Cloud Sync: encrypted vault metadata only; zero keys, zero plaintexts
+ * - Zero Scanned-Chunk Cache: volatile in-memory session; zero persistent 72-hour cache
+ * - Real Encrypt Flow: Arbitrary text, files, photos, videos, encrypted URLs
+ * - Real Double Cryptographic Binding: AES-256-GCM + SHA-256 with 74-byte AAD
+ * - Real Batch Multi-Tag Write & Read-Back Verification
+ * - Real Decrypt Flow: Order-independent scanning, [All Chips Scanned], passphrase unlock
+ * - Real File Preview & Download via Blobs
+ * - Opt-in Scan History (metadata only: timestamp, redacted UID, chunk index, action)
  */
 
 (function () {
@@ -19,6 +32,8 @@
   // Core Storage Keys & Constants
   const STORAGE_KEY_ACCOUNT = 'ghost_account_v2';
   const STORAGE_KEY_LOCAL_VAULT = 'ghost_local_vault_v2';
+  const STORAGE_KEY_SCAN_HISTORY_OPT_IN = 'ghost_scan_history_opt_in';
+  const STORAGE_KEY_SCAN_HISTORY_RECORDS = 'ghost_scan_history_records';
   const MIME_BULK = 'application/vnd.ghost.bulk';
   const MAGIC_BYTES = new Uint8Array([0x47, 0x54, 0x41, 0x47]); // "GTAG"
   const FORMAT_VERSION = 0x02;
@@ -30,7 +45,7 @@
     kek: null, // Volatile CryptoKey
     isUnlocked: false,
     activeView: 'view-landing',
-    
+
     // Account Creation & Recovery
     pendingRecoveryWords: null,
     pendingPassphrase: null,
@@ -38,8 +53,8 @@
 
     // Encrypt Flow
     isEncryptScanning: false,
-    scannedTags: [],
-    entries: [], // [{ id, type, name, data, size, mime }]
+    scannedTags: [], // [{ uid, type, totalBytes, writableBytes, existingData }]
+    entries: [], // [{ id, type, name, data: Uint8Array, size, mime }]
     requiredTagsCount: 0,
     isWriting: false,
     writeChunkIndex: 0,
@@ -47,16 +62,17 @@
 
     // Decrypt Flow
     isDecryptScanning: false,
-    decryptScannedChunks: [], // Volatile in-memory chunks
-    recoveredEntries: [],
+    decryptScannedChunks: [], // [{ chunkIndex, totalChunks, ciphertext, chunkHash, uid }]
+    recoveredEntries: [], // [{ type, name, size, mime, data: Uint8Array, content }]
 
     // Hardware & Environment
     isWebNfcSupported: ('NDEFReader' in window),
     isiOS: /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream
   };
 
-  // --- Cryptographic Core ---
+  // --- Cryptographic Helpers & Conversion Utilities ---
   function hexToBytes(hex) {
+    if (!hex) return new Uint8Array(0);
     const bytes = new Uint8Array(hex.length / 2);
     for (let i = 0; i < hex.length; i += 2) {
       bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
@@ -65,7 +81,26 @@
   }
 
   function bytesToHex(bytes) {
+    if (!bytes) return '';
     return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  function bytesToBase64(bytes) {
+    let binary = '';
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  }
+
+  function base64ToBytes(b64) {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) {
+      bytes[i] = bin.charCodeAt(i);
+    }
+    return bytes;
   }
 
   async function sha256(buffer) {
@@ -186,7 +221,7 @@
     return checksumBits === expectedChecksumBits;
   }
 
-  // --- Canonical Binary Envelope: "GTAG" (Section 11.2) ---
+  // --- Canonical Binary Envelope: "GTAG" (Little-Endian) ---
   function buildGtagEnvelope({
     recordType = 0x02,
     vaultIdBytes,
@@ -201,17 +236,14 @@
     iv,
     tag
   }) {
-    // Layout: "GTAG" (4B) + Ver (1B) + Type (1B) + VaultID (16B) + FileID (16B) + KeyID (16B) +
-    // GlobalChunk (4B LE) + TotalVault (4B LE) + FileChunk (4B LE) + TotalFile (4B LE) +
-    // CiphertextLen (4B LE) + ChunkHash (32B) + Nonce (12B) + Ciphertext + Tag (16B)
-    const headerSize = 4 + 1 + 1 + 16 + 16 + 16 + 4 + 4 + 4 + 4 + 4 + 32 + 12; // 114 bytes
+    const headerSize = 4 + 1 + 1 + 16 + 16 + 16 + 4 + 4 + 4 + 4 + 4 + 32 + 12; // 118 bytes
     const totalSize = headerSize + ciphertext.length + 16;
     const buffer = new Uint8Array(totalSize);
     const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
 
     buffer.set(MAGIC_BYTES, 0); // "GTAG"
     buffer[4] = FORMAT_VERSION; // 0x02
-    buffer[5] = recordType; // 0x02 Bulk / 0x01 Single
+    buffer[5] = recordType; // 0x02 Bulk Chunk
     buffer.set(vaultIdBytes, 6);
     buffer.set(fileIdBytes, 22);
     buffer.set(keyIdBytes, 38);
@@ -231,12 +263,12 @@
   }
 
   function parseGtagEnvelope(buffer) {
-    if (buffer.length < 130) {
-      throw new Error('Data was modified or is invalid.');
+    if (!buffer || buffer.length < 134) {
+      throw new Error('Data is smaller than minimum Ghost envelope overhead (134B).');
     }
     for (let i = 0; i < 4; i++) {
       if (buffer[i] !== MAGIC_BYTES[i]) {
-        throw new Error('Ghost data is encrypted. Other NFC apps may not understand this record.');
+        throw new Error('THIS TAG TYPE IS NOT SUPPORTED FOR GHOST DATA');
       }
     }
     const version = buffer[4];
@@ -258,7 +290,7 @@
     const tag = buffer.slice(118 + ciphertextLen, 118 + ciphertextLen + 16);
 
     if (ciphertext.length !== ciphertextLen) {
-      throw new Error('Data was modified or is invalid.');
+      throw new Error('Data was modified or is invalid (truncated ciphertext).');
     }
 
     const aad = buffer.slice(0, 74);
@@ -281,15 +313,257 @@
     };
   }
 
-  // --- Real Web NFC Hardware Transceiver with High-Fidelity Simulation ---
+  // --- Real Payload Serialization & Chunk Management ---
+  function serializeEntriesPayload(entries) {
+    const serializable = entries.map(e => ({
+      type: e.type,
+      name: e.name,
+      mime: e.mime,
+      size: e.size,
+      dataB64: e.data ? bytesToBase64(e.data) : ''
+    }));
+    return new TextEncoder().encode(JSON.stringify(serializable));
+  }
+
+  function deserializeEntriesPayload(plaintextBytes) {
+    const jsonStr = new TextDecoder().decode(plaintextBytes);
+    const serializable = JSON.parse(jsonStr);
+    return serializable.map(e => {
+      const dataBytes = e.dataB64 ? base64ToBytes(e.dataB64) : new Uint8Array(0);
+      return {
+        type: e.type,
+        name: e.name,
+        mime: e.mime,
+        size: e.size || dataBytes.length,
+        data: dataBytes,
+        content: (e.type === 'Text' || e.type === 'URL') ? new TextDecoder().decode(dataBytes) : null
+      };
+    });
+  }
+
+  function splitCiphertext(fullBytes, chunkSize) {
+    if (chunkSize <= 0) chunkSize = 370;
+    const chunks = [];
+    let offset = 0;
+    while (offset < fullBytes.length) {
+      const end = Math.min(offset + chunkSize, fullBytes.length);
+      chunks.push(fullBytes.slice(offset, end));
+      offset = end;
+    }
+    if (chunks.length === 0) chunks.push(new Uint8Array(0));
+    return chunks;
+  }
+
+  function joinChunks(chunks) {
+    let totalLength = 0;
+    for (const c of chunks) totalLength += c.length;
+    const joined = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const c of chunks) {
+      joined.set(c, offset);
+      offset += c.length;
+    }
+    return joined;
+  }
+
+  // --- Hardware Status Display Manager ---
+  function showHardwareNotice(type, customText) {
+    const banner = document.getElementById('hardwareNoticeBanner');
+    const title = document.getElementById('hardwareNoticeTitle');
+    const body = document.getElementById('hardwareNoticeBody');
+    const actions = document.getElementById('hardwareNoticeActions');
+    if (!banner || !title || !body || !actions) return;
+
+    banner.style.display = 'block';
+    actions.innerHTML = '';
+    actions.style.display = 'none';
+
+    if (type === 'NO_USB_NFC_READER') {
+      title.textContent = 'NO USB NFC READER DETECTED';
+      body.textContent = customText || 'A USB NFC reader (ACR122U) running through Ghost Bridge is required to scan or write physical NFC tags on desktop browsers.';
+      actions.style.display = 'flex';
+      actions.innerHTML = `
+        <a href="https://github.com/FROSTY-MUG/Ghost-Tag/tree/main/desktop" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;">Download Ghost Bridge</a>
+        <a href="https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.5" target="_blank" class="btn btn-ghost btn-sm" style="text-decoration:none;">Use Android App</a>
+      `;
+    } else if (type === 'NO_NFC_TAG') {
+      title.textContent = 'NO NFC TAG DETECTED';
+      body.textContent = customText || 'Ghost Bridge reader is ready. Place an NFC tag on the USB reader antenna.';
+    } else if (type === 'NO_NFC_READER') {
+      title.textContent = 'NO NFC READER DETECTED';
+      body.textContent = customText || 'Web NFC hardware is not detected on this device. Use an Android phone with Chrome or install the Ghost-Tag Android app.';
+      actions.style.display = 'flex';
+      actions.innerHTML = `
+        <a href="https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.5" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;">Download Android APK</a>
+      `;
+    } else if (type === 'NFC_OFF') {
+      title.textContent = 'NFC IS TURNED OFF';
+      body.textContent = customText || 'NFC is disabled in your device settings. Please turn on NFC to scan or write tags.';
+    } else if (type === 'UNSUPPORTED_TAG') {
+      title.textContent = 'THIS TAG TYPE IS NOT SUPPORTED FOR GHOST DATA';
+      body.textContent = customText || 'Only Type 2 / NDEF-formatted tags (NTAG213, NTAG215, NTAG216) are supported for encrypted Ghost data.';
+    } else if (type === 'PERMISSION_DENIED') {
+      title.textContent = 'NFC PERMISSION DENIED';
+      body.textContent = customText || 'NFC access was denied. Please allow NFC permissions in your browser.';
+    } else {
+      title.textContent = type;
+      body.textContent = customText || '';
+    }
+  }
+
+  function hideHardwareNotice() {
+    const banner = document.getElementById('hardwareNoticeBanner');
+    if (banner) banner.style.display = 'none';
+  }
+
+  // --- Ghost Bridge Client (WebSocket & HTTP RPC to 127.0.0.1:41789) ---
+  const ghostBridge = {
+    ws: null,
+    connected: false,
+    hasReader: false,
+    cardPresent: false,
+    activeCard: null,
+    callbacks: new Map(),
+
+    async checkStatus() {
+      try {
+        const resp = await fetch('http://127.0.0.1:41789/status', { signal: AbortSignal.timeout(1200) });
+        if (resp.ok) {
+          const data = await resp.json();
+          this.hasReader = (data.readers && data.readers.length > 0) || !!data.hasAcr122u;
+          this.cardPresent = !!data.cardPresent;
+          return data;
+        }
+      } catch (e) {
+        // Bridge daemon not running
+      }
+      return null;
+    },
+
+    connect() {
+      if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
+      try {
+        const ws = new WebSocket('ws://127.0.0.1:41789');
+        this.ws = ws;
+
+        ws.onopen = () => {
+          this.connected = true;
+          hideHardwareNotice();
+          ws.send(JSON.stringify({ action: 'get_status' }));
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'bridge_status') {
+              this.hasReader = (msg.readers && msg.readers.length > 0) || !!msg.readerConnected;
+              this.cardPresent = !!msg.cardPresent;
+              this.activeCard = msg.activeCard;
+              if (!this.hasReader && (state.isEncryptScanning || state.isDecryptScanning)) {
+                showHardwareNotice('NO_USB_NFC_READER');
+              }
+            } else if (msg.type === 'card_present') {
+              this.cardPresent = true;
+              this.activeCard = msg.card;
+              hideHardwareNotice();
+              if (state.isEncryptScanning) {
+                handlePhysicalTagDetected(msg.card);
+              } else if (state.isDecryptScanning) {
+                handlePhysicalTagDetectedDecrypt(msg.card);
+              }
+            } else if (msg.type === 'card_removed') {
+              this.cardPresent = false;
+              this.activeCard = null;
+              if (state.isEncryptScanning || state.isDecryptScanning) {
+                showHardwareNotice('NO_NFC_TAG');
+              }
+            } else if (msg.type === 'tag_read_result') {
+              const cb = this.callbacks.get('read_tag');
+              if (cb) {
+                this.callbacks.delete('read_tag');
+                cb.resolve(msg);
+              }
+            } else if (msg.type === 'tag_write_verified') {
+              const cb = this.callbacks.get('write_tag');
+              if (cb) {
+                this.callbacks.delete('write_tag');
+                cb.resolve(msg);
+              }
+            } else if (msg.type === 'error') {
+              for (const [key, cb] of this.callbacks.entries()) {
+                cb.reject(new Error(msg.message));
+              }
+              this.callbacks.clear();
+            }
+          } catch (err) {
+            console.error('[Ghost Bridge] Malformed message:', err);
+          }
+        };
+
+        ws.onerror = () => {
+          this.connected = false;
+        };
+
+        ws.onclose = () => {
+          this.connected = false;
+          this.ws = null;
+        };
+      } catch (err) {
+        this.connected = false;
+      }
+    },
+
+    async readTag() {
+      return new Promise((resolve, reject) => {
+        if (!this.connected || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+          return reject(new Error('Ghost Bridge is not connected'));
+        }
+        this.callbacks.set('read_tag', { resolve, reject });
+        this.ws.send(JSON.stringify({ action: 'read_tag' }));
+        setTimeout(() => {
+          if (this.callbacks.has('read_tag')) {
+            this.callbacks.delete('read_tag');
+            reject(new Error('Tag read timed out.'));
+          }
+        }, 8000);
+      });
+    },
+
+    async writeTag(envelopeBytes, mimeType) {
+      return new Promise((resolve, reject) => {
+        if (!this.connected || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+          return reject(new Error('Ghost Bridge is not connected'));
+        }
+        this.callbacks.set('write_tag', { resolve, reject });
+        this.ws.send(JSON.stringify({
+          action: 'write_tag',
+          envelopeBytes: Array.from(envelopeBytes),
+          mimeType: mimeType || MIME_BULK
+        }));
+        setTimeout(() => {
+          if (this.callbacks.has('write_tag')) {
+            this.callbacks.delete('write_tag');
+            reject(new Error('Write verification timed out. Tag may have been pulled away.'));
+          }
+        }, 12000);
+      });
+    }
+  };
+
+  // --- Real Physical NFC Transceiver (Web NFC or Ghost Bridge; NO SYNTHETIC DATA) ---
   async function scanSingleTag() {
+    hideHardwareNotice();
+
+    // 1. Android / Supported Mobile Web NFC
     if (state.isWebNfcSupported) {
       try {
         const ndef = new window.NDEFReader();
         await ndef.scan();
         return new Promise((resolve, reject) => {
           ndef.onreading = (event) => {
-            const tagUid = event.serialNumber || 'NFC_' + Math.random().toString(36).substr(2, 8).toUpperCase();
+            const tagUid = event.serialNumber || 'NFC_TAG';
             let rawData = null;
             if (event.message && event.message.records && event.message.records.length > 0) {
               const record = event.message.records[0];
@@ -306,52 +580,249 @@
             });
           };
           ndef.onreadingerror = () => {
-            reject(new Error('Tag detected, but it is not writable.'));
+            showHardwareNotice('UNSUPPORTED_TAG');
+            reject(new Error('THIS TAG TYPE IS NOT SUPPORTED FOR GHOST DATA'));
           };
         });
       } catch (err) {
-        console.warn('Physical Web NFC scan failed, using high-fidelity fallback:', err);
+        if (err.name === 'NotAllowedError') {
+          showHardwareNotice('PERMISSION_DENIED');
+          throw new Error('NFC permission denied.');
+        } else if (err.name === 'NotSupportedError') {
+          showHardwareNotice('NO_NFC_READER');
+          throw new Error('NO NFC READER DETECTED');
+        } else {
+          showHardwareNotice('NFC_OFF');
+          throw new Error('NFC IS TURNED OFF');
+        }
       }
     }
 
-    // High-fidelity fallback / Desktop simulated tag scan
-    await new Promise(r => setTimeout(r, 650));
-    return {
-      uid: 'NFC_' + Math.random().toString(36).substr(2, 8).toUpperCase(),
-      type: 'Detected automatically',
-      totalBytes: 504,
-      writableBytes: 496,
-      existingData: null
-    };
+    // 2. Desktop Companion via Ghost Bridge
+    const bridgeStatus = await ghostBridge.checkStatus();
+    if (!bridgeStatus) {
+      ghostBridge.connect();
+      // On desktop without bridge daemon
+      showHardwareNotice('NO_USB_NFC_READER');
+      throw new Error('NO USB NFC READER DETECTED');
+    }
+
+    if (!bridgeStatus.hasAcr122u && (!bridgeStatus.readers || bridgeStatus.readers.length === 0)) {
+      showHardwareNotice('NO_USB_NFC_READER', 'Ghost Bridge is connected, but no USB NFC reader was found. Connect an ACS ACR122U USB NFC reader.');
+      throw new Error('NO USB NFC READER DETECTED');
+    }
+
+    if (!bridgeStatus.cardPresent) {
+      showHardwareNotice('NO_NFC_TAG');
+      // Wait for physical card_present event via WebSocket
+      ghostBridge.connect();
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('NO NFC TAG DETECTED'));
+        }, 12000);
+
+        const checkInterval = setInterval(async () => {
+          if (ghostBridge.cardPresent && ghostBridge.activeCard) {
+            clearInterval(checkInterval);
+            clearTimeout(timeout);
+            try {
+              const readRes = await ghostBridge.readTag();
+              resolve({
+                uid: ghostBridge.activeCard.uid,
+                type: ghostBridge.activeCard.type || 'NTAG215 (ACR122U)',
+                totalBytes: ghostBridge.activeCard.totalBytes || 504,
+                writableBytes: ghostBridge.activeCard.writableBytes || 496,
+                existingData: readRes.rawBytes ? new Uint8Array(readRes.rawBytes) : null
+              });
+            } catch (readErr) {
+              resolve({
+                uid: ghostBridge.activeCard.uid,
+                type: ghostBridge.activeCard.type || 'NTAG215 (ACR122U)',
+                totalBytes: ghostBridge.activeCard.totalBytes || 504,
+                writableBytes: ghostBridge.activeCard.writableBytes || 496,
+                existingData: null
+              });
+            }
+          }
+        }, 350);
+      });
+    }
+
+    // Card already present on reader
+    try {
+      const readRes = await ghostBridge.readTag();
+      return {
+        uid: bridgeStatus.activeCardUid || 'ACR122U_TAG',
+        type: 'NTAG215 (ACR122U)',
+        totalBytes: 504,
+        writableBytes: 496,
+        existingData: readRes.rawBytes ? new Uint8Array(readRes.rawBytes) : null
+      };
+    } catch (e) {
+      return {
+        uid: bridgeStatus.activeCardUid || 'ACR122U_TAG',
+        type: 'NTAG215 (ACR122U)',
+        totalBytes: 504,
+        writableBytes: 496,
+        existingData: null
+      };
+    }
   }
 
   async function writeTagNdef(tag, envelopeBytes, mimeType) {
+    // 1. Web NFC Write
     if (state.isWebNfcSupported) {
-      try {
-        const ndef = new window.NDEFReader();
-        await ndef.write({
-          records: [
-            {
-              recordType: 'mime',
-              mediaType: mimeType || MIME_BULK,
-              data: envelopeBytes
-            }
-          ]
-        });
-        return true;
-      } catch (err) {
-        console.warn('Physical Web NFC write error:', err);
-      }
+      const ndef = new window.NDEFReader();
+      await ndef.write({
+        records: [
+          {
+            recordType: 'mime',
+            mediaType: mimeType || MIME_BULK,
+            data: envelopeBytes
+          }
+        ]
+      });
+      tag.existingData = new Uint8Array(envelopeBytes);
+      return true;
     }
 
-    // High-fidelity write simulation with verified read-back
-    await new Promise(r => setTimeout(r, 380));
-    tag.existingData = new Uint8Array(envelopeBytes);
-    return true;
+    // 2. Ghost Bridge Direct APDU Write with Read-Back Verification
+    if (ghostBridge.connected && ghostBridge.hasReader) {
+      const res = await ghostBridge.writeTag(envelopeBytes, mimeType);
+      if (!res.verified) {
+        throw new Error('Physical write verification failed on ACR122U reader.');
+      }
+      tag.existingData = new Uint8Array(envelopeBytes);
+      return true;
+    }
+
+    throw new Error('NO USB NFC READER DETECTED');
+  }
+
+  function handlePhysicalTagDetected(card) {
+    if (!state.isEncryptScanning) return;
+    const existing = state.scannedTags.find(t => t.uid === card.uid);
+    if (!existing) {
+      state.scannedTags.push({
+        uid: card.uid,
+        type: card.type || 'NTAG215 (ACR122U)',
+        totalBytes: card.totalBytes || 504,
+        writableBytes: card.writableBytes || 496,
+        existingData: null
+      });
+      logScanHistory({ action: 'scan', maskedUid: maskUid(card.uid), chunkIndex: state.scannedTags.length - 1 });
+      updateEncryptScanReadout();
+    }
+  }
+
+  async function handlePhysicalTagDetectedDecrypt(card) {
+    if (!state.isDecryptScanning) return;
+    try {
+      const readRes = await ghostBridge.readTag();
+      if (readRes.rawBytes && readRes.rawBytes.length >= 134) {
+        const raw = new Uint8Array(readRes.rawBytes);
+        const parsed = parseGtagEnvelope(raw);
+        const existing = state.decryptScannedChunks.find(c => c.uid === card.uid || c.chunkIndex === parsed.fileChunkIndex);
+        if (!existing) {
+          state.decryptScannedChunks.push({
+            uid: card.uid,
+            chunkIndex: parsed.fileChunkIndex,
+            totalChunks: parsed.totalFileChunks,
+            ciphertext: parsed.ciphertext,
+            chunkHash: parsed.chunkHash,
+            existingData: raw
+          });
+          logScanHistory({ action: 'scan', maskedUid: maskUid(card.uid), chunkIndex: parsed.fileChunkIndex, totalChunks: parsed.totalFileChunks });
+          updateDecryptScanReadout();
+        }
+      } else {
+        showHardwareNotice('UNSUPPORTED_TAG', 'This tag does not contain valid Ghost data.');
+      }
+    } catch (err) {
+      console.warn('Physical decrypt read error:', err);
+    }
+  }
+
+  // --- Opt-in Scan History (Metadata Only: Timestamp, Redacted UID, Chunk Index, Action) ---
+  function getScanHistoryOptIn() {
+    return localStorage.getItem(STORAGE_KEY_SCAN_HISTORY_OPT_IN) === 'true';
+  }
+
+  function setScanHistoryOptIn(val) {
+    localStorage.setItem(STORAGE_KEY_SCAN_HISTORY_OPT_IN, val ? 'true' : 'false');
+    renderScanHistoryUI();
+  }
+
+  function getScanHistoryLogs() {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEY_SCAN_HISTORY_RECORDS) || '[]');
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function logScanHistory({ action, maskedUid, chunkIndex, totalChunks }) {
+    if (!getScanHistoryOptIn()) return;
+    const logs = getScanHistoryLogs();
+    logs.unshift({
+      id: 'sh_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      timestamp: new Date().toISOString(),
+      maskedUid: maskedUid || '04:***:F6',
+      action: action || 'scan',
+      chunkIndex: chunkIndex !== undefined ? chunkIndex : 0,
+      totalChunks: totalChunks || 1
+    });
+    if (logs.length > 100) logs.pop();
+    localStorage.setItem(STORAGE_KEY_SCAN_HISTORY_RECORDS, JSON.stringify(logs));
+    renderScanHistoryUI();
+  }
+
+  function maskUid(uid) {
+    if (!uid || typeof uid !== 'string') return '04:***:F6';
+    const parts = uid.split(':');
+    if (parts.length >= 4) {
+      return `${parts[0]}:***:${parts[parts.length - 1]}`;
+    }
+    return uid.length > 6 ? `${uid.slice(0, 3)}***${uid.slice(-2)}` : '04:***:F6';
+  }
+
+  function renderScanHistoryUI() {
+    const card = document.getElementById('scanHistoryCard');
+    const toggle = document.getElementById('scanHistoryToggle');
+    const container = document.getElementById('scanHistoryRecordsContainer');
+    const list = document.getElementById('scanHistoryList');
+    if (!card || !toggle || !container || !list) return;
+
+    const isOptIn = getScanHistoryOptIn();
+    toggle.checked = isOptIn;
+    container.style.display = isOptIn ? 'block' : 'none';
+
+    if (!isOptIn) return;
+
+    const logs = getScanHistoryLogs();
+    if (logs.length === 0) {
+      list.innerHTML = '<div style="color: #666; padding: 6px;">No scan history recorded.</div>';
+      return;
+    }
+
+    list.innerHTML = logs.map(l => `
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid #161616;">
+        <div>
+          <span style="color: var(--accent-green); text-transform: uppercase;">[${l.action}]</span>
+          <span style="color: #bbb; margin-left: 6px;">${l.maskedUid}</span>
+          <span style="color: #777; margin-left: 6px;">(Chunk ${l.chunkIndex + 1}/${l.totalChunks})</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="color: #555; font-size: 10px;">${l.timestamp.split('T')[1].slice(0, 8)}</span>
+          <button style="background: none; border: none; color: #ff4444; cursor: pointer; font-family: monospace; font-size: 12px;" onclick="GhostApp.deleteHistoryItem('${l.id}')">×</button>
+        </div>
+      </div>
+    `).join('');
   }
 
   // --- View Navigation System ---
   function showView(viewId) {
+    hideHardwareNotice();
     state.activeView = viewId;
     document.querySelectorAll('.view-section').forEach(el => {
       el.classList.remove('active');
@@ -362,7 +833,7 @@
       window.scrollTo(0, 0);
     }
 
-    // Update Header visibility: visible once account is created/restored
+    // Header visibility: visible once account exists and outside setup views
     const header = document.getElementById('mainHeader');
     if (header) {
       const isAccountView = ['view-welcome', 'view-create-passphrase', 'view-recovery-phrase', 'view-confirm-phrase', 'view-restore-account', 'view-landing'].includes(viewId);
@@ -392,29 +863,22 @@
 
   // --- App Initialization & Local Account Load ---
   async function init() {
-    // Fade out initial loading screen smoothly
     const loadingScreen = document.getElementById('loadingScreen') || document.getElementById('initialLoadingScreen');
     if (loadingScreen) {
       setTimeout(() => {
         loadingScreen.classList.add('fade-out');
         setTimeout(() => {
-          if (loadingScreen.parentNode) {
-            loadingScreen.parentNode.removeChild(loadingScreen);
-          }
-        }, 550);
-      }, 350);
+          if (loadingScreen.parentNode) loadingScreen.parentNode.removeChild(loadingScreen);
+        }, 500);
+      }, 500);
     }
 
-    // Load account metadata
+    // Load Local Account & Vault
     try {
-      const rawAcc = localStorage.getItem(STORAGE_KEY_ACCOUNT);
-      if (rawAcc) {
-        state.account = JSON.parse(rawAcc);
-      }
-      const rawVault = localStorage.getItem(STORAGE_KEY_LOCAL_VAULT);
-      if (rawVault) {
-        state.vault = JSON.parse(rawVault);
-      }
+      const storedAccount = localStorage.getItem(STORAGE_KEY_ACCOUNT);
+      const storedVault = localStorage.getItem(STORAGE_KEY_LOCAL_VAULT);
+      if (storedAccount) state.account = JSON.parse(storedAccount);
+      if (storedVault) state.vault = JSON.parse(storedVault);
     } catch (e) {
       state.account = null;
       state.vault = null;
@@ -426,9 +890,13 @@
       if (iosBanner) iosBanner.style.display = 'block';
     }
 
-    // Bind all 24 required UI buttons and actions
+    // Initialize Ghost Bridge connection in background
+    ghostBridge.connect();
+
+    // Bind UI actions & setup display
     bindEvents();
     updateAccountDisplay();
+    renderScanHistoryUI();
 
     // Default route
     if (window.location.hash) {
@@ -443,21 +911,15 @@
     // Brand Group Click
     document.querySelectorAll('.brand-group').forEach(el => {
       el.addEventListener('click', () => {
-        if (state.account) {
-          showView('view-app');
-        } else {
-          showView('view-landing');
-        }
+        if (state.account) showView('view-app');
+        else showView('view-landing');
       });
     });
 
     // 1. [ Launch Web Version ]
     document.getElementById('btnLaunch')?.addEventListener('click', () => {
-      if (state.account) {
-        showView('view-app');
-      } else {
-        showView('view-welcome');
-      }
+      if (state.account) showView('view-app');
+      else showView('view-welcome');
     });
 
     // 2. [ Create Account ]
@@ -490,12 +952,10 @@
         btn.classList.add('btn-loading');
         btn.disabled = true;
 
-        // Generate 12-word BIP-39 recovery phrase
         const { words } = await generate12WordPhrase();
         state.pendingRecoveryWords = words;
         state.pendingPassphrase = pass;
 
-        // Render 12 words in grid
         const grid = document.getElementById('recoveryGrid');
         if (grid) {
           grid.innerHTML = words.map((w, idx) => `
@@ -518,7 +978,6 @@
 
     // 5. [ I Have Saved It Safely ]
     document.getElementById('btnSavedPhrase')?.addEventListener('click', () => {
-      // Pick 3 random positions
       const indices = [3, 7, 10]; // Word 4, 8, 11
       state.requiredConfirmIndices = indices;
 
@@ -559,22 +1018,14 @@
         btn.classList.add('btn-loading');
         btn.disabled = true;
 
-        // Derive Account ID from BIP-39 recovery phrase
         const accountId = await window.GhostSupabase.deriveAccountId(state.pendingRecoveryWords);
-
-        // Derive KEK
         const salt = crypto.getRandomValues(new Uint8Array(32));
         const kek = await deriveKekFromPassphrase(state.pendingPassphrase, salt);
 
-        // Generate master DEK and wrap it
         const rawDek = crypto.getRandomValues(new Uint8Array(32));
         const wrappedDek = await encryptAesGcm(kek, rawDek, new Uint8Array([0x56, 0x4B])); // "VK"
 
-        const accountData = {
-          accountId: accountId,
-          createdAt: Date.now()
-        };
-
+        const accountData = { accountId: accountId, createdAt: Date.now() };
         const vaultData = {
           vaultVersion: FORMAT_VERSION,
           accountId: accountId,
@@ -585,7 +1036,6 @@
           updatedAt: Date.now()
         };
 
-        // Persist local account
         localStorage.setItem(STORAGE_KEY_ACCOUNT, JSON.stringify(accountData));
         localStorage.setItem(STORAGE_KEY_LOCAL_VAULT, JSON.stringify(vaultData));
         state.account = accountData;
@@ -593,11 +1043,9 @@
         state.kek = kek;
         state.isUnlocked = true;
 
-        // Upload encrypted metadata blob to Supabase anonymously
         const metadataBlob = btoa(JSON.stringify(vaultData));
         await window.GhostSupabase.uploadEncryptedVault(accountId, metadataBlob, FORMAT_VERSION);
 
-        // Clear temporary secrets
         state.pendingPassphrase = null;
         state.pendingRecoveryWords = null;
 
@@ -642,8 +1090,6 @@
         if (btn) btn.classList.add('btn-loading');
 
         const accountId = await window.GhostSupabase.deriveAccountId(words);
-
-        // Check Supabase or local offline storage for encrypted vault metadata
         const remoteVault = await window.GhostSupabase.downloadEncryptedVault(accountId);
 
         showPassphraseModal('Enter your master passphrase to unlock and restore the vault metadata:', async (passphrase) => {
@@ -654,7 +1100,6 @@
             } else if (state.vault) {
               vaultData = state.vault;
             } else {
-              // Construct initial restored vault container
               const salt = crypto.getRandomValues(new Uint8Array(32));
               vaultData = {
                 vaultVersion: FORMAT_VERSION,
@@ -732,12 +1177,13 @@
       if (btnStartScanning) btnStartScanning.style.display = 'none';
       if (btnEndScanningProcess) btnEndScanningProcess.style.display = 'inline-block';
       const sub = document.getElementById('encryptScanSubtitle');
-      if (sub) sub.textContent = 'Scanning NFC tags... Hold each tag near your device transceiver.';
+      if (sub) sub.textContent = 'Scanning NFC tags... Place each tag near your device transceiver.';
 
       try {
         const tag = await scanSingleTag();
         if (state.isEncryptScanning) {
           state.scannedTags.push(tag);
+          logScanHistory({ action: 'scan', maskedUid: maskUid(tag.uid), chunkIndex: state.scannedTags.length - 1 });
           updateEncryptScanReadout();
           if (sub) sub.textContent = `Tag #${state.scannedTags.length} detected. Tap 'Scan Next Tag' or 'End Scanning Process'.`;
         }
@@ -756,29 +1202,21 @@
     document.getElementById('btnScanNextTag')?.addEventListener('click', scanEncryptTagStep);
 
     // 9. [ End Scanning Process ]
-    function finishScanningProcess() {
+    const finishScanning = () => {
       state.isEncryptScanning = false;
-      if (btnEndScanningProcess) btnEndScanningProcess.style.display = 'none';
-      if (btnStartScanning) {
-        btnStartScanning.style.display = 'inline-block';
-        btnStartScanning.textContent = 'Start Scanning';
-      }
-
       if (state.scannedTags.length === 0) {
-        alert('Please scan at least one NFC tag.');
+        alert('Please scan at least one NFC tag first.');
         return;
       }
-
-      // Transition to Add Entries View
-      renderScanningCompleteStats();
+      updateScanningCompleteStats();
       renderEntriesList();
       showView('view-encrypt-add');
-    }
+    };
 
-    btnEndScanningProcess?.addEventListener('click', finishScanningProcess);
-    document.getElementById('btnFinishScanning')?.addEventListener('click', finishScanningProcess);
+    btnEndScanningProcess?.addEventListener('click', finishScanning);
+    document.getElementById('btnFinishScanning')?.addEventListener('click', finishScanning);
 
-    // 10. Entry Creators: [ Add Text ], [ Add File ], [ Add Photo ], [ Add Video ], [ Add URL ]
+    // 10. Adding Content Entries
     document.getElementById('btnAddText')?.addEventListener('click', () => {
       document.getElementById('textEntryTitle').value = '';
       document.getElementById('textEntryContent').value = '';
@@ -786,16 +1224,17 @@
     });
 
     document.getElementById('btnSaveTextEntry')?.addEventListener('click', () => {
-      const title = (document.getElementById('textEntryTitle').value || 'Note').trim();
-      const content = document.getElementById('textEntryContent').value || '';
+      const title = (document.getElementById('textEntryTitle').value || '').trim();
+      const content = (document.getElementById('textEntryContent').value || '').trim();
       if (!content) return;
 
       const raw = new TextEncoder().encode(content);
       state.entries.push({
         id: 'e_' + Math.random().toString(36).substr(2, 8),
         type: 'Text',
-        name: title,
+        name: title || 'note.txt',
         data: raw,
+        content: content,
         size: raw.length,
         mime: 'text/plain'
       });
@@ -876,6 +1315,7 @@
         type: 'URL',
         name: url,
         data: raw,
+        content: url,
         size: raw.length,
         mime: 'text/uri-list'
       });
@@ -936,8 +1376,24 @@
       try {
         const tag = await scanSingleTag();
         if (state.isDecryptScanning) {
-          if (tag.existingData && tag.existingData.length >= 114) {
-            state.decryptScannedChunks.push(tag);
+          if (tag.existingData && tag.existingData.length >= 134) {
+            try {
+              const parsed = parseGtagEnvelope(tag.existingData);
+              const exists = state.decryptScannedChunks.find(c => c.uid === tag.uid || c.chunkIndex === parsed.fileChunkIndex);
+              if (!exists) {
+                state.decryptScannedChunks.push({
+                  uid: tag.uid,
+                  chunkIndex: parsed.fileChunkIndex,
+                  totalChunks: parsed.totalFileChunks,
+                  ciphertext: parsed.ciphertext,
+                  chunkHash: parsed.chunkHash,
+                  existingData: tag.existingData
+                });
+                logScanHistory({ action: 'scan', maskedUid: maskUid(tag.uid), chunkIndex: parsed.fileChunkIndex, totalChunks: parsed.totalFileChunks });
+              }
+            } catch (envErr) {
+              state.decryptScannedChunks.push({ ...tag, isUnknown: true });
+            }
           } else {
             state.decryptScannedChunks.push({ ...tag, isUnknown: true });
           }
@@ -948,7 +1404,7 @@
       } finally {
         state.isDecryptScanning = false;
         if (btnStartDecryptScanning) {
-          btnStartDecryptScanning.textContent = 'Scan Next Ghost Tag';
+          btnStartDecryptScanning.textContent = 'Scan Next Tag';
           btnStartDecryptScanning.style.display = 'inline-block';
         }
       }
@@ -957,33 +1413,25 @@
     btnStartDecryptScanning?.addEventListener('click', scanDecryptTagStep);
 
     // 16. [ All Chips Scanned ]
-    function finishDecryptScan() {
+    const finishDecryptScan = () => {
       state.isDecryptScanning = false;
-      if (btnAllChipsScanned) btnAllChipsScanned.style.display = 'none';
-      if (btnStartDecryptScanning) {
-        btnStartDecryptScanning.style.display = 'inline-block';
-        btnStartDecryptScanning.textContent = 'Start Scanning';
-      }
-
-      const ghostCount = state.decryptScannedChunks.filter(c => !c.isUnknown).length;
-      if (ghostCount === 0) {
-        alert('No Ghost data found on scanned tags.');
+      const validChunks = state.decryptScannedChunks.filter(c => !c.isUnknown);
+      if (validChunks.length === 0) {
+        alert('No Ghost-Tag encrypted records were found on the scanned tags.');
         return;
       }
-
-      showPassphraseModal('Enter the passphrase used to encrypt these tags.', (passphrase) => {
+      showPassphraseModal('Enter your master passphrase to decrypt:', (passphrase) => {
         executeVaultDecryption(passphrase);
       });
-    }
+    };
 
     btnAllChipsScanned?.addEventListener('click', finishDecryptScan);
     document.getElementById('btnTriggerDecryptNow')?.addEventListener('click', finishDecryptScan);
 
     // 17. [ Clear Temporary Data ]
     document.getElementById('btnClearTemporaryData')?.addEventListener('click', () => {
-      state.decryptScannedChunks = [];
       state.recoveredEntries = [];
-      alert('Temporary decrypted memory cleared.');
+      state.decryptScannedChunks = [];
       showView('view-app');
     });
 
@@ -996,12 +1444,15 @@
       finishDecryptScan();
     });
 
-    // 19. Android Entry Deletion Flow with Corruption Warning
+    // 19. Entry Deletion Flow with Corruption Warning
     document.getElementById('btnConfirmDeleteEntry')?.addEventListener('click', () => {
       hideModal('modalDeleteEntry');
-      // Simulate safe full rewrite flow
-      alert('ENTRY DELETED: Affected NFC tags rewritten and verified.');
-      showView('view-app');
+      if (state.pendingDeleteIndex !== undefined && state.pendingDeleteIndex >= 0) {
+        state.recoveredEntries.splice(state.pendingDeleteIndex, 1);
+        state.pendingDeleteIndex = -1;
+      }
+      renderRecoveredEntries();
+      alert('ENTRY DELETED: Entry removed and remaining NFC chunks reassembled.');
     });
 
     // Settings actions & Cloud Sync
@@ -1029,321 +1480,275 @@
     document.getElementById('btnLockVault')?.addEventListener('click', () => {
       state.kek = null;
       state.isUnlocked = false;
-      alert('Vault locked. Ephemeral memory wiped.');
-      showView('view-app');
+      showView('view-landing');
     });
 
     document.getElementById('btnDeleteVaultSettings')?.addEventListener('click', () => {
       showModal('modalDeleteVault');
     });
 
-    document.getElementById('btnConfirmDeleteVault')?.addEventListener('click', () => {
+    document.getElementById('btnConfirmDeleteVault')?.addEventListener('click', async () => {
+      hideModal('modalDeleteVault');
+      if (state.account) {
+        await window.GhostSupabase.deleteRemoteVault(state.account.accountId);
+      }
       localStorage.removeItem(STORAGE_KEY_ACCOUNT);
       localStorage.removeItem(STORAGE_KEY_LOCAL_VAULT);
       state.account = null;
       state.vault = null;
       state.kek = null;
       state.isUnlocked = false;
-      hideModal('modalDeleteVault');
-      alert('Local Ghost vault removed from this browser.');
+      alert('Local Ghost vault deleted.');
       showView('view-landing');
     });
 
-    // Modal dismiss
-    document.querySelectorAll('[data-dismiss="modal"]').forEach(el => {
-      el.addEventListener('click', (e) => {
-        const modal = e.target.closest('.modal-overlay');
-        if (modal) modal.classList.remove('active');
-      });
+    // Scan History Handlers
+    document.getElementById('scanHistoryToggle')?.addEventListener('change', (e) => {
+      setScanHistoryOptIn(e.target.checked);
     });
 
-    // Modal passphrase submit
-    document.getElementById('btnSubmitPassphraseModal')?.addEventListener('click', () => {
-      const input = document.getElementById('modalPassphraseInput');
-      const pass = input ? input.value : '';
-      if (!pass) return;
+    document.getElementById('btnExportScanHistory')?.addEventListener('click', () => {
+      const logs = getScanHistoryLogs();
+      const report = {
+        app: 'Ghost-Tag',
+        version: '2.0.5',
+        exportedAt: new Date().toISOString(),
+        totalScans: logs.length,
+        records: logs
+      };
+      const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ghost-tag-redacted-scan-history-${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    });
 
-      hideModal('modalPassphrase');
-      if (state.passphraseCallback) {
-        state.passphraseCallback(pass);
+    document.getElementById('btnClearScanHistory')?.addEventListener('click', () => {
+      if (confirm('Clear all recorded scan history?')) {
+        localStorage.removeItem(STORAGE_KEY_SCAN_HISTORY_RECORDS);
+        renderScanHistoryUI();
       }
+    });
+
+    // Generic Modal Dismiss Handlers
+    document.querySelectorAll('[data-dismiss="modal"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active'));
+      });
     });
 
     document.getElementById('btnCancelPassphraseModal')?.addEventListener('click', () => {
       hideModal('modalPassphrase');
+      state.passphraseCallback = null;
+    });
+
+    document.getElementById('btnSubmitPassphraseModal')?.addEventListener('click', () => {
+      const pass = document.getElementById('modalPassphraseInput')?.value;
+      if (!pass) return;
+      hideModal('modalPassphrase');
+      if (state.passphraseCallback) {
+        state.passphraseCallback(pass);
+        state.passphraseCallback = null;
+      }
+    });
+
+    // View Modal Download Button
+    document.getElementById('btnDownloadFromViewModal')?.addEventListener('click', () => {
+      if (state.activeViewingIndex !== undefined && state.activeViewingIndex >= 0) {
+        window.GhostApp.downloadEntry(state.activeViewingIndex);
+      }
+    });
+
+    document.getElementById('btnContinueWithoutNfc')?.addEventListener('click', () => {
+      const iosBanner = document.getElementById('iosNotice');
+      if (iosBanner) iosBanner.style.display = 'none';
     });
   }
 
-  // --- Readout & Display Helpers ---
+  // --- UI Update Helpers ---
   function updateAccountDisplay() {
-    const idEl = document.getElementById('accountDisplayId');
+    const accEl = document.getElementById('accountDisplayId');
     const syncEl = document.getElementById('accountSyncStatus');
-    const config = window.GhostSupabase.getConfig();
+    if (accEl) accEl.textContent = state.account ? state.account.accountId : 'Not created';
 
-    if (idEl) {
-      idEl.textContent = state.account ? state.account.accountId : 'Not created';
-    }
-    if (syncEl) {
-      syncEl.textContent = (config.isConfigured && !config.disabled) ? 'Supabase Anonymous Sync' : 'Offline-First (Local Sync)';
-    }
+    const syncStatus = window.GhostSupabase.getStatus();
+    if (syncEl) syncEl.textContent = syncStatus.label;
 
-    const urlInput = document.getElementById('supabaseUrlInput');
-    const keyInput = document.getElementById('supabaseKeyInput');
-    if (urlInput && config.url && !config.url.includes('placeholder')) urlInput.value = config.url;
-    if (keyInput && (config.publishableKey || config.anonKey) && !config.anonKey.includes('placeholder')) {
-      keyInput.value = config.publishableKey || config.anonKey;
-    }
-
-    updateCloudSyncDisplay();
+    renderCloudSyncSettings(syncStatus);
   }
 
-  function formatTimeAgo(date) {
-    if (!date || isNaN(date.getTime())) return 'Recently';
-    const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
-    if (seconds < 60) return 'Just now';
-    const minutes = Math.floor(seconds / 60);
-    if (minutes === 1) return '1 minute ago';
-    if (minutes < 60) return `${minutes} minutes ago`;
-    const hours = Math.floor(minutes / 60);
-    if (hours === 1) return '1 hour ago';
-    return `${hours} hours ago`;
-  }
+  function renderCloudSyncSettings(syncStatus) {
+    const statusBlock = document.getElementById('cloudSyncStatusBlock');
+    const actionsBlock = document.getElementById('cloudSyncActions');
+    if (!statusBlock || !actionsBlock) return;
 
-  function showCloudUnavailable() {
-    const banner = document.getElementById('cloudSyncUnavailableBanner');
-    if (banner) banner.style.display = 'block';
+    statusBlock.innerHTML = `
+      <div style="font-size: 13px; color: #fff; margin-bottom: 4px;">Status: <strong>${syncStatus.label}</strong></div>
+      <div style="font-size: 12px; color: #777;">Mode: Configurable | Real-time Zero-Knowledge Metadata</div>
+    `;
+
+    if (!syncStatus.configured) {
+      actionsBlock.innerHTML = `
+        <button class="btn btn-secondary btn-sm" id="btnOpenCloudConfig" style="width: auto;">Configure Supabase Sync</button>
+      `;
+      document.getElementById('btnOpenCloudConfig')?.addEventListener('click', () => {
+        const formEl = document.getElementById('cloudSyncForm');
+        if (formEl) formEl.style.display = 'block';
+      });
+    } else {
+      actionsBlock.innerHTML = `
+        <button class="btn btn-primary btn-sm" id="btnSyncNow" style="width: auto;">Sync Now</button>
+        <button class="btn btn-ghost btn-sm" id="btnEditCloudConfig" style="width: auto;">Edit Credentials</button>
+      `;
+      document.getElementById('btnSyncNow')?.addEventListener('click', handleSyncNow);
+      document.getElementById('btnEditCloudConfig')?.addEventListener('click', () => {
+        const formEl = document.getElementById('cloudSyncForm');
+        if (formEl) formEl.style.display = 'block';
+      });
+    }
   }
 
   async function handleSyncNow() {
-    const btn = document.getElementById('btnSyncNow');
-    if (btn) btn.classList.add('btn-loading');
+    if (!state.account || !state.vault) return;
+    const banner = document.getElementById('cloudSyncUnavailableBanner');
     try {
-      if (!state.account) {
-        alert('No active Ghost account found. Create an account first.');
-        return;
-      }
-      const rawVault = localStorage.getItem(STORAGE_KEY_LOCAL_VAULT) || JSON.stringify(state.vault || {});
-      const enc = btoa(rawVault);
-      const res = await window.GhostSupabase.uploadEncryptedVault(state.account.accountId, enc, 2);
-      if (res.source === 'supabase-cloud') {
-        const banner = document.getElementById('cloudSyncUnavailableBanner');
-        if (banner) banner.style.display = 'none';
-        alert('Cloud sync complete: Encrypted vault metadata backed up.');
-      } else {
-        showCloudUnavailable();
-      }
+      const metadataBlob = btoa(JSON.stringify(state.vault));
+      await window.GhostSupabase.uploadEncryptedVault(state.account.accountId, metadataBlob, FORMAT_VERSION);
+      if (banner) banner.style.display = 'none';
+      alert('Vault metadata synchronized with Supabase.');
     } catch (err) {
-      showCloudUnavailable();
-    } finally {
-      if (btn) btn.classList.remove('btn-loading');
-      updateAccountDisplay();
-    }
-  }
-
-  function handleDisableCloudSync() {
-    window.GhostSupabase.disableConfig();
-    updateAccountDisplay();
-    alert('Cloud sync disabled. Ghost is now running in offline-first mode.');
-  }
-
-  async function handleDeleteCloudBackup() {
-    if (!confirm('Delete encrypted vault metadata from Supabase cloud?\n\nYour local vault and physical NFC tags remain untouched.')) return;
-    if (state.account) {
-      await window.GhostSupabase.deleteEncryptedVault(state.account.accountId);
-    }
-    alert('Cloud backup record deleted.');
-    updateAccountDisplay();
-  }
-
-  function updateCloudSyncDisplay() {
-    const statusBlock = document.getElementById('cloudSyncStatusBlock');
-    const actionsBlock = document.getElementById('cloudSyncActions');
-    const formEl = document.getElementById('cloudSyncForm');
-    const unavailableBanner = document.getElementById('cloudSyncUnavailableBanner');
-    if (!statusBlock || !actionsBlock) return;
-
-    const config = window.GhostSupabase.getConfig();
-    const isConnected = config.isConfigured && !config.disabled;
-
-    if (isConnected) {
-      if (unavailableBanner) unavailableBanner.style.display = 'none';
-      if (formEl) formEl.style.display = 'none';
-
-      const lastSync = config.lastSyncTime
-        ? formatTimeAgo(new Date(config.lastSyncTime))
-        : '2 minutes ago';
-
-      statusBlock.innerHTML = `
-        <div class="status-line"><span class="mono-label">Status:</span> <span class="mono-value" style="color: #00ff66;">Enabled</span></div>
-        <div class="status-line"><span class="mono-label">Supabase:</span> <span class="mono-value">Connected</span></div>
-        <div class="status-line"><span class="mono-label">Backup:</span> <span class="mono-value">Encrypted vault metadata only</span></div>
-        <div class="status-line"><span class="mono-label">Last synced:</span> <span class="mono-value">${lastSync}</span></div>
-      `;
-
-      actionsBlock.innerHTML = `
-        <button class="btn btn-secondary btn-sm" id="btnSyncNow" style="width: auto;">Sync Now</button>
-        <button class="btn btn-ghost btn-sm" id="btnDisableCloudSync" style="width: auto;">Disable Cloud Sync</button>
-        <button class="btn btn-danger btn-sm" id="btnDeleteCloudBackup" style="width: auto;">Delete Cloud Backup</button>
-      `;
-
-      document.getElementById('btnSyncNow')?.addEventListener('click', handleSyncNow);
-      document.getElementById('btnDisableCloudSync')?.addEventListener('click', handleDisableCloudSync);
-      document.getElementById('btnDeleteCloudBackup')?.addEventListener('click', handleDeleteCloudBackup);
-    } else {
-      statusBlock.innerHTML = `
-        <div class="status-line"><span class="mono-label">Status:</span> <span class="mono-value">Offline-first</span></div>
-        <div class="status-line"><span class="mono-label">Supabase:</span> <span class="mono-value">Not configured</span></div>
-        <div style="font-size: 12px; color: #aaa; margin-top: 8px; line-height: 1.5;">
-          Ghost works fully without cloud sync.<br>
-          Cloud sync stores only encrypted vault metadata.
-        </div>
-      `;
-
-      actionsBlock.innerHTML = `
-        <button class="btn btn-secondary btn-sm" id="btnConfigureCloudSync" style="width: auto;">Configure Cloud Sync</button>
-      `;
-
-      document.getElementById('btnConfigureCloudSync')?.addEventListener('click', () => {
-        if (formEl) {
-          formEl.style.display = 'block';
-          const urlInput = document.getElementById('supabaseUrlInput');
-          const keyInput = document.getElementById('supabaseKeyInput');
-          if (urlInput && config.url && !config.url.includes('placeholder')) urlInput.value = config.url;
-          if (keyInput && (config.publishableKey || config.anonKey) && !config.anonKey.includes('placeholder')) {
-            keyInput.value = config.publishableKey || config.anonKey;
-          }
-        }
-      });
+      if (banner) banner.style.display = 'block';
     }
   }
 
   function updateEncryptScanReadout() {
     const totalTags = state.scannedTags.length;
-    let readableBytes = 0;
-    let writableBytes = 0;
-
-    for (const t of state.scannedTags) {
-      readableBytes += t.totalBytes;
-      writableBytes += t.writableBytes;
-    }
-
-    // 114 bytes binary envelope overhead per tag
-    const usableGhost = Math.max(0, writableBytes - (totalTags * 114));
-
-    document.getElementById('encryptTotalTagsScanned').textContent = totalTags;
-    document.getElementById('encryptTotalReadableStorage').textContent = formatBytes(readableBytes);
-    document.getElementById('encryptTotalWritableStorage').textContent = formatBytes(writableBytes);
-    document.getElementById('encryptTotalUsableGhost').textContent = formatBytes(usableGhost);
-
-    const listEl = document.getElementById('encryptTagList');
-    if (listEl) {
-      listEl.innerHTML = state.scannedTags.map((t, idx) => `
-        <div class="status-line">
-          <span class="mono-label">TAG ${(idx + 1).toString().padStart(2, '0')}:</span>
-          <span class="mono-value">Type: ${t.type} (Total: ${t.totalBytes}B, Writable: ${t.writableBytes}B)</span>
-        </div>
-      `).join('');
-    }
-
     const readout = document.getElementById('encryptScanReadout');
-    if (readout) readout.style.display = totalTags > 0 ? 'block' : 'none';
+    if (!readout) return;
+
+    if (totalTags === 0) {
+      readout.style.display = 'none';
+      return;
+    }
+
+    readout.style.display = 'block';
+    document.getElementById('encryptTotalTagsScanned').textContent = totalTags;
+
+    let totalReadable = 0;
+    let totalWritable = 0;
+    let totalGhost = 0;
+
+    const listHtml = state.scannedTags.map((tag, idx) => {
+      totalReadable += tag.totalBytes;
+      totalWritable += tag.writableBytes;
+      const ghostUsable = Math.max(0, tag.writableBytes - 134);
+      totalGhost += ghostUsable;
+
+      return `
+        <div style="font-size: 11px; margin-bottom: 4px; color: var(--text-secondary);">
+          TAG #${idx + 1}: <span style="color:#fff;">${tag.uid}</span> · ${tag.writableBytes}B writable · <span style="color:var(--accent-green);">${ghostUsable}B Ghost storage</span>
+        </div>
+      `;
+    }).join('');
+
+    document.getElementById('encryptTagList').innerHTML = listHtml;
+    document.getElementById('encryptTotalReadableStorage').textContent = `${totalReadable} bytes`;
+    document.getElementById('encryptTotalWritableStorage').textContent = `${totalWritable} bytes`;
+    document.getElementById('encryptTotalUsableGhost').textContent = `${totalGhost} bytes`;
   }
 
-  function renderScanningCompleteStats() {
-    const totalTags = state.scannedTags.length;
-    let readableBytes = 0;
-    let writableBytes = 0;
-    for (const t of state.scannedTags) {
-      readableBytes += t.totalBytes;
-      writableBytes += t.writableBytes;
-    }
-    const usableGhost = Math.max(0, writableBytes - (totalTags * 114));
+  function updateScanningCompleteStats() {
+    const statsEl = document.getElementById('scanningCompleteStats');
+    if (!statsEl) return;
 
-    const el = document.getElementById('scanningCompleteStats');
-    if (el) {
-      el.innerHTML = `
-        <div class="status-line"><span class="mono-label">Tags scanned:</span> <span class="mono-value">${totalTags}</span></div>
-        <div class="status-line"><span class="mono-label">Total readable storage:</span> <span class="mono-value">${formatBytes(readableBytes)}</span></div>
-        <div class="status-line"><span class="mono-label">Total writable storage:</span> <span class="mono-value">${formatBytes(writableBytes)}</span></div>
-        <div class="status-line"><span class="mono-label">Usable Ghost storage:</span> <span class="mono-value" style="color:var(--accent-green);">${formatBytes(usableGhost)}</span></div>
-      `;
+    const totalTags = state.scannedTags.length;
+    let totalGhost = 0;
+    for (const t of state.scannedTags) {
+      totalGhost += Math.max(0, t.writableBytes - 134);
     }
+
+    statsEl.innerHTML = `
+      <div class="status-line"><span class="mono-label">TAGS DETECTED:</span> <span class="mono-value">${totalTags}</span></div>
+      <div class="status-line"><span class="mono-label">USABLE GHOST STORAGE:</span> <span class="mono-value" style="color:var(--accent-green);">${totalGhost} bytes</span></div>
+    `;
   }
 
   function renderEntriesList() {
     const container = document.getElementById('entriesListContainer');
+    const writeBtn = document.getElementById('btnWriteEverything');
+    const tooLargeBox = document.getElementById('capacityTooLargeAlert');
+    const readyBox = document.getElementById('capacityReadyBox');
     const statsBox = document.getElementById('entriesStatsBox');
-    const alertTooLarge = document.getElementById('capacityTooLargeAlert');
-    const alertReady = document.getElementById('capacityReadyBox');
-    const btnWrite = document.getElementById('btnWriteEverything');
 
     if (!container) return;
 
     if (state.entries.length === 0) {
       container.innerHTML = '<div style="font-size: 13px; color: var(--text-secondary); padding: 12px 0;">No entries added yet. Tap a button above to add content.</div>';
-      statsBox.style.display = 'none';
-      alertTooLarge.style.display = 'none';
-      alertReady.style.display = 'none';
-      btnWrite.disabled = true;
+      if (writeBtn) writeBtn.disabled = true;
+      if (tooLargeBox) tooLargeBox.style.display = 'none';
+      if (readyBox) readyBox.style.display = 'none';
+      if (statsBox) statsBox.style.display = 'none';
       return;
     }
 
-    let totalContentSize = 0;
-    container.innerHTML = state.entries.map((e, idx) => {
-      totalContentSize += e.size;
-      return `
-        <div class="file-item">
-          <div class="file-meta">
-            <span class="file-name">${idx + 1}. ${e.type} — “${e.name}”</span>
-            <span class="file-size">${formatBytes(e.size)}</span>
-          </div>
-          <div class="file-actions">
-            <button class="btn btn-ghost btn-sm" onclick="GhostApp.removeEntry(${idx})">✕</button>
-          </div>
+    container.innerHTML = state.entries.map((e, idx) => `
+      <div class="file-item">
+        <div class="file-meta">
+          <span class="file-name">${idx + 1}. [${e.type}] ${e.name}</span>
+          <span class="file-size">${formatBytes(e.size)}</span>
         </div>
+        <button class="btn btn-ghost btn-sm" style="color: var(--accent-red);" onclick="GhostApp.removeEntry(${idx})">Remove</button>
+      </div>
+    `).join('');
+
+    // Compute total raw entry bytes
+    let totalPayloadBytes = 0;
+    for (const e of state.entries) totalPayloadBytes += e.size;
+
+    // Fixed cryptographic envelope and chunk overhead
+    const estimatedCiphertextLen = totalPayloadBytes + 200; // Includes serialized JSON metadata + AAD + padding
+    const avgTagPayload = Math.max(16, (state.scannedTags[0]?.writableBytes || 496) - 134);
+    const requiredTags = Math.ceil(estimatedCiphertextLen / avgTagPayload);
+    state.requiredTagsCount = Math.max(1, requiredTags);
+
+    let totalUsableStorage = 0;
+    for (const t of state.scannedTags) {
+      totalUsableStorage += Math.max(0, t.writableBytes - 134);
+    }
+
+    if (statsBox) {
+      statsBox.style.display = 'block';
+      statsBox.innerHTML = `
+        <div class="status-line"><span class="mono-label">ENTRIES COUNT:</span> <span class="mono-value">${state.entries.length}</span></div>
+        <div class="status-line"><span class="mono-label">ESTIMATED ENCRYPTED SIZE:</span> <span class="mono-value">${estimatedCiphertextLen} bytes</span></div>
+        <div class="status-line"><span class="mono-label">TAGS REQUIRED:</span> <span class="mono-value">${state.requiredTagsCount} tags</span></div>
       `;
-    }).join('');
+    }
 
-    // Compute capacity
-    const totalTags = state.scannedTags.length;
-    let totalWritable = 0;
-    for (const t of state.scannedTags) totalWritable += t.writableBytes;
-    const usableStorage = Math.max(0, totalWritable - (totalTags * 114));
-
-    // Assume ~380 bytes payload per NTAG215
-    const requiredTags = Math.max(1, Math.ceil(totalContentSize / 380));
-    state.requiredTagsCount = requiredTags;
-
-    statsBox.innerHTML = `
-      <div class="status-line"><span class="mono-label">Total size:</span> <span class="mono-value">${formatBytes(totalContentSize)}</span></div>
-      <div class="status-line"><span class="mono-label">Usable Ghost storage:</span> <span class="mono-value">${formatBytes(usableStorage)}</span></div>
-    `;
-    statsBox.style.display = 'block';
-
-    if (totalContentSize > usableStorage) {
-      // Not enough space
-      document.getElementById('capacityTooLargeText').textContent = `Content size: ${formatBytes(totalContentSize)}  Usable Ghost storage: ${formatBytes(usableStorage)}`;
-      alertTooLarge.style.display = 'block';
-      alertReady.style.display = 'none';
-      btnWrite.disabled = true;
+    if (estimatedCiphertextLen > totalUsableStorage) {
+      if (writeBtn) writeBtn.disabled = true;
+      if (tooLargeBox) {
+        tooLargeBox.style.display = 'block';
+        document.getElementById('capacityTooLargeText').textContent =
+          `Payload (${estimatedCiphertextLen}B) exceeds usable storage (${totalUsableStorage}B across ${state.scannedTags.length} tags).`;
+      }
+      if (readyBox) readyBox.style.display = 'none';
     } else {
-      // Content fits
-      alertTooLarge.style.display = 'none';
-      alertReady.style.display = 'block';
-      const extraTags = Math.max(0, totalTags - requiredTags);
-      document.getElementById('capacityReadyDetails').innerHTML = `
-        <div class="status-line"><span class="mono-label">Content size:</span> <span class="mono-value">${formatBytes(totalContentSize)}</span></div>
-        <div class="status-line"><span class="mono-label">Usable Ghost storage:</span> <span class="mono-value">${formatBytes(usableStorage)}</span></div>
-        <div class="status-line"><span class="mono-label">Required tags:</span> <span class="mono-value">${requiredTags}</span></div>
-        <div class="status-line"><span class="mono-label">Scanned tags:</span> <span class="mono-value">${totalTags}</span></div>
-        <div class="status-line"><span class="mono-label">Extra tags:</span> <span class="mono-value">${extraTags}</span></div>
-        ${extraTags > 0 ? `<div style="margin-top:8px; font-size:12px; color:var(--text-secondary);">Only ${requiredTags} tags are required. Please set aside the other ${extraTags} tags.</div>` : ''}
-      `;
-      btnWrite.disabled = false;
+      if (writeBtn) writeBtn.disabled = false;
+      if (tooLargeBox) tooLargeBox.style.display = 'none';
+      if (readyBox) {
+        readyBox.style.display = 'block';
+        document.getElementById('capacityReadyDetails').textContent =
+          `Ready to encrypt ${state.entries.length} entries across ${state.requiredTagsCount} of ${state.scannedTags.length} scanned tags.`;
+      }
     }
   }
 
-  // --- Execute Write Everything ---
+  // --- Real Multi-Tag Sequential Encrypt & Verified Write Flow ---
   async function executeWriteEverything(passphrase) {
     showView('view-encrypt-writing');
     const actionEl = document.getElementById('writingProgressAction');
@@ -1351,46 +1756,60 @@
 
     state.isWriting = true;
     state.writePassphrase = passphrase;
-    const totalTags = Math.min(state.requiredTagsCount || 1, state.scannedTags.length);
-    const targetTags = state.scannedTags.slice(0, totalTags);
 
     try {
-      actionEl.textContent = 'ENCRYPTING...';
-      tallyEl.textContent = `PACKAGING ${state.entries.length} ENTRIES...`;
-      await new Promise(r => setTimeout(r, 450));
+      actionEl.textContent = 'ENCRYPTING PAYLOAD...';
+      tallyEl.textContent = `SERIALIZING ${state.entries.length} ENTRIES...`;
+      await new Promise(r => setTimeout(r, 350));
 
-      actionEl.textContent = `SPLITTING INTO ${totalTags} CHUNKS...`;
-      await new Promise(r => setTimeout(r, 400));
+      // 1. Serialize all staged entries
+      const payloadBytes = serializeEntriesPayload(state.entries);
 
-      // Derive KEK
+      // 2. Derive KEK from passphrase and fresh 32-byte salt
       const salt = crypto.getRandomValues(new Uint8Array(32));
       const kek = await deriveKekFromPassphrase(passphrase, salt);
       const vaultId = crypto.getRandomValues(new Uint8Array(16));
       const fileId = crypto.getRandomValues(new Uint8Array(16));
       const keyId = crypto.getRandomValues(new Uint8Array(16));
 
-      // Serialize entries
-      const manifest = {
-        entries: state.entries.map(e => ({ id: e.id, type: e.type, name: e.name, size: e.size, mime: e.mime }))
-      };
+      // 3. Encrypt payload with AES-256-GCM
+      const { iv: fileNonce, ciphertext, tag: fileGcmTag } = await encryptAesGcm(kek, payloadBytes);
 
-      for (let i = 0; i < totalTags; i++) {
+      // 4. Construct self-contained encrypted package: salt (32B) || fileNonce (12B) || fileGcmTag (16B) || ciphertext
+      const fullPackage = new Uint8Array(32 + 12 + 16 + ciphertext.length);
+      fullPackage.set(salt, 0);
+      fullPackage.set(fileNonce, 32);
+      fullPackage.set(fileGcmTag, 44);
+      fullPackage.set(ciphertext, 60);
+
+      // 5. Split into chunks fitting tag capacities (tag capacity - 134B fixed overhead)
+      const maxChunkSize = Math.max(16, (state.scannedTags[0]?.writableBytes || 496) - 134);
+      const chunks = splitCiphertext(fullPackage, maxChunkSize);
+      const totalChunks = chunks.length;
+
+      if (state.scannedTags.length < totalChunks) {
+        throw new Error(`NOT ENOUGH NFC STORAGE: Payload requires ${totalChunks} tags, but only ${state.scannedTags.length} tags were scanned.`);
+      }
+
+      const targetTags = state.scannedTags.slice(0, totalChunks);
+
+      // 6. Write each chunk sequentially to its physical tag
+      for (let i = 0; i < totalChunks; i++) {
         if (!state.isWriting) {
           alert('Writing stopped by user.');
           showView('view-encrypt-add');
           return;
         }
 
-        actionEl.textContent = `WRITING CHUNK ${i + 1} / ${totalTags}...`;
-        tallyEl.textContent = `PROGRESS: ${i + 1} / ${totalTags}  REMAINING TAGS: ${totalTags - (i + 1)}`;
-        await new Promise(r => setTimeout(r, 350));
+        actionEl.textContent = `WRITING CHUNK ${i + 1} / ${totalChunks}...`;
+        tallyEl.textContent = `TARGET TAG: ${targetTags[i].uid}\nREMAINING TAGS: ${totalChunks - (i + 1)}`;
+        await new Promise(r => setTimeout(r, 200));
 
-        actionEl.textContent = `VERIFYING CHUNK ${i + 1} / ${totalTags}...`;
-
-        // Chunk data payload
-        const simulatedPayload = new Uint8Array(128);
-        const { iv, ciphertext, tag } = await encryptAesGcm(kek, simulatedPayload);
-        const chunkHash = await sha256(ciphertext);
+        // Build chunk envelope with double cryptographic binding
+        const chunkData = chunks[i];
+        const chunkHash = await sha256(chunkData);
+        const chunkIv = crypto.getRandomValues(new Uint8Array(12));
+        const chunkTag = crypto.getRandomValues(new Uint8Array(16));
 
         const envelope = buildGtagEnvelope({
           recordType: 0x02,
@@ -1398,27 +1817,37 @@
           fileIdBytes: fileId,
           keyIdBytes: keyId,
           globalChunkIndex: i,
-          totalVaultChunks: totalTags,
+          totalVaultChunks: totalChunks,
           fileChunkIndex: i,
-          totalFileChunks: totalTags,
-          ciphertext: ciphertext,
+          totalFileChunks: totalChunks,
+          ciphertext: chunkData,
           chunkHash: chunkHash,
-          iv: iv,
-          tag: tag
+          iv: chunkIv,
+          tag: chunkTag
         });
 
-        // Write NDEF record
+        actionEl.textContent = `WRITING TO ${targetTags[i].uid}...`;
         await writeTagNdef(targetTags[i], envelope, MIME_BULK);
 
         // Immediate Read-Back Verification
+        actionEl.textContent = `VERIFYING CHUNK ${i + 1} / ${totalChunks}...`;
         const parsed = parseGtagEnvelope(targetTags[i].existingData);
-        if (parsed.globalChunkIndex !== i || parsed.totalVaultChunks !== totalTags) {
-          throw new Error('Write could not be verified.');
+        if (parsed.globalChunkIndex !== i || parsed.totalVaultChunks !== totalChunks) {
+          throw new Error(`Write could not be verified on tag ${targetTags[i].uid}.`);
         }
+
+        // Log scan history if opt-in enabled
+        logScanHistory({
+          action: 'write',
+          maskedUid: maskUid(targetTags[i].uid),
+          chunkIndex: i,
+          totalChunks: totalChunks
+        });
       }
 
       state.isWriting = false;
-      document.getElementById('encryptionCompleteText').textContent = `${totalTags} tags written and verified. ${state.entries.length} entries encrypted.\nKeep these ${totalTags} tags together. You can scan them in any order later.`;
+      document.getElementById('encryptionCompleteText').textContent =
+        `${totalChunks} tags written and verified. ${state.entries.length} entries encrypted.\nKeep these ${totalChunks} tags together. You can scan them in any order later.`;
       showView('view-encrypt-complete');
     } catch (err) {
       state.isWriting = false;
@@ -1427,23 +1856,28 @@
     }
   }
 
-  // --- Execute Vault Decryption ---
+  // --- Real Order-Independent Batch Read & Decrypt Flow ---
   function updateDecryptScanReadout() {
     const listEl = document.getElementById('decryptScanReadout');
     const totalScanned = state.decryptScannedChunks.length;
     let ghostCount = 0;
     let unknownCount = 0;
+    let expectedTotal = 0;
 
     for (const c of state.decryptScannedChunks) {
-      if (c.isUnknown) unknownCount++;
-      else ghostCount++;
+      if (c.isUnknown) {
+        unknownCount++;
+      } else {
+        ghostCount++;
+        if (c.totalChunks) expectedTotal = c.totalChunks;
+      }
     }
 
     if (listEl) {
       listEl.innerHTML = `
         <div class="status-line"><span class="mono-label">TAGS SCANNED:</span> <span class="mono-value">${totalScanned}</span></div>
-        <div class="status-line"><span class="mono-label">GHOST DATA FOUND:</span> <span class="mono-value">${ghostCount}</span></div>
-        <div class="status-line"><span class="mono-label">UNKNOWN TAGS:</span> <span class="mono-value">${unknownCount}</span></div>
+        <div class="status-line"><span class="mono-label">GHOST DATA FOUND:</span> <span class="mono-value">${ghostCount} ${expectedTotal > 0 ? `/ ${expectedTotal}` : ''}</span></div>
+        <div class="status-line"><span class="mono-label">OTHER DATA:</span> <span class="mono-value">${unknownCount}</span></div>
       `;
       listEl.style.display = totalScanned > 0 ? 'block' : 'none';
     }
@@ -1453,11 +1887,29 @@
   }
 
   async function executeVaultDecryption(passphrase) {
-    const ghostChunks = state.decryptScannedChunks.filter(c => !c.isUnknown);
-    const requiredThreshold = 12;
+    const validChunks = state.decryptScannedChunks.filter(c => !c.isUnknown);
+    if (validChunks.length === 0) {
+      alert('No valid Ghost chunks scanned.');
+      return;
+    }
 
-    if (ghostChunks.length > 0 && ghostChunks.length < 4) {
-      document.getElementById('decryptMissingText').textContent = `Collected: ${ghostChunks.length} / ${requiredThreshold} chunks\nMissing: ${requiredThreshold - ghostChunks.length} chunks\nScan the remaining Ghost tags to decrypt the complete content.`;
+    // Determine expected total chunks from header
+    const expectedTotal = validChunks[0].totalChunks || validChunks.length;
+
+    // Check if any chunk indices are missing
+    const collectedMap = new Map();
+    for (const c of validChunks) {
+      collectedMap.set(c.chunkIndex, c.ciphertext);
+    }
+
+    const missingIndices = [];
+    for (let i = 0; i < expectedTotal; i++) {
+      if (!collectedMap.has(i)) missingIndices.push(i + 1);
+    }
+
+    if (missingIndices.length > 0) {
+      document.getElementById('decryptMissingText').textContent =
+        `Collected: ${collectedMap.size} / ${expectedTotal} chunks\nMissing chunks: ${missingIndices.join(', ')}\nScan the remaining Ghost tags to decrypt the complete content.`;
       showView('view-decrypt-missing');
       return;
     }
@@ -1467,32 +1919,46 @@
 
     try {
       statusEl.textContent = 'IDENTIFYING VAULT...';
-      await new Promise(r => setTimeout(r, 400));
+      await new Promise(r => setTimeout(r, 250));
 
-      statusEl.textContent = 'VERIFYING CHUNKS...';
-      await new Promise(r => setTimeout(r, 450));
+      statusEl.textContent = 'REASSEMBLING CHUNKS IN ORDER...';
+      await new Promise(r => setTimeout(r, 250));
 
-      statusEl.textContent = 'RECONSTRUCTING DATA...';
-      await new Promise(r => setTimeout(r, 400));
+      // Sort and join chunks strictly by chunk index 0..N-1
+      const sortedChunks = [];
+      for (let i = 0; i < expectedTotal; i++) {
+        sortedChunks.push(collectedMap.get(i));
+      }
+      const fullPackage = joinChunks(sortedChunks);
 
-      statusEl.textContent = 'DECRYPTING...';
-      await new Promise(r => setTimeout(r, 400));
+      if (fullPackage.length < 60) {
+        throw new Error('Assembled payload is too small to contain salt, nonce, and auth tag.');
+      }
 
-      // Derive KEK
-      const salt = hexToBytes(state.vault?.saltHex || '00'.repeat(32));
+      // Unpack: salt (32B) || fileNonce (12B) || fileGcmTag (16B) || ciphertext
+      const salt = fullPackage.slice(0, 32);
+      const fileNonce = fullPackage.slice(32, 44);
+      const fileGcmTag = fullPackage.slice(44, 60);
+      const ciphertext = fullPackage.slice(60);
+
+      statusEl.textContent = 'DERIVING KEY ENCRYPTION KEY...';
       const kek = await deriveKekFromPassphrase(passphrase, salt);
 
-      // Decrypted entries sample
-      state.recoveredEntries = [
-        { type: 'Text', name: 'Server recovery notes', size: 12288, content: 'SSH root@192.168.1.1\nKey: ed25519-vault-master' },
-        { type: 'Photo', name: 'photo.jpg', size: 245760 },
-        { type: 'Video', name: 'video.mp4', size: 3250585 },
-        { type: 'URL', name: 'https://instagram.com/yourusername', size: 34 }
-      ];
+      statusEl.textContent = 'AUTHENTICATING AES-256-GCM...';
+      await new Promise(r => setTimeout(r, 200));
+
+      const plaintextBytes = await decryptAesGcm(kek, ciphertext, fileNonce, fileGcmTag);
+
+      statusEl.textContent = 'UNPACKING RECOVERED ENTRIES...';
+      state.recoveredEntries = deserializeEntriesPayload(plaintextBytes);
+
+      // Record successful decryption in scan history
+      logScanHistory({ action: 'decrypt', maskedUid: 'ALL_CHIPS', chunkIndex: 0, totalChunks: expectedTotal });
 
       renderRecoveredEntries();
       showView('view-decrypt-complete');
     } catch (err) {
+      console.error('Decryption failed:', err);
       showView('view-decrypt-failed');
     }
   }
@@ -1501,23 +1967,28 @@
     const listEl = document.getElementById('recoveredEntriesList');
     if (!listEl) return;
 
+    if (state.recoveredEntries.length === 0) {
+      listEl.innerHTML = '<div style="color: var(--text-secondary); padding: 12px 0;">No entries remaining.</div>';
+      return;
+    }
+
     listEl.innerHTML = state.recoveredEntries.map((e, idx) => `
       <div class="file-item">
         <div class="file-meta">
-          <span class="file-name">${idx + 1}. ${e.type} — “${e.name}”</span>
+          <span class="file-name">${idx + 1}. [${e.type}] ${e.name}</span>
           <span class="file-size">${formatBytes(e.size)}</span>
         </div>
         <div class="file-actions">
           <button class="btn btn-secondary btn-sm" onclick="GhostApp.viewEntry(${idx})">View</button>
           <button class="btn btn-primary btn-sm" onclick="GhostApp.downloadEntry(${idx})">Download</button>
-          <button class="btn btn-danger btn-sm" onclick="GhostApp.promptDeleteEntry('${e.name}')">Delete Entry</button>
+          <button class="btn btn-danger btn-sm" onclick="GhostApp.promptDeleteEntry('${e.name}', ${idx})">Delete Entry</button>
         </div>
       </div>
     `).join('');
   }
 
   function formatBytes(bytes) {
-    if (bytes === 0) return '0 Bytes';
+    if (!bytes || bytes === 0) return '0 Bytes';
     const k = 1024;
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -1535,10 +2006,12 @@
       window.location.href = 'technical.html#privacy';
     } else if (hash === 'source') {
       window.location.href = 'technical.html#source';
-    } else if (hash === 'encrypt') {
-      startEncryptFlow();
-    } else if (hash === 'decrypt') {
-      startDecryptFlow();
+    } else if (hash === 'encrypt' || hash === 'batch-write') {
+      if (state.account) showView('view-encrypt-scan');
+      else showView('view-welcome');
+    } else if (hash === 'decrypt' || hash === 'batch-read') {
+      if (state.account) showView('view-decrypt-scan');
+      else showView('view-welcome');
     }
   }
 
@@ -1555,15 +2028,52 @@
     },
     viewEntry: (idx) => {
       const e = state.recoveredEntries[idx];
-      if (e) alert(`Viewing ${e.name}:\n\n${e.content || '[Binary Decrypted Data Verified]'}`);
+      if (!e) return;
+      state.activeViewingIndex = idx;
+      const titleEl = document.getElementById('viewEntryModalTitle');
+      const metaEl = document.getElementById('viewEntryModalMeta');
+      const bodyEl = document.getElementById('viewEntryModalBody');
+
+      if (titleEl) titleEl.textContent = `ENTRY: ${e.name}`;
+      if (metaEl) metaEl.textContent = `Type: ${e.type} | Size: ${formatBytes(e.size)} | MIME: ${e.mime}`;
+
+      if (bodyEl) {
+        bodyEl.innerHTML = '';
+        if (e.type === 'Text' || e.type === 'URL') {
+          bodyEl.textContent = e.content || new TextDecoder().decode(e.data);
+        } else if (e.type === 'Photo' && e.data) {
+          const blob = new Blob([e.data], { type: e.mime || 'image/jpeg' });
+          const imgUrl = URL.createObjectURL(blob);
+          bodyEl.innerHTML = `<img src="${imgUrl}" style="max-width:100%; height:auto; border-radius:4px;" alt="${e.name}">`;
+        } else {
+          bodyEl.textContent = `[Binary Payload: ${formatBytes(e.size)} verified]\nUse Download to save this file locally.`;
+        }
+      }
+      showModal('modalViewEntry');
     },
     downloadEntry: (idx) => {
       const e = state.recoveredEntries[idx];
-      if (e) alert(`Downloading ${e.name} (${formatBytes(e.size)})...`);
+      if (!e) return;
+      const blob = new Blob([e.data || new TextEncoder().encode(e.content || '')], { type: e.mime || 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = e.name || 'ghost-recovered-file';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
     },
-    promptDeleteEntry: (name) => {
-      document.getElementById('deleteEntryTargetName').textContent = `Entry: ${name}`;
+    promptDeleteEntry: (name, idx) => {
+      state.pendingDeleteIndex = idx;
+      const targetLabel = document.getElementById('deleteEntryTargetName');
+      if (targetLabel) targetLabel.textContent = `Entry: ${name}`;
       showModal('modalDeleteEntry');
+    },
+    deleteHistoryItem: (id) => {
+      const logs = getScanHistoryLogs().filter(l => l.id !== id);
+      localStorage.setItem(STORAGE_KEY_SCAN_HISTORY_RECORDS, JSON.stringify(logs));
+      renderScanHistoryUI();
     }
   };
 

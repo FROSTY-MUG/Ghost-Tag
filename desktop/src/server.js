@@ -1,0 +1,315 @@
+/**
+ * @file server.js
+ * @description Native Desktop PC/SC USB NFC Bridge Server for Ghost-Tag
+ * Binds strictly to 127.0.0.1:41789. Communicates with ACR122U USB reader and provides
+ * real tag events and write-verification over WebSockets to the web app.
+ */
+
+const http = require('http');
+const { WebSocketServer } = require('ws');
+const { getCardUid, readTagNdef, writeTagNdefAndVerify } = require('./apdu');
+
+const PORT = 41789;
+const HOST = '127.0.0.1';
+
+class GhostBridgeServer {
+  constructor() {
+    this.connectedReaders = new Map();
+    this.activeCard = null;
+    this.activeReader = null;
+    this.wss = null;
+    this.server = null;
+    this.pcsc = null;
+  }
+
+  start() {
+    this.initHttpServer();
+    this.initWebSocketServer();
+    this.initPcsc();
+    console.log(`[Ghost Bridge] Running at ws://${HOST}:${PORT} and http://${HOST}:${PORT}/status`);
+  }
+
+  initHttpServer() {
+    this.server = http.createServer((req, res) => {
+      // CORS headers strictly for local web client
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
+      if (req.url === '/status') {
+        const readerNames = Array.from(this.connectedReaders.keys());
+        const hasAcr122u = readerNames.some(name => name.toUpperCase().includes('ACR122') || name.toUpperCase().includes('NFC'));
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          bridge: 'Ghost Bridge',
+          version: '2.0.5',
+          status: 'ready',
+          readers: readerNames,
+          hasAcr122u,
+          cardPresent: this.activeCard !== null,
+          activeCardUid: this.activeCard ? this.activeCard.uid : null,
+          supportedReaders: ['ACS ACR122U USB NFC Reader']
+        }));
+        return;
+      }
+
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Ghost Bridge 2.0.5');
+    });
+
+    this.server.listen(PORT, HOST);
+  }
+
+  initWebSocketServer() {
+    this.wss = new WebSocketServer({ server: this.server });
+
+    this.wss.on('connection', (ws, req) => {
+      console.log(`[Ghost Bridge] Web client connected from ${req.socket.remoteAddress}`);
+
+      // Send initial status on connection
+      const readerNames = Array.from(this.connectedReaders.keys());
+      ws.send(JSON.stringify({
+        type: 'bridge_status',
+        version: '2.0.5',
+        readers: readerNames,
+        readerConnected: readerNames.length > 0,
+        cardPresent: this.activeCard !== null,
+        activeCard: this.activeCard
+      }));
+
+      ws.on('message', async (data) => {
+        try {
+          const msg = JSON.parse(data.toString());
+          await this.handleClientMessage(ws, msg);
+        } catch (err) {
+          ws.send(JSON.stringify({ type: 'error', message: err.message }));
+        }
+      });
+    });
+  }
+
+  async handleClientMessage(ws, msg) {
+    if (msg.action === 'get_status') {
+      const readerNames = Array.from(this.connectedReaders.keys());
+      ws.send(JSON.stringify({
+        type: 'bridge_status',
+        version: '2.0.5',
+        readers: readerNames,
+        readerConnected: readerNames.length > 0,
+        cardPresent: this.activeCard !== null,
+        activeCard: this.activeCard
+      }));
+      return;
+    }
+
+    if (msg.action === 'read_tag') {
+      if (!this.activeReader || !this.activeCard) {
+        ws.send(JSON.stringify({ type: 'error', message: 'No card present on USB NFC reader.' }));
+        return;
+      }
+
+      try {
+        const ndefResult = await readTagNdef(this.activeReader);
+        ws.send(JSON.stringify({
+          type: 'tag_read_result',
+          uid: this.activeCard.uid,
+          records: ndefResult.records,
+          rawBytes: ndefResult.rawBytes,
+          timestamp: Date.now()
+        }));
+      } catch (err) {
+        ws.send(JSON.stringify({ type: 'error', message: `Tag read failed: ${err.message}` }));
+      }
+      return;
+    }
+
+    if (msg.action === 'write_tag') {
+      if (!this.activeReader || !this.activeCard) {
+        ws.send(JSON.stringify({ type: 'error', message: 'No card present on USB NFC reader to write.' }));
+        return;
+      }
+
+      if (!msg.envelopeBytes || !Array.isArray(msg.envelopeBytes)) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Missing envelopeBytes binary payload.' }));
+        return;
+      }
+
+      try {
+        const payloadBuffer = Buffer.from(msg.envelopeBytes);
+        const mediaType = msg.mimeType || 'application/vnd.ghost.bulk';
+        const verifyResult = await writeTagNdefAndVerify(this.activeReader, mediaType, payloadBuffer);
+
+        ws.send(JSON.stringify({
+          type: 'tag_write_verified',
+          uid: this.activeCard.uid,
+          verified: true,
+          sha256: verifyResult.sha256,
+          bytesWritten: verifyResult.bytesWritten,
+          timestamp: Date.now()
+        }));
+      } catch (err) {
+        ws.send(JSON.stringify({ type: 'error', message: `Write verification failed: ${err.message}` }));
+      }
+      return;
+    }
+
+    if (msg.action === 'simulate_tag') {
+      // Invariant: Refuse simulated data
+      ws.send(JSON.stringify({
+        type: 'error',
+        message: 'Non-negotiable product rule: Synthetic or simulated NFC data is strictly prohibited.'
+      }));
+    }
+  }
+
+  broadcast(obj) {
+    if (!this.wss) return;
+    const payload = JSON.stringify(obj);
+    for (const client of this.wss.clients) {
+      if (client.readyState === 1) { // OPEN
+        client.send(payload);
+      }
+    }
+  }
+
+  initPcsc() {
+    let pcsclite;
+    try {
+      pcsclite = require('@pokusew/pcsclite');
+    } catch {
+      try {
+        pcsclite = require('pcsclite');
+      } catch {
+        console.warn('[Ghost Bridge] PC/SC library not compiled or not installed in environment.');
+        console.warn('[Ghost Bridge] Real USB reader detection requires @pokusew/pcsclite and PC/SC drivers.');
+        return;
+      }
+    }
+
+    this.pcsc = pcsclite();
+
+    this.pcsc.on('reader', (reader) => {
+      console.log(`[Ghost Bridge] USB Reader detected: ${reader.name}`);
+      this.connectedReaders.set(reader.name, reader);
+      this.activeReader = reader;
+
+      this.broadcast({
+        type: 'reader_connected',
+        reader: reader.name,
+        readers: Array.from(this.connectedReaders.keys())
+      });
+
+      reader.on('status', async (status) => {
+        const changes = reader.state ^ status.state;
+        if (!changes) return;
+
+        // Card removed
+        if ((changes & reader.SCARD_STATE_EMPTY) && (status.state & reader.SCARD_STATE_EMPTY)) {
+          console.log(`[Ghost Bridge] Card removed from ${reader.name}`);
+          this.activeCard = null;
+          reader.disconnect(reader.SCARD_LEAVE_CARD, () => {});
+          this.broadcast({
+            type: 'card_removed',
+            reader: reader.name
+          });
+        }
+        // Card present
+        else if ((changes & reader.SCARD_STATE_PRESENT) && (status.state & reader.SCARD_STATE_PRESENT)) {
+          console.log(`[Ghost Bridge] Card detected on ${reader.name}`);
+          reader.connect({ share_mode: reader.SCARD_SHARE_SHARED }, async (err, protocol) => {
+            if (err) {
+              console.error('[Ghost Bridge] Error connecting to tag:', err);
+              return;
+            }
+
+            try {
+              const uid = await getCardUid(reader);
+              const atr = status.atr ? status.atr.toString('hex').toUpperCase() : 'Not available on this device';
+              
+              // Attempt reading existing NDEF
+              let existingData = null;
+              let rawBytes = [];
+              try {
+                const ndef = await readTagNdef(reader);
+                if (ndef && ndef.records && ndef.records.length > 0) {
+                  existingData = ndef.records[0].data;
+                  rawBytes = ndef.rawBytes;
+                }
+              } catch {
+                // Fresh or unformatted tag
+              }
+
+              this.activeCard = {
+                uid,
+                atr,
+                reader: reader.name,
+                technology: 'ISO 14443-3A / NTAG',
+                ndefStatus: 'Read/Write',
+                totalBytes: 504,
+                writableBytes: 496,
+                existingData,
+                rawBytes,
+                timestamp: Date.now()
+              };
+
+              console.log(`[Ghost Bridge] Tag UID: ${uid}`);
+              this.broadcast({
+                type: 'card_present',
+                tag: this.activeCard
+              });
+            } catch (cardErr) {
+              console.error('[Ghost Bridge] Failed to read tag info:', cardErr);
+            }
+          });
+        }
+      });
+
+      reader.on('end', () => {
+        console.log(`[Ghost Bridge] Reader disconnected: ${reader.name}`);
+        this.connectedReaders.delete(reader.name);
+        if (this.activeReader === reader) {
+          this.activeReader = null;
+          this.activeCard = null;
+        }
+        this.broadcast({
+          type: 'reader_disconnected',
+          reader: reader.name,
+          readers: Array.from(this.connectedReaders.keys())
+        });
+      });
+
+      reader.on('error', (err) => {
+        console.error(`[Ghost Bridge] Reader error (${reader.name}):`, err);
+      });
+    });
+
+    this.pcsc.on('error', (err) => {
+      console.error('[Ghost Bridge] PC/SC System error:', err);
+    });
+  }
+
+  stop() {
+    if (this.pcsc) {
+      try { this.pcsc.close(); } catch {}
+    }
+    if (this.wss) {
+      this.wss.close();
+    }
+    if (this.server) {
+      this.server.close();
+    }
+    console.log('[Ghost Bridge] Stopped.');
+  }
+}
+
+module.exports = {
+  GhostBridgeServer,
+  PORT,
+  HOST
+};

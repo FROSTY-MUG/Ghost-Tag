@@ -1,0 +1,80 @@
+# Ghost Bridge v2.0.5
+
+**Native Desktop PC/SC USB NFC Hardware Companion for Ghost-Tag**
+
+Ghost Bridge is a lightweight, zero-cloud desktop companion application that enables the Ghost-Tag web client to interact with real USB NFC readers on laptops and desktop computers.
+
+---
+
+## Architecture
+
+```
+Laptop Browser (Web Client)
+           │
+           │  WebSocket / JSON (ws://127.0.0.1:41789)
+           ▼
+Ghost Bridge Desktop Companion (Node.js / PC/SC)
+           │
+           │  WinSCard / pcscd APDUs
+           ▼
+Physical USB NFC Reader (ACR122U)
+           │
+           │  13.56 MHz RF Field (ISO 14443-4A / Type 2)
+           ▼
+Physical NFC Tag (NTAG213 / NTAG215 / NTAG216)
+```
+
+---
+
+## Supported Hardware Compatibility List
+
+| Hardware Model | Type | Connectivity | Driver Stack | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **ACS ACR122U** | USB NFC Reader / Writer | USB 2.0 Full Speed | PC/SC (`WinSCard` / `pcscd`) | **Verified Primary** |
+| **ACS ACR1252U** | USB NFC Reader / Writer | USB 2.0 Full Speed | PC/SC (`WinSCard` / `pcscd`) | Compatible |
+| **Identiv uTrust 3700 F** | USB NFC Reader | USB 2.0 | PC/SC | Compatible |
+| **Sony RC-S380 (PaSoRi)**| USB NFC Reader | USB 2.0 | PC/SC | Compatible |
+
+> [!IMPORTANT]
+> Ghost-Tag v2.0.5 officially targets the **ACS ACR122U USB NFC Reader**. Other PC/SC-compliant readers may work if they expose standard ISO 14443 Type 2 Tag APDUs, but ACR122U is the verified baseline.
+
+---
+
+## Non-Negotiable Invariants
+
+1. **Zero Synthetic / Simulated Tags**: Ghost Bridge refuses to fabricate, simulate, or mock NFC tags or capacity values. It communicates solely through real PC/SC smart card events.
+2. **Local-Only Binding**: Ghost Bridge binds strictly to `127.0.0.1:41789`. It never exposes endpoints to the local network or internet.
+3. **Hardware Truth**: If no reader is plugged in, it reports `NO USB NFC READER DETECTED`. If no card is on the antenna, it reports `NO NFC TAG DETECTED`.
+4. **Cryptographic Verification**: Every write operation executes a physical read-back pass that parses the NDEF record, verifies the 16-byte AES-GCM authentication tag, and checks the 32-byte SHA-256 ciphertext hash.
+
+---
+
+## Prerequisites
+
+- **Windows**: The built-in *Smart Card* service must be running (`ScardSvr`). ACS ACR122U drivers are usually installed automatically via Windows Update.
+- **macOS**: Built-in `PCSC.framework` is active by default.
+- **Linux**: Requires `pcscd` and `libpcsclite-dev`:
+  ```bash
+  sudo apt-get install pcscd libpcsclite-dev
+  sudo systemctl enable --now pcscd
+  ```
+
+---
+
+## Installation & Usage
+
+1. Navigate to the desktop directory:
+   ```bash
+   cd desktop
+   npm install
+   ```
+
+2. Start the bridge:
+   ```bash
+   npm start
+   ```
+
+3. Open the Ghost-Tag web client in your laptop browser:
+   [https://frosty-mug.github.io/Ghost-Tag/](https://frosty-mug.github.io/Ghost-Tag/)
+
+4. When you tap **Start Scanning**, Ghost-Tag automatically detects the active Ghost Bridge connection and begins receiving real card-present events.

@@ -17,19 +17,34 @@ import { RecoveryKdfParameters } from './keyHierarchy';
 /** Length of the raw 256-bit recovery entropy secret in bytes. */
 export const RECOVERY_SECRET_BYTE_LENGTH = 32 as const;
 
-/** Entropy length in bits for the recovery phrase (256 bits). */
+/** Length of the standard 128-bit recovery entropy secret in bytes (12-word phrase). */
+export const RECOVERY_12_WORD_SECRET_BYTE_LENGTH = 16 as const;
+
+/** Entropy length in bits for the 12-word recovery phrase (128 bits). */
+export const RECOVERY_12_WORD_ENTROPY_BITS = 128 as const;
+
+/** Number of checksum bits appended for 12-word BIP39 format (4 bits). */
+export const RECOVERY_12_WORD_CHECKSUM_BITS = 4 as const;
+
+/** Standard word count for the 12-word BIP-39 recovery phrase (132 / 11 = 12 words). */
+export const RECOVERY_PHRASE_12_WORD_COUNT = 12 as const;
+
+/** Entropy length in bits for the 24-word recovery phrase (256 bits). */
 export const RECOVERY_ENTROPY_BITS = 256 as const;
 
-/** Number of checksum bits appended to entropy in BIP39 format (8 bits). */
+/** Number of checksum bits appended to entropy in 24-word BIP39 format (8 bits). */
 export const RECOVERY_CHECKSUM_BITS = 8 as const;
 
-/** Total bit length of encoded recovery sequence (256 + 8 = 264 bits). */
+/** Total bit length of encoded 24-word recovery sequence (256 + 8 = 264 bits). */
 export const RECOVERY_TOTAL_BITS = 264 as const;
 
 /** Bits per word index (11 bits = 2^11 = 2048 words). */
 export const RECOVERY_BITS_PER_WORD = 11 as const;
 
-/** Standard word count for the 256-bit recovery phrase (264 / 11 = 24 words). */
+/** Standard word count for the 24-word recovery phrase (264 / 11 = 24 words). */
+export const RECOVERY_PHRASE_24_WORD_COUNT = 24 as const;
+
+/** Backwards-compatible alias for 24-word phrase count. */
 export const RECOVERY_PHRASE_WORD_COUNT = 24 as const;
 
 /** Wordlist dictionary size (BIP39 English standard). */

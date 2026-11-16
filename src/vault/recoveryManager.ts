@@ -11,7 +11,10 @@ import { Buffer } from 'buffer';
 import {
   RECOVERY_KEY_WRAP_PURPOSE_BYTE,
   RECOVERY_PHRASE_WORD_COUNT,
+  RECOVERY_PHRASE_12_WORD_COUNT,
+  RECOVERY_PHRASE_24_WORD_COUNT,
   RECOVERY_SECRET_BYTE_LENGTH,
+  RECOVERY_12_WORD_SECRET_BYTE_LENGTH,
   RecoveryEnvelope,
   RecoveryWrappedDEK,
 } from '../contracts/recovery';
@@ -111,17 +114,22 @@ export class RecoveryManager {
   }
 
   /**
-   * Generates a fresh 256-bit cryptographically secure recovery secret and encodes
-   * it as a 24-word human-readable phrase with an 8-bit checksum (BIP39 standard).
+   * Generates a standard BIP-39 mnemonic recovery phrase.
+   * Defaults to 12 words (128-bit entropy, standard Ghost-Tag v2.0.5 profile) or 24 words.
    *
    * Security Properties:
    * - Ephemeral secret buffers are zeroized immediately after phrase encoding.
    * - The generated phrase is NEVER stored on disk by the recovery system.
    *
-   * @returns Generated 24-word recovery phrase and word array.
+   * @param wordCount Number of mnemonic words (12 or 24, defaults to 24 for backward compatibility).
+   * @returns Generated recovery phrase and word array.
    */
-  public generateRecoveryPhrase(): RecoveryPhraseResult {
-    const rawEntropy = generateSecureRandom(RECOVERY_SECRET_BYTE_LENGTH);
+  public generateRecoveryPhrase(wordCount: 12 | 24 = 24): RecoveryPhraseResult {
+    const byteLength =
+      wordCount === 12
+        ? RECOVERY_12_WORD_SECRET_BYTE_LENGTH
+        : RECOVERY_SECRET_BYTE_LENGTH;
+    const rawEntropy = generateSecureRandom(byteLength);
 
     try {
       const phrase = this.entropyToMnemonic(rawEntropy);
@@ -130,6 +138,44 @@ export class RecoveryManager {
     } finally {
       zeroize(rawEntropy);
     }
+  }
+
+  /**
+   * Generates a standard 12-word BIP-39 English recovery phrase (Ghost-Tag v2.0.5 primary standard).
+   */
+  public generate12WordPhrase(): RecoveryPhraseResult {
+    return this.generateRecoveryPhrase(12);
+  }
+
+  /**
+   * Generates a high-entropy 24-word BIP-39 English recovery phrase.
+   */
+  public generate24WordPhrase(): RecoveryPhraseResult {
+    return this.generateRecoveryPhrase(24);
+  }
+
+  /**
+   * Validates standard 12-word confirmation indices (words 4, 8, 11 - 1-based per v2.0.5 spec).
+   *
+   * @param originalWords Array of 12 words generated during account creation.
+   * @param word4 User input for word 4.
+   * @param word8 User input for word 8.
+   * @param word11 User input for word 11.
+   * @returns True if all 3 entered words exactly match the offline words.
+   */
+  public verifyConfirmationWords(
+    originalWords: readonly string[],
+    word4: string,
+    word8: string,
+    word11: string
+  ): boolean {
+    if (!originalWords || originalWords.length < 12) return false;
+    const clean = (w: string) => (w || '').trim().toLowerCase();
+    return (
+      clean(originalWords[3]) === clean(word4) &&
+      clean(originalWords[7]) === clean(word8) &&
+      clean(originalWords[10]) === clean(word11)
+    );
   }
 
   /**
@@ -224,9 +270,9 @@ export class RecoveryManager {
   }
 
   /**
-   * Verifies the grammatical validity and 8-bit checksum of a 24-word recovery phrase.
+   * Verifies the grammatical validity and checksum of a 12-word or 24-word BIP-39 recovery phrase.
    *
-   * @param phrase Candidate 24-word recovery phrase string.
+   * @param phrase Candidate 12-word or 24-word recovery phrase string.
    * @returns True if the phrase adheres to BIP39 English dictionary and checksum validates.
    */
   public async verifyRecoveryPhrase(phrase: string): Promise<boolean> {
@@ -235,7 +281,7 @@ export class RecoveryManager {
     }
 
     const words = phrase.trim().toLowerCase().split(/\s+/);
-    if (words.length !== RECOVERY_PHRASE_WORD_COUNT) {
+    if (words.length !== 12 && words.length !== 24) {
       return false;
     }
 
@@ -246,7 +292,7 @@ export class RecoveryManager {
       }
     }
 
-    // Validate 8-bit checksum against 256-bit entropy
+    // Validate checksum against entropy
     const decoded = this.mnemonicToEntropy(phrase);
     if (!decoded.valid || !decoded.entropy) {
       return false;
@@ -429,68 +475,72 @@ export class RecoveryManager {
   }
 
   /**
-   * Encodes 256-bit entropy into a 24-word BIP39 mnemonic phrase.
+   * Encodes 128-bit (16B) or 256-bit (32B) entropy into a 12-word or 24-word BIP39 mnemonic phrase.
    */
   private entropyToMnemonic(entropy: Uint8Array): string {
+    const is12 = entropy.length === 16;
+    const wordCount = is12 ? 12 : 24;
     const hash = this.sha256(entropy);
-    const combined = new Uint8Array(33);
-    combined.set(entropy, 0);
-    combined[32] = hash[0]; // 8-bit checksum
+
+    let bitString = '';
+    for (let i = 0; i < entropy.length; i++) {
+      bitString += entropy[i].toString(2).padStart(8, '0');
+    }
+    const checksumBits = is12
+      ? hash[0].toString(2).padStart(8, '0').slice(0, 4)
+      : hash[0].toString(2).padStart(8, '0');
+    bitString += checksumBits;
 
     const words: string[] = [];
-    for (let i = 0; i < RECOVERY_PHRASE_WORD_COUNT; i++) {
-      let wordIndex = 0;
-      for (let bit = 0; bit < 11; bit++) {
-        const bitPos = i * 11 + bit;
-        const byteIdx = Math.floor(bitPos / 8);
-        const bitIdx = 7 - (bitPos % 8);
-        const bitVal = (combined[byteIdx] >> bitIdx) & 1;
-        wordIndex = (wordIndex << 1) | bitVal;
-      }
-      words.push(getWord(wordIndex));
+    for (let i = 0; i < wordCount; i++) {
+      const chunk = bitString.slice(i * 11, (i + 1) * 11);
+      const index = parseInt(chunk, 2);
+      words.push(getWord(index));
     }
 
-    zeroize(combined);
     return words.join(' ');
   }
 
   /**
-   * Decodes a 24-word BIP39 mnemonic phrase into 256-bit entropy and validates checksum.
+   * Decodes a 12-word or 24-word BIP39 mnemonic phrase into entropy and validates checksum.
    */
   private mnemonicToEntropy(phrase: string): { valid: boolean; entropy: Uint8Array | null } {
     const words = phrase.trim().toLowerCase().split(/\s+/);
-    if (words.length !== RECOVERY_PHRASE_WORD_COUNT) {
+    if (words.length !== 12 && words.length !== 24) {
       return { valid: false, entropy: null };
     }
 
-    const combined = new Uint8Array(33);
-    for (let i = 0; i < RECOVERY_PHRASE_WORD_COUNT; i++) {
+    const is12 = words.length === 12;
+    const entropyBitsCount = is12 ? 128 : 256;
+
+    let totalBits = '';
+    for (let i = 0; i < words.length; i++) {
       const wordIndex = getWordIndex(words[i]);
       if (wordIndex < 0 || wordIndex >= 2048) {
         return { valid: false, entropy: null };
       }
-
-      for (let bit = 0; bit < 11; bit++) {
-        const bitPos = i * 11 + bit;
-        const bitVal = (wordIndex >> (10 - bit)) & 1;
-        const byteIdx = Math.floor(bitPos / 8);
-        const bitIdx = 7 - (bitPos % 8);
-        combined[byteIdx] |= bitVal << bitIdx;
-      }
+      totalBits += wordIndex.toString(2).padStart(11, '0');
     }
 
-    const entropy = new Uint8Array(32);
-    entropy.set(combined.subarray(0, 32));
-    const checksumByte = combined[32];
+    const entropyBits = totalBits.slice(0, entropyBitsCount);
+    const checksumBits = totalBits.slice(entropyBitsCount);
+
+    const entropyBytesCount = entropyBitsCount / 8;
+    const entropy = new Uint8Array(entropyBytesCount);
+    for (let i = 0; i < entropyBytesCount; i++) {
+      entropy[i] = parseInt(entropyBits.slice(i * 8, (i + 1) * 8), 2);
+    }
 
     const hash = this.sha256(entropy);
-    if (hash[0] !== checksumByte) {
-      zeroize(combined);
+    const expectedChecksumBits = is12
+      ? hash[0].toString(2).padStart(8, '0').slice(0, 4)
+      : hash[0].toString(2).padStart(8, '0');
+
+    if (checksumBits !== expectedChecksumBits) {
       zeroize(entropy);
       return { valid: false, entropy: null };
     }
 
-    zeroize(combined);
     return { valid: true, entropy };
   }
 

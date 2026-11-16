@@ -39,7 +39,7 @@ flowchart TD
     end
 
     subgraph NativePlatform["Native C++ & Android Platform Core"]
-        NativeCpp["libghosttag_security.so<br/>• ptrace(PTRACE_TRACEME)<br/>• /proc/self/maps Anti-Frida<br/>• Kernel mlock() Page Lock"]
+        NativeCpp["libghosttag_security.so<br/>• Debugger & Hook Detection Probes<br/>• Kernel mlock() Page Lock & Zeroing"]
         KotlinPlatform["Android Platform<br/>• WindowManager FLAG_SECURE<br/>• Android KeyStore TEE Master Key"]
     end
 
@@ -93,10 +93,10 @@ Application-level integrity enforcement and memory protection:
 
 ### 2.4 Native C++ Security Engine (`android/app/src/main/cpp/`)
 Direct Linux kernel inspections compiled to ARM64/x86_64 machine code (`libghosttag_security.so`):
+> **Explicit Security Boundary**: Ghost-Tag cannot protect data on a compromised or unlocked device. Client-side controls do not prevent reverse engineering.
 - **`security_core.cpp`**:
-  - Anti-Debugging: `ptrace(PTRACE_TRACEME, 0, 1, 0)` attachment probe, `/proc/self/status` `TracerPid` inspection, `/proc/self/wchan` monitoring.
-  - Anti-Hooking: `/proc/self/maps` scanner detecting Frida (`frida-agent.so`), Xposed, and Substrate; socket probe to Frida default port `27042`.
-  - Anti-Root: Probes filesystem for known `su` binaries and validates `ro.debuggable` / `ro.secure` build properties.
+  - Environment Inspection: Basic attachment probe, `/proc/self/status` `TracerPid` inspection, `/proc/self/wchan` monitoring.
+  - Runtime Integrity Inspection: `/proc/self/maps` scanner checking for instrumentation libraries and root binaries.
 - **`secure_memory.cpp`**:
   - Memory page locking via `mlock()` to prevent kernel swap or flash storage persistence.
   - Non-optimizable volatile zeroization with `asm volatile("" : : "r"(addr) : "memory")` compiler clobber barriers.

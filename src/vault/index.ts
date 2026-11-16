@@ -24,4 +24,6 @@ export * from './wordlist';
 export * from './chunkCache';
 export * from './journalManager';
 export * from './bulkVaultManager';
+export * from './passphraseManager';
+export * from './crypto';
 

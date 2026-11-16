@@ -7,68 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [2.0.6] - 2026-11-15
-
-### Fixed
-- **Architectural Documentation Alignment**: Clarified in `README.md` and `SECURITY.md` that Ghost-Tag is local-first and offline-by-default, and that Supabase sync is strictly an opt-in, zero-knowledge encrypted metadata backup relay that never receives passphrases, keys, recovery phrases, or NFC payloads.
-- **BIP-39 Recovery Phrase Consistency**: Resolved 12-word vs 24-word discrepancy in `SECURITY.md` Section 2 threat model table to align with the canonical 12-word BIP-39 standard (128-bit entropy + 4-bit checksum) implemented across Android and Web clients.
-- **Scanned-Chunk Cache Elimination**: Updated `README.md` and `docs/security.md` diagrams and capability tables to reflect the removal of the 72-hour persistent cache in favor of purely volatile, in-memory session reconstruction.
-- **Verification Snippet Formatting**: Corrected newline formatting in `README.md` Section 9 verification code block.
+## [2.0.5] - 2026-11-16
 
 ### Added
-- **Option 1 Cloud Sync Architecture**: Added `web/.env.example` and `web/.env.local` configuration for Vite, single client factory in `web/src/supabaseClient.ts`, and dynamic Settings status indicators (`Offline-first` vs `Connected` vs `Cloud Sync Unavailable` with automatic offline fallback).
-- **Android Entry Deletion & Corruption Warnings**: Implemented `src/operations/deleteEntryOperation.ts` and `DeleteEntryModal.tsx` enforcing safe full rewrite flows and explicit corruption warning dialogs.
-- **Complete GitHub Wiki Suite**: Added 15 comprehensive documentation pages under `docs/wiki/` covering installation, recovery phrases, encryption/decryption, security invariants, and technical envelopes.
-
----
-
-## [2.0.5] - 2026-11-15
-
-### Added
-- **Minimal Brutalist Web Client**: Deployed on GitHub Pages (`https://frosty-mug.github.io/Ghost-Tag/`) featuring ambient heavily blurred ghost backdrop, instant initial loading splash, and zero technical panels on landing.
-- **Explicit Stop and Pause Flow**:
-  - Bulk Tag Scanning: Visible `[Stop Scanning]` button that halts scan loop, preserves in-memory tags, displays total usable Ghost storage, and exposes `[Continue]`, `[Resume Scanning]`, and `[Cancel]`.
-  - Bulk Tag Writing: Visible `[Stop Writing]` button that safely pauses in-flight operations, preserves written/remaining counts, and exposes `[Resume Writing]` and `[Cancel Session]`.
-  - Decrypt Scanning: Visible `[Stop Scanning]` button that halts scanning and displays `[Decrypt Now]`, `[Resume Scanning]`, and `[Cancel]`.
-- **12-Word BIP-39 English Cross-Platform Recovery**:
-  - Generates 12-word recovery phrase from 128-bit CSPRNG entropy with 4-bit SHA-256 checksum (132 bits total).
-  - 3-word verification requirement (words 4, 8, 11) before vault initialization.
-  - Recovery phrase import allowing vault reconstruction across Android APK and Web client.
-- **Unified `[ Decrypt Now ]` Flow**: Automatic envelope inspection, version verification, and missing chunk reporting (`X / Y collected, Z missing`).
-- **IndexedDB 72-Hour Ephemeral Cache**: Automatically caches scanned ciphertext chunks for up to 72 hours with expiration timers and manual cache purge.
-- **Mixed NFC Tag Capacity Engine**: Automatic detection and calculation for mixed NTAG213, NTAG215, NTAG216 tags; instructs user to set aside surplus tags when fewer tags are required than scanned.
-- **Deep-Link Structure**: Dedicated routes for `/app/scan`, `/app/write`, `/app/bulk`, `/app/decrypt`, `/app/recovery`, and `/app/settings`.
-- **Android APK Release v2.0.5**: Signed release binary `Ghost-Tag-v2.0.5.apk` (SHA-256: `28a2e3d85ec803a733b62cdd5f55f1077d7b5a990a256b656262009d096e71ea`) attached to GitHub Releases.
+- **Hardened Zero-Knowledge Vault Recovery**: Supabase Edge Function `recover-vault` implementing constant-time verifier verification and layered rate-limiting.
+- **Layered Rate Limiting**: Enforced limits across account (5/15m), user (20/15m), hashed IP (100/15m), and global (500/15m) thresholds.
+- **Explicit RLS Denials**: Dedicated denial policies on `ghost_recovery_attempts` preventing unauthorized client manipulation; service-role only execution.
+- **Passphrase Manager & Vault Crypto Bridge**: `src/vault/passphraseManager.ts` and `src/vault/crypto.ts` for strict memory zeroization and local rate limiting.
+- **Real USB NFC Reader Hardware Support**: Ghost Bridge desktop daemon (`127.0.0.1:41789`) bridging ACS ACR122U readers to web browsers.
+- **Native 12-Word BIP-39 Recovery Engine**: Cross-platform 12-word mnemonic recovery phrase with 4-bit SHA-256 checksum and mandatory confirmation of words 4, 8, and 11.
+- **Single Master Passphrase Vault Model**: Passphrase-anchored KEK derivation (Argon2id) with double cryptographic binding (outer GCM + inner chunk GCM with deterministic AAD).
 
 ### Changed
-- Web NFC engine upgraded with resilient fallback simulation mode for desktop testing.
-- UI styling enhanced with brutalist dark palette (`#080808`, `#121212`, `#00ff66`), interactive button states (`:hover`, `:active`, `:focus-visible`, `:disabled`), and smooth CSS transitions.
+- **Decryption Flow**: Decryption requires no Ghost account, Supabase login, or recovery phrase; user taps Decrypt Now and scans chips.
+- **Security Boundaries**: Qualified client-side defense boundaries stating clearly that runtime environment checks do not prevent reverse engineering or protect data on a compromised or unlocked device.
 
 ### Fixed
-- Fixed wordlist regex extraction ensuring all 2,048 BIP-39 English words are cleanly loaded.
-- Fixed responsive layout wrapping on small mobile screens (<360px).
+- **Anti-Takeover Defense**: Remediated account takeover risk by decoupling public account identifiers from private recovery authentication secrets and verifiers.
+- **Zero-Mock Policy**: Eliminated all synthetic, mock, or placeholder NFC results across UI and production code.
+- **GitHub Actions Workflows**: Bound release signing secrets to job-level environment variables, eliminating silent fallback signing.
 
 ---
 
 ## [2.0.0] - 2026-11-10
 
 ### Added
-- **Cauchy Reed-Solomon Erasure Coding**: Added $(N, K)$ matrix erasure coding over Galois Field $\text{GF}(2^8)$ allowing vault reconstruction even if up to $M$ physical tags are lost or corrupted.
-- **Argon2id RFC 9106 Key Derivation**: Added memory-hard key derivation ($m=64\,\text{MB}, t=3, p=4$) for Android Keystore master keys.
-- **Chunked File Vault Storage**: Support for arbitrary binary files (images, PDFs, ZIPs, videos) sliced into NDEF chunks across multiple NFC chips.
-- **Native Memory Scrubbing**: JNI/NDK native C++ memory zeroing routines using `memset_s` to scrub keys and passphrases immediately after derivation.
-
-### Changed
-- Updated NDEF MIME types to canonical `application/vnd.ghost.secure` (single-tag) and `application/vnd.ghost.bulk` (multi-tag).
-- Migrated local metadata persistence to encrypted MMKV storage.
-
----
-
-## [1.0.0] - 2026-10-20
-
-### Added
-- Initial release of Ghost-Tag offline encrypted NFC vault for Android.
-- Single-tag text and small file encryption using AES-256-GCM.
-- Automatic NTAG213 / NTAG215 / NTAG216 detection.
-- Read-back verification and authentication tag checking.
-- Offline-only architecture with zero network permissions.
+- Core Cauchy-Vandermonde Reed-Solomon erasure coding engine over GF(2^8).
+- RFC 9106 Argon2id memory-hard key derivation.
+- AES-256-GCM binary envelopes (54B single / 134B bulk).
+- Initial Android APK build configuration with native NDK C++ security module.
+- Brutalist monochrome user interface.

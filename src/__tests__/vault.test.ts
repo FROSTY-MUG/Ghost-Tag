@@ -222,6 +222,36 @@ describe('Phase 3 Vault Subsystem', () => {
       zeroize(rawDek1);
       zeroize(result.recoveredDeks[0].dek);
     });
+
+    it('supports standard 12-word BIP-39 recovery phrases and confirmation indices', async () => {
+      const { phrase, words } = recoveryManager.generate12WordPhrase();
+      expect(words).toHaveLength(12);
+      expect(await recoveryManager.verifyRecoveryPhrase(phrase)).toBe(true);
+
+      // Verify words 4, 8, 11 confirmation check
+      expect(
+        recoveryManager.verifyConfirmationWords(
+          words,
+          words[3],
+          words[7],
+          words[10]
+        )
+      ).toBe(true);
+
+      expect(
+        recoveryManager.verifyConfirmationWords(
+          words,
+          'wrong',
+          words[7],
+          words[10]
+        )
+      ).toBe(false);
+
+      // Test corrupt checksum
+      const badWords = [...words];
+      badWords[0] = badWords[0] === 'abandon' ? 'ability' : 'abandon';
+      expect(await recoveryManager.verifyRecoveryPhrase(badWords.join(' '))).toBe(false);
+    });
   });
 
   // -------------------------------------------------------------------------

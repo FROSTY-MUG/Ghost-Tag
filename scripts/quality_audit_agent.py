@@ -75,7 +75,7 @@ def audit_test_suite():
     cmd = "npm test -- --ci --maxWorkers=2"
     res = subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True, text=True, shell=True)
     if res.returncode == 0:
-        log_pass("All Jest test suites passed (100% pass rate).")
+        log_pass("All Jest test suites passed (verified).")
         return True
     else:
         log_fail("Jest test suite failed:")
@@ -94,7 +94,7 @@ def main():
 
     print("\n" + "=" * 65)
     if ok1 and ok2 and ok3:
-        print(" [RESULT] ALL QUALITY AUDIT GATES PASSED (100% HEALTHY)")
+        print(" [RESULT] ALL QUALITY AUDIT GATES PASSED (VERIFIED)")
         print("=" * 65)
         sys.exit(0)
     else:

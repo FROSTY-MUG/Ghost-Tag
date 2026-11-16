@@ -160,6 +160,64 @@
   }
 
   /**
+   * Derive a dedicated 256-bit recovery auth secret from the 12-word recovery phrase.
+   * recovery_auth_secret = KDF(recovery_phrase, "ghost-recovery-auth")
+   * NEVER sent to or stored in Supabase.
+   */
+  async function deriveRecoveryAuthSecret(recoveryWords) {
+    const phrase = Array.isArray(recoveryWords) ? recoveryWords.join(' ').trim().toLowerCase() : String(recoveryWords).trim().toLowerCase();
+    const enc = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      enc.encode(phrase),
+      { name: 'PBKDF2' },
+      false,
+      ['deriveBits']
+    );
+
+    const derivedBits = await crypto.subtle.deriveBits(
+      {
+        name: 'PBKDF2',
+        salt: enc.encode('ghost-recovery-auth-v2.0.5'),
+        iterations: 10000,
+        hash: 'SHA-256'
+      },
+      keyMaterial,
+      256
+    );
+
+    return new Uint8Array(derivedBits);
+  }
+
+  /**
+   * Computes the 256-bit recovery verifier stored in Supabase.
+   * recovery_verifier = KDF(recovery_auth_secret, recovery_salt, parameters)
+   */
+  async function computeRecoveryVerifier(authSecretBytes, saltBytes) {
+    const salt = saltBytes || new Uint8Array(16);
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      authSecretBytes,
+      { name: 'PBKDF2' },
+      false,
+      ['deriveBits']
+    );
+
+    const derivedBits = await crypto.subtle.deriveBits(
+      {
+        name: 'PBKDF2',
+        salt: salt,
+        iterations: 10000,
+        hash: 'SHA-256'
+      },
+      keyMaterial,
+      256
+    );
+
+    return Array.from(new Uint8Array(derivedBits)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  /**
    * Supabase Anonymous Authentication
    * Creates or authenticates an anonymous user on Supabase auth.users
    */
@@ -320,6 +378,60 @@
   }
 
   /**
+   * Executes recovery of encrypted vault metadata using accountId and recovery_verifier.
+   * Calls the Edge Function /functions/v1/recover-vault or falls back to local storage.
+   */
+  async function recoverVaultWithVerifier(accountId, recoveryVerifierHex) {
+    const config = getConfig();
+
+    if (config.isConfigured && !config.disabled) {
+      try {
+        const auth = await signInAnonymously();
+        const resp = await fetch(`${config.url}/functions/v1/recover-vault`, {
+          method: 'POST',
+          headers: {
+            'apikey': config.anonKey,
+            'Authorization': `Bearer ${auth.token || config.anonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            account_id: accountId,
+            recovery_verifier: recoveryVerifierHex
+          })
+        });
+
+        if (!resp.ok) {
+          throw new Error('RECOVERY_FAILED');
+        }
+
+        const data = await resp.json();
+        return {
+          accountId: data.account_id,
+          encryptedBlob: data.encrypted_vault_blob,
+          vaultVersion: data.vault_version,
+          source: 'supabase-cloud'
+        };
+      } catch (e) {
+        // Fall back to local storage if edge function fails or is offline
+      }
+    }
+
+    // Local fallback check
+    const local = localStorage.getItem(`${STORAGE_KEY_OFFLINE_SYNC}_${accountId}`);
+    if (local) {
+      const parsed = JSON.parse(local);
+      return {
+        accountId: parsed.account_id,
+        encryptedBlob: parsed.encrypted_vault_blob,
+        vaultVersion: parsed.vault_version,
+        source: 'offline-local'
+      };
+    }
+
+    throw new Error('RECOVERY_FAILED');
+  }
+
+  /**
    * Delete encrypted vault metadata blob from Supabase
    */
   async function deleteEncryptedVault(accountId) {
@@ -358,9 +470,12 @@
     disableConfig,
     getCloudConfig,
     deriveAccountId,
+    deriveRecoveryAuthSecret,
+    computeRecoveryVerifier,
     signInAnonymously,
     uploadEncryptedVault,
     downloadEncryptedVault,
+    recoverVaultWithVerifier,
     deleteEncryptedVault
   };
 });

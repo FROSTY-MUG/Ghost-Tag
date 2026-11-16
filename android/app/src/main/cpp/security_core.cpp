@@ -1,6 +1,9 @@
 /**
  * @file security_core.cpp
- * @summary Native Anti-Debugging, Anti-Hooking, and Anti-Tamper Implementation.
+ * @summary Native Environment Inspection Probes.
+ *
+ * Ghost-Tag includes optional runtime environment checks, but these do not prevent
+ * reverse engineering or protect data on a compromised or unlocked device.
  */
 
 #include "security_core.h"

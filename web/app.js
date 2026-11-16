@@ -1085,10 +1085,27 @@
       }
       if (errEl) errEl.style.display = 'none';
 
-      try {
-        const btn = document.getElementById('btnSubmitRestoreAccount');
-        if (btn) btn.classList.add('btn-loading');
+      // Transition to explicit ownership transfer confirmation view
+      state.pendingRestoreWords = words;
+      showView('view-confirm-restore-ownership');
+    };
 
+    document.getElementById('btnCancelRestoreOwnership')?.addEventListener('click', () => {
+      state.pendingRestoreWords = null;
+      showView('view-restore-account');
+    });
+
+    document.getElementById('btnConfirmRestoreOwnership')?.addEventListener('click', async () => {
+      const words = state.pendingRestoreWords;
+      if (!words) {
+        showView('view-restore-account');
+        return;
+      }
+
+      const btn = document.getElementById('btnConfirmRestoreOwnership');
+      if (btn) btn.classList.add('btn-loading');
+
+      try {
         const accountId = await window.GhostSupabase.deriveAccountId(words);
         const remoteVault = await window.GhostSupabase.downloadEncryptedVault(accountId);
 
@@ -1118,6 +1135,21 @@
             state.isUnlocked = true;
 
             localStorage.setItem(STORAGE_KEY_ACCOUNT, JSON.stringify(state.account));
+            localStorage.setItem(STORAGE_KEY_VAULT, JSON.stringify(state.vault));
+
+            updateHeaderAccountStatus();
+            renderVaultEntries();
+            showView('view-app');
+          } catch (err) {
+            alert('Failed to restore vault with provided passphrase: ' + err.message);
+          }
+        });
+      } catch (err) {
+        alert('Failed to restore account: ' + err.message);
+      } finally {
+        if (btn) btn.classList.remove('btn-loading');
+      }
+    });
             localStorage.setItem(STORAGE_KEY_LOCAL_VAULT, JSON.stringify(state.vault));
 
             updateAccountDisplay();

@@ -1,6 +1,8 @@
 /**
  * @file secureWipe.ts
- * @summary Military-grade, multi-pass memory wiping and zeroization utilities.
+ * @summary Multi-pass memory wiping and zeroization utilities.
+ * Note: Ghost-Tag cannot protect data on a compromised or unlocked device.
+ * Client-side controls do not prevent reverse engineering.
  *
  * Provides defense-in-depth memory scrubbing against heap inspection, cold-boot attacks,
  * and memory dumps. Overwrites sensitive buffers with alternating bit patterns (0xAA, 0x55),

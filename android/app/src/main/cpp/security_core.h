@@ -1,10 +1,9 @@
 /**
  * @file security_core.h
- * @summary Ghost-Tag Native Security & Anti-Reverse Engineering Engine.
+ * @summary Ghost-Tag Native Security & Environment Inspection.
  *
- * Implements low-level kernel inspections, anti-debugging, hooking detection,
- * and root escalation checks in compiled native C++ code to prevent static and
- * dynamic analysis, decompilation, and key memory dumping.
+ * Ghost-Tag includes optional runtime environment checks, but these do not prevent
+ * reverse engineering or protect data on a compromised or unlocked device.
  */
 
 #ifndef GHOSTTAG_SECURITY_CORE_H

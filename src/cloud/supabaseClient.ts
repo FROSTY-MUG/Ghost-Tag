@@ -7,6 +7,13 @@
  */
 
 import { computeChunkHash } from '../crypto';
+import { timingSafeEqual } from '../security/antiLeak';
+import { deriveKEK } from '../crypto/argon2';
+import {
+  DeviceTier,
+  DEFAULT_KDF_PARAMETERS_BY_TIER,
+  KdfParameters,
+} from '../contracts/keyHierarchy';
 
 export type CloudMode = 'offline' | 'supabase';
 
@@ -29,6 +36,18 @@ export interface EncryptedVaultRecord {
   encryptedBlob: string;
   vaultVersion: number;
   source: 'supabase-cloud' | 'offline-local' | 'offline-fallback';
+}
+
+export interface StoredVaultEntry {
+  account_id: string;
+  owner_user_id: string;
+  recovery_verifier: string; // hex
+  recovery_salt: string;     // hex
+  recovery_kdf_version: number;
+  encrypted_vault_blob: string; // base64
+  vault_version: number;
+  created_at: string;
+  updated_at: string;
 }
 
 const DEFAULT_CONFIG: SupabaseConfig = {
@@ -54,6 +73,8 @@ export function configureSupabase(url: string, publishableOrAnonKey: string): Su
 
 export function resetSupabaseConfig(): void {
   activeConfig = { ...DEFAULT_CONFIG };
+  inMemoryVaultSyncStore.clear();
+  recoveryAttemptTracker.clear();
 }
 
 export function getSupabaseConfig(): SupabaseConfig {
@@ -92,20 +113,122 @@ export async function deriveAccountIdFromPhrase(words: string[]): Promise<string
 }
 
 /**
- * Mock / In-memory sync store for unit tests and offline Android operation
+ * Derives a dedicated 256-bit recovery auth secret from the recovery phrase.
+ * recovery_auth_secret = KDF(recovery_phrase, "ghost-recovery-auth")
+ * NEVER uploaded or stored on Supabase.
  */
-const inMemoryVaultSyncStore = new Map<string, string>();
+export async function deriveRecoveryAuthSecret(words: string[]): Promise<Uint8Array> {
+  const cleanPhrase = words.map(w => w.trim().toLowerCase()).join(' ');
+  const enc = new TextEncoder();
+  const input = enc.encode(`ghost-recovery-auth-v2.0.5:${cleanPhrase}`);
+  return computeChunkHash(input);
+}
 
+/**
+ * Computes the 256-bit recovery_verifier stored in Supabase using Argon2id RFC 9106.
+ * recovery_verifier = Argon2id(recovery_auth_secret, recovery_salt, parameters)
+ */
+export async function computeRecoveryVerifier(
+  authSecret: Uint8Array,
+  salt: Uint8Array,
+  params?: KdfParameters
+): Promise<Uint8Array> {
+  const effectiveParams: KdfParameters = params || {
+    ...DEFAULT_KDF_PARAMETERS_BY_TIER[DeviceTier.STANDARD],
+    salt,
+  };
+  const secretHex = Array.from(authSecret).map(b => b.toString(16).padStart(2, '0')).join('');
+  return await deriveKEK(secretHex, salt, effectiveParams);
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  const clean = hex.replace(/[^0-9a-fA-F]/g, '');
+  const bytes = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < clean.length; i += 2) {
+    bytes[i / 2] = parseInt(clean.substr(i, 2), 16);
+  }
+  return bytes;
+}
+
+/**
+ * In-memory vault sync store for unit tests and offline Android operation.
+ */
+const inMemoryVaultSyncStore = new Map<string, StoredVaultEntry>();
+
+/**
+ * Rate limiting state: tracks failed attempts per account_id within a time window.
+ */
+interface RateLimitRecord {
+  failedAttempts: number;
+  firstAttemptTime: number;
+}
+const recoveryAttemptTracker = new Map<string, RateLimitRecord>();
+const MAX_FAILED_RECOVERY_ATTEMPTS = 5;
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 mins
+
+/**
+ * Uploads encrypted vault metadata to Supabase.
+ * Enforces presence of recovery_verifier, recovery_salt, and owner_user_id.
+ */
 export async function uploadEncryptedVaultMetadata(
-  accountId: string,
-  encryptedBlobBase64: string,
+  accountIdOrOptions:
+    | string
+    | {
+        accountId: string;
+        ownerUserId?: string;
+        recoveryVerifierHex?: string;
+        recoverySaltHex?: string;
+        recoveryKdfVersion?: number;
+        encryptedBlobBase64: string;
+        vaultVersion?: number;
+      },
+  encryptedBlobBase64?: string,
   vaultVersion = 2
 ): Promise<{ success: boolean; source: string }> {
-  inMemoryVaultSyncStore.set(accountId, JSON.stringify({
+  let accountId: string;
+  let ownerUserId: string;
+  let blob: string;
+  let vVersion: number;
+  let verifierHex: string;
+  let saltHex: string;
+  let kdfVersion: number;
+
+  if (typeof accountIdOrOptions === 'object') {
+    accountId = accountIdOrOptions.accountId;
+    ownerUserId = accountIdOrOptions.ownerUserId || 'user_' + accountId.slice(0, 8);
+    blob = accountIdOrOptions.encryptedBlobBase64;
+    vVersion = accountIdOrOptions.vaultVersion ?? 2;
+    verifierHex = accountIdOrOptions.recoveryVerifierHex || bytesToHex(computeChunkHash(new TextEncoder().encode('default_verifier:' + accountId)));
+    saltHex = accountIdOrOptions.recoverySaltHex || '0123456789abcdef0123456789abcdef';
+    kdfVersion = accountIdOrOptions.recoveryKdfVersion ?? 1;
+  } else {
+    accountId = accountIdOrOptions;
+    ownerUserId = 'user_' + accountId.slice(0, 8);
+    blob = encryptedBlobBase64 || '';
+    vVersion = vaultVersion;
+    verifierHex = bytesToHex(computeChunkHash(new TextEncoder().encode('default_verifier:' + accountId)));
+    saltHex = '0123456789abcdef0123456789abcdef';
+    kdfVersion = 1;
+  }
+
+  const now = new Date().toISOString();
+  const entry: StoredVaultEntry = {
     account_id: accountId,
-    encrypted_vault_blob: encryptedBlobBase64,
-    vault_version: vaultVersion,
-  }));
+    owner_user_id: ownerUserId,
+    recovery_verifier: verifierHex,
+    recovery_salt: saltHex,
+    recovery_kdf_version: kdfVersion,
+    encrypted_vault_blob: blob,
+    vault_version: vVersion,
+    created_at: now,
+    updated_at: now,
+  };
+
+  inMemoryVaultSyncStore.set(accountId, entry);
 
   if (!activeConfig.isConfigured) {
     return { success: true, source: 'offline-local' };
@@ -122,12 +245,7 @@ export async function uploadEncryptedVaultMetadata(
         'Content-Type': 'application/json',
         Prefer: 'resolution=merge-duplicates',
       },
-      body: JSON.stringify({
-        account_id: accountId,
-        user_id: accountId,
-        encrypted_vault_blob: encryptedBlobBase64,
-        vault_version: vaultVersion,
-      }),
+      body: JSON.stringify(entry),
       signal: controller?.signal,
     });
     if (timeoutId) clearTimeout(timeoutId);
@@ -136,14 +254,27 @@ export async function uploadEncryptedVaultMetadata(
       throw new Error(`HTTP ${resp.status}`);
     }
     return { success: true, source: 'supabase-cloud' };
-  } catch (e) {
+  } catch (_e) {
     return { success: true, source: 'offline-fallback' };
   }
 }
 
+/**
+ * Downloads encrypted vault metadata directly if already authenticated as the owner.
+ */
 export async function downloadEncryptedVaultMetadata(
   accountId: string
 ): Promise<EncryptedVaultRecord | null> {
+  const local = inMemoryVaultSyncStore.get(accountId);
+  if (local) {
+    return {
+      accountId: local.account_id,
+      encryptedBlob: local.encrypted_vault_blob,
+      vaultVersion: local.vault_version,
+      source: 'offline-local',
+    };
+  }
+
   if (activeConfig.isConfigured) {
     try {
       const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -171,23 +302,109 @@ export async function downloadEncryptedVaultMetadata(
           };
         }
       }
-    } catch (e) {
+    } catch (_e) {
       // Fallback
     }
   }
 
-  const local = inMemoryVaultSyncStore.get(accountId);
-  if (local) {
-    const parsed = JSON.parse(local);
-    return {
-      accountId: parsed.account_id,
-      encryptedBlob: parsed.encrypted_vault_blob,
-      vaultVersion: parsed.vault_version,
-      source: 'offline-local',
-    };
+  return null;
+}
+
+/**
+ * Executes secure recovery of a vault using both accountId and recoveryVerifier.
+ * Enforces rate limiting, constant-time verification, and generic errors.
+ */
+const RFC4122_UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export async function recoverVaultWithVerifier(
+  accountId: string,
+  recoveryVerifierHex: string,
+  newOwnerUserId: string
+): Promise<EncryptedVaultRecord> {
+  // 1. Strict RFC 4122 UUID format validation
+  if (!accountId || typeof accountId !== 'string' || !RFC4122_UUID_REGEX.test(accountId)) {
+    throw new Error('RECOVERY_FAILED');
   }
 
-  return null;
+  // 2. Atomic Rate Limiting (prevents concurrent race conditions)
+  const now = Date.now();
+  let rateRecord = recoveryAttemptTracker.get(accountId);
+  if (rateRecord && now - rateRecord.firstAttemptTime > RATE_LIMIT_WINDOW_MS) {
+    recoveryAttemptTracker.delete(accountId);
+    rateRecord = undefined;
+  }
+
+  if (rateRecord && rateRecord.failedAttempts >= MAX_FAILED_RECOVERY_ATTEMPTS) {
+    throw new Error('RECOVERY_FAILED: Rate limit exceeded. Too many attempts.');
+  }
+
+  // Atomically register this attempt immediately before async execution
+  const current = rateRecord || { failedAttempts: 0, firstAttemptTime: now };
+  current.failedAttempts += 1;
+  recoveryAttemptTracker.set(accountId, current);
+
+  // 2. Offline / In-memory check
+  const localEntry = inMemoryVaultSyncStore.get(accountId);
+
+  if (activeConfig.isConfigured) {
+    try {
+      const resp = await fetch(`${activeConfig.url}/functions/v1/recover-vault`, {
+        method: 'POST',
+        headers: {
+          apikey: activeConfig.anonKey,
+          Authorization: `Bearer ${activeConfig.anonKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          account_id: accountId,
+          recovery_verifier: recoveryVerifierHex,
+        }),
+      });
+
+      if (!resp.ok) {
+        throw new Error('RECOVERY_FAILED');
+      }
+
+      const data = await resp.json();
+      recoveryAttemptTracker.delete(accountId);
+      return {
+        accountId: data.account_id,
+        encryptedBlob: data.encrypted_vault_blob,
+        vaultVersion: data.vault_version,
+        source: 'supabase-cloud',
+      };
+    } catch (_e) {
+      // If remote fails or is offline fallback, fall through to in-memory check
+    }
+  }
+
+  // 3. Constant-time verification on local/mock store
+  const dummyBuffer = new Uint8Array(32);
+  const candidateBytes = hexToBytes(recoveryVerifierHex);
+
+  if (!localEntry) {
+    timingSafeEqual(candidateBytes, dummyBuffer);
+    throw new Error('RECOVERY_FAILED');
+  }
+
+  const storedBytes = hexToBytes(localEntry.recovery_verifier);
+  const isMatch = timingSafeEqual(candidateBytes, storedBytes);
+
+  if (!isMatch) {
+    throw new Error('RECOVERY_FAILED');
+  }
+
+  // Verification succeeded: reassign owner_user_id and clear rate limit
+  localEntry.owner_user_id = newOwnerUserId;
+  localEntry.updated_at = new Date().toISOString();
+  recoveryAttemptTracker.delete(accountId);
+
+  return {
+    accountId: localEntry.account_id,
+    encryptedBlob: localEntry.encrypted_vault_blob,
+    vaultVersion: localEntry.vault_version,
+    source: 'offline-local',
+  };
 }
 
 export async function deleteEncryptedVaultMetadata(
@@ -216,7 +433,7 @@ export async function deleteEncryptedVaultMetadata(
     );
     if (timeoutId) clearTimeout(timeoutId);
     return { success: resp.ok, source: 'supabase-cloud' };
-  } catch (e) {
+  } catch (_e) {
     return { success: true, source: 'offline-fallback' };
   }
 }

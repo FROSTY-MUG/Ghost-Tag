@@ -32,7 +32,6 @@ local.properties
 *.hprof
 .cxx/
 *.keystore
-!debug.keystore
 .kotlin/
 
 # node.js
@@ -83,10 +82,37 @@ skills-lock.json
 
 # Environment, secrets & credentials
 .env
+.env.*
 .env*.local
+.env.local
+.env.production
+.env.development
+!.env.example
+*.keystore
+*.jks
+*.p12
 *.pem
 *.key
-*.p12
+*.pfx
+*.cert
+*.cer
+*.crt
+*.der
+*.pkcs12
+
+# Internal setup checklists, private operational guides & sensitive audits
+docs/USER-SETUP-CHECKLIST.md
+*USER-SETUP-CHECKLIST.md
+*SETUP-CHECKLIST.md
+*checklist*.md
+*CHECKLIST*.md
+PROJECT-STATUS.md
+*PROJECT-STATUS*.md
+docs/PROJECT_STATE_MEMORY.md
+*PROJECT_STATE_MEMORY.md
+docs/security-audit.md
+docs/planning/
+*.audit.md
 
 # Python cache & artifacts
 __pycache__/

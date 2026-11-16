@@ -28,19 +28,24 @@ def audit_zero_secrets():
         (r'BEGIN PRIVATE KEY', "Hardcoded Private Key"),
         (r'ghp_[a-zA-Z0-9]{36}', "GitHub Personal Access Token"),
         (r'gho_[a-zA-Z0-9]{36}', "GitHub OAuth Token"),
+        (r'github_pat_[a-zA-Z0-9_]{30,}', "GitHub Fine-Grained Personal Access Token"),
         (r'AIza[0-9A-Za-z-_]{35}', "Google API Key"),
-        (r'password\s*=\s*["\'][^"\']{6,}["\']', "Hardcoded password variable"),
+        (r'service_role\s*[:=]\s*["\'][a-zA-Z0-9_\-\.]{20,}["\']', "Hardcoded Supabase service_role key"),
+        (r'sb_secret_[a-zA-Z0-9_\-]{20,}', "Hardcoded Supabase secret key"),
+        (r'postgres(?:ql)?:\/\/[^:]+:[^@]+@[^:\/]+', "Hardcoded Database URL with credentials"),
+        (r'IP_HASH_SALT\s*=\s*["\'][^"\']+["\']', "Hardcoded IP_HASH_SALT definition"),
+        (r'storePassword\s+["\'][^"\']+["\']|keyPassword\s+["\'][^"\']+["\']', "Hardcoded Keystore password"),
     ]
     
     violations = []
-    scan_dirs = ['src', 'android/app/src/main/java', 'android/app/src/main/cpp', 'web']
+    scan_dirs = ['src', 'android/app/src/main/java', 'android/app/src/main/cpp', 'web', 'android/app']
     for s_dir in scan_dirs:
         full_path = os.path.join(PROJECT_ROOT, s_dir)
         if not os.path.exists(full_path):
             continue
         for root, _, files in os.walk(full_path):
             for f in files:
-                if f.endswith(('.ts', '.tsx', '.kt', '.java', '.cpp', '.h', '.js', '.html')):
+                if f.endswith(('.ts', '.tsx', '.kt', '.java', '.cpp', '.h', '.js', '.html', '.gradle')):
                     file_p = os.path.join(root, f)
                     with open(file_p, 'r', encoding='utf-8', errors='ignore') as fp:
                         content = fp.read()
@@ -51,11 +56,25 @@ def audit_zero_secrets():
                                 continue
                             violations.append(f"{f}: {desc}")
 
+    # Check git tracking invariants
+    try:
+        import subprocess
+        tracked = subprocess.check_output(['git', 'ls-files'], cwd=PROJECT_ROOT).decode('utf-8', errors='ignore').splitlines()
+        for f in tracked:
+            base = os.path.basename(f)
+            if base.startswith('.env') and not base.endswith('.example'):
+                violations.append(f"Git-tracked environment file forbidden: {f}")
+            if base.endswith(('.keystore', '.jks', '.p12', '.pem', '.key')):
+                violations.append(f"Git-tracked keystore/certificate forbidden: {f}")
+    except Exception as e:
+        violations.append(f"Unable to verify git tracked files: {e}")
+
     if violations:
         for v in violations:
             log_fail(v)
         return False
     log_pass("Zero hardcoded secrets or credentials detected across codebase.")
+    log_pass("Zero keystores, certificates, or .env files tracked in Git.")
     return True
 
 def audit_android_hardening():
@@ -90,10 +109,22 @@ def audit_android_hardening():
         with open(cpp_sec, 'r', encoding='utf-8') as f:
             code = f.read()
         if "PTRACE_TRACEME" in code and "/proc/self/maps" in code:
-            log_pass("Native C++ core implements ptrace anti-debugging and Frida proc maps scan.")
+            log_pass("Native C++ core implements environment inspection (ptrace/proc maps).")
         else:
             log_fail("security_core.cpp missing ptrace or maps scanner!")
             all_ok = False
+
+    # 4. Check for forbidden security claims
+    forbidden_claims = [r'military-grade', r'immune to reverse engineering', r'100% secure', r'anti-Frida', r'anti-ptrace', r'100% healthy']
+    for root, _, files in os.walk(os.path.join(PROJECT_ROOT, 'src')):
+        for f in files:
+            if f.endswith(('.ts', '.tsx')):
+                with open(os.path.join(root, f), 'r', encoding='utf-8', errors='ignore') as fp:
+                    fc = fp.read()
+                for pat in forbidden_claims:
+                    if re.search(pat, fc, re.IGNORECASE):
+                        log_fail(f"{f}: Forbidden false security claim detected ({pat})")
+                        all_ok = False
 
     return all_ok
 
@@ -148,7 +179,7 @@ def main():
 
     print("\n" + "=" * 65)
     if ok1 and ok2 and ok3:
-        print(" [RESULT] ALL SECURITY AUDIT INVARIANTS PASSED (100% HEALTHY)")
+        print(" [RESULT] ALL SECURITY AUDIT INVARIANTS PASSED (VERIFIED)")
         print("=" * 65)
         sys.exit(0)
     else:

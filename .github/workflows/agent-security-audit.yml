@@ -35,6 +35,9 @@ jobs:
       - name: Install Node Dependencies
         run: npm ci
 
+      - name: Dependency Vulnerability Audit
+        run: npm audit --audit-level=high
+
       - name: Execute Security Audit Agent
         run: python scripts/security_audit_agent.py
 

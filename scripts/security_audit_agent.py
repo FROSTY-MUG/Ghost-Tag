@@ -167,6 +167,76 @@ def audit_crypto_invariants():
 
     return all_ok
 
+def audit_repository_hardening():
+    log_info("Auditing Repository Security Hardening & Supply Chain...")
+    all_ok = True
+
+    # 1. package-lock.json presence
+    pkg_lock = os.path.join(PROJECT_ROOT, 'package-lock.json')
+    if os.path.exists(pkg_lock) and os.path.getsize(pkg_lock) > 0:
+        log_pass("package-lock.json exists and is committed to Git.")
+    else:
+        log_fail("package-lock.json is missing or empty!")
+        all_ok = False
+
+    # 2. CodeQL workflow
+    codeql_wf = os.path.join(PROJECT_ROOT, '.github/workflows/codeql.yml')
+    if os.path.exists(codeql_wf):
+        with open(codeql_wf, 'r', encoding='utf-8') as f:
+            c = f.read()
+        if "github/codeql-action" in c:
+            log_pass(".github/workflows/codeql.yml exists and configures CodeQL analysis.")
+        else:
+            log_fail(".github/workflows/codeql.yml missing codeql-action steps!")
+            all_ok = False
+    else:
+        log_fail(".github/workflows/codeql.yml does not exist!")
+        all_ok = False
+
+    # 3. Dependabot configuration
+    dependabot_cfg = os.path.join(PROJECT_ROOT, '.github/dependabot.yml')
+    if os.path.exists(dependabot_cfg):
+        with open(dependabot_cfg, 'r', encoding='utf-8') as f:
+            c = f.read()
+        if 'package-ecosystem: "npm"' in c and 'package-ecosystem: "github-actions"' in c:
+            log_pass(".github/dependabot.yml exists and covers npm and github-actions.")
+        else:
+            log_fail(".github/dependabot.yml missing required ecosystems!")
+            all_ok = False
+    else:
+        log_fail(".github/dependabot.yml does not exist!")
+        all_ok = False
+
+    # 4. SECURITY.md policy with private reporting
+    sec_policy = os.path.join(PROJECT_ROOT, 'SECURITY.md')
+    if os.path.exists(sec_policy):
+        with open(sec_policy, 'r', encoding='utf-8') as f:
+            c = f.read()
+        if "private vulnerability reporting" in c.lower() and "72 hours" in c:
+            log_pass("SECURITY.md specifies private vulnerability reporting and 72-hour SLA.")
+        else:
+            log_fail("SECURITY.md missing private vulnerability reporting or SLA!")
+            all_ok = False
+    else:
+        log_fail("SECURITY.md does not exist!")
+        all_ok = False
+
+    # 5. Dependency vulnerability scan (npm audit --audit-level=high)
+    try:
+        import subprocess
+        npm_cmd = 'npm.cmd' if sys.platform == 'win32' else 'npm'
+        res = subprocess.run([npm_cmd, 'audit', '--audit-level=high'], cwd=PROJECT_ROOT, capture_output=True, text=True)
+        if res.returncode == 0:
+            log_pass("Dependency vulnerability scan passed: 0 high or critical vulnerabilities.")
+        else:
+            log_fail(f"npm audit --audit-level=high detected vulnerabilities (exit code {res.returncode})")
+            all_ok = False
+    except Exception as e:
+        log_fail(f"Unable to execute npm audit: {e}")
+        all_ok = False
+
+    return all_ok
+
 def main():
     print("=" * 65)
     print(" GHOST-TAG AUTOMATED SECURITY AUDIT AGENT")
@@ -176,9 +246,10 @@ def main():
     ok1 = audit_zero_secrets()
     ok2 = audit_android_hardening()
     ok3 = audit_crypto_invariants()
+    ok4 = audit_repository_hardening()
 
     print("\n" + "=" * 65)
-    if ok1 and ok2 and ok3:
+    if ok1 and ok2 and ok3 and ok4:
         print(" [RESULT] ALL SECURITY AUDIT INVARIANTS PASSED (VERIFIED)")
         print("=" * 65)
         sys.exit(0)

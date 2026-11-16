@@ -1,20 +1,50 @@
-# Ghost-Tag Security Policy & Threat Model
+# Security Policy
 
-Ghost-Tag is designed with a defensive, privacy-first posture. We treat vulnerabilities with the highest priority.
+## Supported versions
+
+| Version | Supported |
+|---|---|
+| 2.0.x | Yes |
+
+## Reporting a vulnerability
+
+Use GitHub private vulnerability reporting:
+1. Navigate to the **Security** tab of this repository ([https://github.com/FROSTY-MUG/Ghost-Tag/security](https://github.com/FROSTY-MUG/Ghost-Tag/security)).
+2. Under "Reporting", click **Report a vulnerability** to open an advisory draft.
+3. Provide details, reproduction steps, and impact.
+
+Alternatively, you may contact the maintainer directly via email: `aryanarora26110@gmail.com` with subject `[SECURITY VULNERABILITY] Ghost-Tag`.
+
+Do not open a public issue for a security vulnerability.
+
+Do not include:
+- Recovery phrase
+- Passphrase
+- KEK
+- DEK
+- Plaintext NFC contents
+- Supabase service-role key
+- Android keystore
+- Private keys
+
+## Response expectations
+
+We aim to acknowledge reports within 72 hours.
+
+## Security boundaries
+
+Ghost-Tag cannot protect data on a compromised or unlocked device.
+Client-side controls do not prevent reverse engineering.
+
+Ghost-Tag includes optional runtime environment checks, but these do not prevent reverse engineering or protect data on a compromised or unlocked device.
+
+## Disclosure
+
+We will coordinate disclosure with the reporter.
 
 ---
 
-## 1. Reporting Security Vulnerabilities
-
-If you discover a security defect, cryptographic vulnerability, or memory-exposure bug in Ghost-Tag:
-- **Direct Contact**: Email Aryan Arora at [aryanarora26110@gmail.com](mailto:aryanarora26110@gmail.com).
-- **Subject**: `[SECURITY VULNERABILITY] Ghost-Tag - <Brief Description>`
-- **Response SLA**: Initial triage acknowledgement within 48 hours.
-- Please do not open public GitHub issues for unpatched vulnerabilities until coordinated disclosure has occurred.
-
----
-
-## 2. Core Threat Model
+## Threat Model Matrix
 
 Ghost-Tag defines explicit adversarial capabilities and cryptographic boundaries.
 
@@ -29,7 +59,7 @@ Ghost-Tag defines explicit adversarial capabilities and cryptographic boundaries
 
 ---
 
-## 3. Cryptographic Invariants
+## Cryptographic Invariants
 
 1. **Two-Tier Key Hierarchy**:
    - Master Passphrase $\rightarrow$ Argon2id $\rightarrow$ Ephemeral KEK (Key Encryption Key).
@@ -46,35 +76,8 @@ Ghost-Tag defines explicit adversarial capabilities and cryptographic boundaries
    - Ghost-Tag explicitly states: *Overwrites writable user memory; does not guarantee silicon-level forensic erasure*.
 5. **Zero-Secrets Policy**:
    - Passphrases, KEKs, raw DEKs, and unencrypted payloads are strictly forbidden from logs, analytics, crash dumps, and database persistence.
-   - Volatile buffers are zeroized immediately following cryptographic operations.
+   - Volatile buffers are zeroized immediately following cryptographic operations using platform-maintained constant-time wiping routines.
 6. **Zero-Knowledge Cloud Sync (Optional)**:
    - When optional Supabase sync is configured, it stores strictly an authenticated, encrypted vault metadata blob.
    - The cloud relay never receives or stores passphrases, recovery phrases, KEKs, DEKs, plaintext files, plaintext URLs, or NFC contents.
    - Encryption, decryption, and tag workflows remain 100% functional offline without cloud connectivity.
-
----
-
-## 4. Strict Multi-Language Security Hardening
-
-Ghost-Tag employs a multi-tiered, multi-language defense architecture to prevent reverse engineering, dynamic instrumentation, memory dumping, and key leaking:
-
-1. **C++ Native Anti-Reverse Engineering Core (`libghosttag_security.so`)**:
-   - **Anti-Debugging**: Enforces `ptrace(PTRACE_TRACEME, 0, 1, 0)` to detect GDB/LLDB attachment, checks `/proc/self/status` for `TracerPid != 0`, and monitors `/proc/self/wchan`.
-   - **Anti-Hooking**: Scans `/proc/self/maps` for Frida (`frida-agent.so`, `frida-gadget`, `gum-js-loop`), Xposed (`libxposed`, `XposedBridge`), and Substrate modules. Detects active Frida servers on loopback port 27042.
-   - **Root Detection**: Probes filesystem for `su` binaries and checks build properties (`ro.debuggable`, `ro.secure`).
-
-2. **Native Memory Protection & Anti-Dumping**:
-   - **Kernel Page Locking (`mlock`)**: Pins sensitive key memory into physical RAM to forbid the Linux kernel from writing it to flash or swap.
-   - **4-Pass Volatile Zeroization**: Wipes memory using `0xAA`, `0x55`, CSPRNG bytes, and `0x00`, combined with compiler clobber barriers (`asm volatile("" : : "r"(addr) : "memory")`) to defeat dead-store elimination.
-   - **Constant-Time Verification**: Uses `timingSafeEqual()` (bitwise XOR accumulator) to eliminate timing side-channel attacks against MACs, KEKs, or hash values.
-
-3. **Android Platform Controls (Kotlin/Java)**:
-   - **Window `FLAG_SECURE`**: Blocks screenshots, screen recordings, and recent-app thumbnail leakage in `MainActivity.kt`.
-   - **Hardware-Backed KeyStore (TEE / StrongBox)**: Generates hardware-isolated AES-256-GCM master keys via `AndroidKeyStore`.
-
-4. **Bytecode Obfuscation (ProGuard / R8)**:
-   - Collapses package namespaces (`-repackageclasses 'com.ghosttag.obf'`), strips line numbers and symbols, and eliminates all debug logging statements from release binaries.
-
-5. **Fail-Closed Security Policy**:
-   - If any integrity anomaly is detected, `assertDeviceIntegrity()` immediately executes a panic zeroization of all active in-memory keys and terminates vault operations with a fatal error.
-

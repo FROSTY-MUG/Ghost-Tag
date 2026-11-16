@@ -72,9 +72,30 @@
     return { ...defaultConfig, mode: 'offline' };
   }
 
+  function sanitizeUrl(rawUrl) {
+    if (typeof rawUrl !== 'string') return '';
+    let str = rawUrl.trim();
+    if (str.length > 2048) str = str.slice(0, 2048);
+    let end = str.length;
+    while (end > 0 && str.charCodeAt(end - 1) === 47 /* '/' */) {
+      end--;
+    }
+    return str.slice(0, end);
+  }
+
+  function generateSecureSessionId() {
+    const gCrypto = typeof window !== 'undefined' ? window.crypto : (typeof globalThis !== 'undefined' ? globalThis.crypto : null);
+    if (gCrypto && typeof gCrypto.getRandomValues === 'function') {
+      const bytes = new Uint8Array(16);
+      gCrypto.getRandomValues(bytes);
+      return 'anon_' + Array.from(bytes).map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+    }
+    throw new Error('Cryptographically secure random number generator (CSPRNG) is not available.');
+  }
+
   function saveConfig(url, publishableKey) {
-    const cleanUrl = (url || '').trim().replace(/\/+$/, '');
-    const cleanKey = (publishableKey || '').trim();
+    const cleanUrl = sanitizeUrl(url || '');
+    const cleanKey = (publishableKey || '').trim().slice(0, 1024);
     const isConfigured = Boolean(cleanUrl && cleanKey && !cleanUrl.includes('placeholder'));
     const config = {
       url: cleanUrl,
@@ -225,10 +246,10 @@
     const config = getConfig();
 
     if (!config.isConfigured) {
-      // Offline fallback: Generate local anonymous session ID
+      // Offline fallback: Generate local anonymous session ID via CSPRNG
       let localSession = localStorage.getItem('ghost_local_anon_user');
       if (!localSession) {
-        localSession = 'anon_' + Math.random().toString(36).substr(2, 12);
+        localSession = generateSecureSessionId();
         localStorage.setItem('ghost_local_anon_user', localSession);
       }
       return { userId: localSession, token: 'local-offline-token', isOffline: true };
@@ -260,7 +281,7 @@
       console.warn('Supabase anonymous sign-in network error, using local fallback:', err);
       let localSession = localStorage.getItem('ghost_local_anon_user');
       if (!localSession) {
-        localSession = 'anon_' + Math.random().toString(36).substr(2, 12);
+        localSession = generateSecureSessionId();
         localStorage.setItem('ghost_local_anon_user', localSession);
       }
       return { userId: localSession, token: 'local-offline-token', isOffline: true, error: err.message };

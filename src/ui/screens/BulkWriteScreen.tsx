@@ -27,8 +27,8 @@ export const BulkWriteScreen: React.FC<BulkWriteScreenProps> = ({
   onFinish,
 }) => {
   const extraTags = Math.max(0, presentedTagCount - requiredTagCount);
-  const [currentChunk, setCurrentChunk] = useState<number>(1);
-  const [logs, setLogs] = useState<string[]>([
+  const [currentChunk, _setCurrentChunk] = useState<number>(1);
+  const [logs, _setLogs] = useState<string[]>([
     `[PLAN] Target chunks required: ${requiredTagCount}`,
     extraTags > 0
       ? `[EXCLUDE] Only ${requiredTagCount} tags are required. Please set aside the other ${extraTags} tags. Scan the ${requiredTagCount} required tags one by one.`
@@ -94,23 +94,9 @@ export const BulkWriteScreen: React.FC<BulkWriteScreenProps> = ({
           <Text style={styles.primaryButtonText}>Complete & Seal Vault</Text>
         </TouchableOpacity>
       ) : (
-        <TouchableOpacity
-          style={styles.simulateButton}
-          onPress={() => {
-            const next = currentChunk + 1;
-            setCurrentChunk(next);
-            setLogs((prev) => [
-              ...prev,
-              `[WRITE] Chunk #${currentChunk} written to tag.`,
-              `[VERIFY] Read-back hash verified. AES-256-GCM auth tag verified.`,
-              next <= requiredTagCount
-                ? `[WAIT] Present tag for Chunk #${next}...`
-                : `[RESULT] All ${requiredTagCount} tags successfully written and verified!`,
-            ]);
-          }}
-        >
-          <Text style={styles.simulateButtonText}>Simulate Tag Write & Verify</Text>
-        </TouchableOpacity>
+        <View style={styles.writingBanner}>
+          <Text style={styles.writingBannerText}>HOLD DEVICE NEAR PHYSICAL TAG TO WRITE</Text>
+        </View>
       )}
     </ScrollView>
   );
@@ -245,18 +231,19 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
   },
-  simulateButton: {
-    backgroundColor: '#1c1c24',
-    borderColor: '#3a3a48',
+  writingBanner: {
+    backgroundColor: '#141419',
+    borderColor: '#00e699',
     borderWidth: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
   },
-  simulateButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
+  writingBannerText: {
+    color: '#00e699',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1,
   },
 });
 

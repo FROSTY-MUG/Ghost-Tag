@@ -22,7 +22,6 @@
   },
   "license": "MIT",
   "scripts": {
-    "postinstall": "node scripts/patch_dependencies.js",
     "build": "tsc -p tsconfig.build.json",
     "prepublishOnly": "npm run build && npm test",
     "android": "react-native run-android",

@@ -8,6 +8,7 @@ import {
   deriveRecoveryAuthSecret,
   computeRecoveryVerifier,
   configureSupabase,
+  sanitizeUrlInput,
   resetSupabaseConfig,
   getSupabaseConfig,
   uploadEncryptedVaultMetadata,
@@ -51,6 +52,62 @@ describe('Ghost-Tag Supabase Anonymous Sync', () => {
 
     const active = getSupabaseConfig();
     expect(active.isConfigured).toBe(true);
+  });
+
+  describe('Bounded URL Normalization & ReDoS Defense (CodeQL Alert #1 Resolution)', () => {
+    test('normal input handles URLs with single and multiple trailing slashes', () => {
+      expect(sanitizeUrlInput('https://custom-project.supabase.co')).toBe('https://custom-project.supabase.co');
+      expect(sanitizeUrlInput('https://custom-project.supabase.co/')).toBe('https://custom-project.supabase.co');
+      expect(sanitizeUrlInput('https://custom-project.supabase.co///')).toBe('https://custom-project.supabase.co');
+      expect(sanitizeUrlInput('   https://custom-project.supabase.co/   ')).toBe('https://custom-project.supabase.co');
+    });
+
+    test('empty and whitespace-only inputs safely return empty string', () => {
+      expect(sanitizeUrlInput('')).toBe('');
+      expect(sanitizeUrlInput('   ')).toBe('');
+      expect(sanitizeUrlInput(null)).toBe('');
+      expect(sanitizeUrlInput(undefined)).toBe('');
+      expect(sanitizeUrlInput(12345 as any)).toBe('');
+    });
+
+    test('extremely long input is safely clamped to maximum length', () => {
+      const longPath = 'https://supabase.co/' + 'a'.repeat(5000);
+      const cleaned = sanitizeUrlInput(longPath);
+      expect(cleaned.length).toBeLessThanOrEqual(2048);
+      expect(cleaned.startsWith('https://supabase.co/')).toBe(true);
+    });
+
+    test('repeated characters (e.g. 50,000 trailing slashes) complete in linear time without ReDoS', () => {
+      const maliciousSlashes = 'https://supabase.co' + '/'.repeat(50000);
+      const start = Date.now();
+      const cleaned = sanitizeUrlInput(maliciousSlashes);
+      const elapsed = Date.now() - start;
+
+      // Must complete in under 50ms (strictly linear O(n) without polynomial backtracking)
+      expect(elapsed).toBeLessThan(50);
+      expect(cleaned).toBe('https://supabase.co');
+    });
+
+    test('malicious repeated patterns and edge-case characters', () => {
+      const pattern = 'https://supabase.co/api/v1/'.repeat(500);
+      const start = Date.now();
+      const cleaned = sanitizeUrlInput(pattern);
+      const elapsed = Date.now() - start;
+
+      expect(elapsed).toBeLessThan(50);
+      expect(cleaned.length).toBeLessThanOrEqual(2048);
+      expect(cleaned.endsWith('/')).toBe(false);
+    });
+
+    test('configureSupabase safely clamps oversized URL and API key inputs', () => {
+      const hugeUrl = 'https://custom-project.supabase.co/' + '/'.repeat(10000);
+      const hugeKey = 'k'.repeat(5000);
+      const cfg = configureSupabase(hugeUrl, hugeKey);
+
+      expect(cfg.url).toBe('https://custom-project.supabase.co');
+      expect(cfg.anonKey.length).toBeLessThanOrEqual(1024);
+      expect(cfg.isConfigured).toBe(true);
+    });
   });
 
   test('uploads and downloads encrypted vault metadata offline without leakage', async () => {

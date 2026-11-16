@@ -59,9 +59,31 @@ const DEFAULT_CONFIG: SupabaseConfig = {
 
 let activeConfig: SupabaseConfig = { ...DEFAULT_CONFIG };
 
+const MAX_URL_LENGTH = 2048;
+const MAX_KEY_LENGTH = 1024;
+
+/**
+ * Normalizes and sanitizes a URL string using a bounded, non-backtracking approach.
+ * Completely eliminates polynomial regular expressions (ReDoS).
+ */
+export function sanitizeUrlInput(input: unknown): string {
+  if (typeof input !== 'string') return '';
+  let str = input.trim();
+  if (str.length === 0) return '';
+  if (str.length > MAX_URL_LENGTH) {
+    str = str.slice(0, MAX_URL_LENGTH);
+  }
+  let end = str.length;
+  while (end > 0 && str.charCodeAt(end - 1) === 47 /* '/' */) {
+    end--;
+  }
+  return str.slice(0, end);
+}
+
 export function configureSupabase(url: string, publishableOrAnonKey: string): SupabaseConfig {
-  const cleanUrl = url.trim().replace(/\/+$/, '');
-  const cleanKey = publishableOrAnonKey.trim();
+  const cleanUrl = sanitizeUrlInput(url);
+  const rawKey = typeof publishableOrAnonKey === 'string' ? publishableOrAnonKey.trim() : '';
+  const cleanKey = rawKey.length > MAX_KEY_LENGTH ? rawKey.slice(0, MAX_KEY_LENGTH) : rawKey;
   activeConfig = {
     url: cleanUrl,
     anonKey: cleanKey,

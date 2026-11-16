@@ -33,6 +33,7 @@ import {
   ErrorSeverity,
 } from '../contracts/errors';
 import { WipeState } from '../contracts/states';
+import { generateSecureRandom } from '../crypto/random';
 
 /** First writable user page index in NFC Forum Type 2 Tag memory layout. */
 export const START_USER_PAGE = 4;
@@ -119,22 +120,7 @@ export type WipeVerifyResult = WipeVerifySuccess | WipeVerifyFailure;
  * @returns Uint8Array populated with random values.
  */
 function generateRandomBytes(count: number): Uint8Array {
-  const bytes = new Uint8Array(count);
-  const g = globalThis as unknown as {
-    crypto?: {
-      getRandomValues?: (array: Uint8Array) => Uint8Array;
-    };
-  };
-
-  if (g.crypto && typeof g.crypto.getRandomValues === 'function') {
-    g.crypto.getRandomValues(bytes);
-  } else {
-    // Fallback for environments lacking crypto.getRandomValues
-    for (let i = 0; i < count; i++) {
-      bytes[i] = Math.floor(Math.random() * 256);
-    }
-  }
-  return bytes;
+  return generateSecureRandom(count);
 }
 
 /**

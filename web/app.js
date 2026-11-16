@@ -38,6 +38,16 @@
   const MAGIC_BYTES = new Uint8Array([0x47, 0x54, 0x41, 0x47]); // "GTAG"
   const FORMAT_VERSION = 0x02;
 
+  function generateSecureRandomHex(bytesCount = 8) {
+    const gCrypto = typeof window !== 'undefined' ? window.crypto : (typeof globalThis !== 'undefined' ? globalThis.crypto : null);
+    if (gCrypto && typeof gCrypto.getRandomValues === 'function') {
+      const bytes = new Uint8Array(bytesCount);
+      gCrypto.getRandomValues(bytes);
+      return Array.from(bytes).map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+    }
+    throw new Error('CSPRNG unavailable.');
+  }
+
   // Active in-memory state (Zero-secrets policy: wiped on lock or unload)
   const state = {
     account: null, // { accountId, createdAt }
@@ -765,7 +775,7 @@
     if (!getScanHistoryOptIn()) return;
     const logs = getScanHistoryLogs();
     logs.unshift({
-      id: 'sh_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      id: 'sh_' + Date.now() + '_' + generateSecureRandomHex(4),
       timestamp: new Date().toISOString(),
       maskedUid: maskedUid || '04:***:F6',
       action: action || 'scan',
@@ -1262,7 +1272,7 @@
 
       const raw = new TextEncoder().encode(content);
       state.entries.push({
-        id: 'e_' + Math.random().toString(36).substr(2, 8),
+        id: 'e_' + generateSecureRandomHex(6),
         type: 'Text',
         name: title || 'note.txt',
         data: raw,
@@ -1284,7 +1294,7 @@
       if (!file) return;
       const buf = new Uint8Array(await file.arrayBuffer());
       state.entries.push({
-        id: 'e_' + Math.random().toString(36).substr(2, 8),
+        id: 'e_' + generateSecureRandomHex(6),
         type: 'File',
         name: file.name,
         data: buf,
@@ -1303,7 +1313,7 @@
       if (!file) return;
       const buf = new Uint8Array(await file.arrayBuffer());
       state.entries.push({
-        id: 'e_' + Math.random().toString(36).substr(2, 8),
+        id: 'e_' + generateSecureRandomHex(6),
         type: 'Photo',
         name: file.name,
         data: buf,
@@ -1322,7 +1332,7 @@
       if (!file) return;
       const buf = new Uint8Array(await file.arrayBuffer());
       state.entries.push({
-        id: 'e_' + Math.random().toString(36).substr(2, 8),
+        id: 'e_' + generateSecureRandomHex(6),
         type: 'Video',
         name: file.name,
         data: buf,
@@ -1343,7 +1353,7 @@
 
       const raw = new TextEncoder().encode(url);
       state.entries.push({
-        id: 'e_' + Math.random().toString(36).substr(2, 8),
+        id: 'e_' + generateSecureRandomHex(6),
         type: 'URL',
         name: url,
         data: raw,

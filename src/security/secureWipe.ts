@@ -38,9 +38,12 @@ export function secureWipeBuffer(buffer?: Uint8Array | null): void {
     const randomBytes = QuickCrypto.randomBytes(length);
     buffer.set(randomBytes);
   } catch {
-    // Fallback pseudo-random pattern if crypto provider fails during emergency teardown
-    for (let i = 0; i < length; i++) {
-      buffer[i] = (Math.random() * 256) | 0;
+    const gCrypto = typeof globalThis !== 'undefined' ? (globalThis as any).crypto : null;
+    if (gCrypto && typeof gCrypto.getRandomValues === 'function') {
+      gCrypto.getRandomValues(buffer);
+    } else {
+      buffer.fill(0x33);
+      buffer.fill(0xcc);
     }
   }
 

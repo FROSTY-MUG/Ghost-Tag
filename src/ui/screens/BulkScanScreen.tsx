@@ -94,32 +94,9 @@ export const BulkScanScreen: React.FC<BulkScanScreenProps> = ({
           <Text style={styles.primaryButtonText}>Reassemble & Decrypt Files</Text>
         </TouchableOpacity>
       ) : (
-        <TouchableOpacity
-          style={styles.simulateButton}
-          onPress={() => {
-            // Pick a random uncollected index
-            const uncollected: number[] = [];
-            for (let i = 0; i < totalRequiredChunks; i++) {
-              if (!collectedIndices.includes(i)) uncollected.push(i);
-            }
-            if (uncollected.length > 0) {
-              const randIdx = uncollected[Math.floor(Math.random() * uncollected.length)];
-              const newCollected = [...collectedIndices, randIdx];
-              setCollectedIndices(newCollected);
-              setLogs((prev) => [
-                ...prev,
-                `[READ] Tag detected. Envelope valid (v2).`,
-                `[CRYPTO] Verified 74B AAD. Decrypted AES-256-GCM chunk #${randIdx}.`,
-                `[CACHE] Cached chunk #${randIdx} (72h TTL remaining).`,
-                newCollected.length >= totalRequiredChunks
-                  ? `[RESULT] All ${totalRequiredChunks} chunks collected! Reassembly ready.`
-                  : `[STATUS] ${newCollected.length}/${totalRequiredChunks} chunks collected (${totalRequiredChunks - newCollected.length} remaining).`,
-              ]);
-            }
-          }}
-        >
-          <Text style={styles.simulateButtonText}>Simulate Random Tag Scan</Text>
-        </TouchableOpacity>
+        <View style={styles.scanningBanner}>
+          <Text style={styles.scanningBannerText}>HOLD DEVICE NEAR PHYSICAL TAG TO SCAN</Text>
+        </View>
       )}
     </ScrollView>
   );
@@ -257,18 +234,19 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
   },
-  simulateButton: {
+  scanningBanner: {
     backgroundColor: '#1c1c24',
     borderColor: '#3a3a48',
     borderWidth: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
   },
-  simulateButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
+  scanningBannerText: {
+    color: '#8e8e93',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1,
   },
 });
 

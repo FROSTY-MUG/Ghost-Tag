@@ -10,8 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.0.5] - 2026-11-16
 
 ### Added
-- **Hardened Zero-Knowledge Vault Recovery**: Supabase Edge Function `recover-vault` implementing constant-time verifier verification and layered rate-limiting.
-- **Layered Rate Limiting**: Enforced limits across account (5/15m), user (20/15m), hashed IP (100/15m), and global (500/15m) thresholds.
+- **Hardened Zero-Knowledge Vault Recovery**: Supabase Edge Function `recover-vault` implementing constant-time verifier verification and atomic transactional PostgreSQL rate-limiting.
+- **Layered & DoS-Resistant Rate Limiting**: Enforced limits across account (25 failed/15m), user (20 failed/15m), and hashed IP (100 failed/15m) thresholds; counts only failed attempts (`success = false`) to prevent malicious lockout of legitimate users.
+- **Strict RPC Permission Lockdown**: Revoked `check_and_record_recovery_attempt` execution from `anon`, `authenticated`, and `public`; granted strictly to `service_role` with search path `pg_catalog, public`.
+- **Uniform Opaque Error Responses**: Uniformly returns status-coded `{ "error": "RECOVERY_FAILED" }` across all failure paths (unauthorized, invalid input, rate limited, verifier mismatch).
+- **Strict CORS Origin Enforcement**: Rejects non-whitelisted cross-origin calls with HTTP 403 `RECOVERY_FAILED`.
 - **Explicit RLS Denials**: Dedicated denial policies on `ghost_recovery_attempts` preventing unauthorized client manipulation; service-role only execution.
 - **Passphrase Manager & Vault Crypto Bridge**: `src/vault/passphraseManager.ts` and `src/vault/crypto.ts` for strict memory zeroization and local rate limiting.
 - **Real USB NFC Reader Hardware Support**: Ghost Bridge desktop daemon (`127.0.0.1:41789`) bridging ACS ACR122U readers to web browsers.

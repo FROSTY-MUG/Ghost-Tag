@@ -18,7 +18,7 @@
 [![Platform: Android](https://img.shields.io/badge/Platform-Android%20(API%2026%2B)-black.svg)](https://developer.android.com)
 [![Web Client: Live](https://img.shields.io/badge/Web%20Client-GitHub%20Pages-blue.svg)](https://frosty-mug.github.io/Ghost-Tag/)
 [![Crypto: AES--256--GCM](https://img.shields.io/badge/Crypto-AES--256--GCM%20%2B%20PBKDF2-blueviolet.svg)](./docs/security.md)
-[![Tests: 140 Passing](https://img.shields.io/badge/Tests-140%20Passing%20(100%25)-brightgreen.svg)](./docs/testing.md)
+[![Tests: 169 Passing](https://img.shields.io/badge/Tests-169%20Passing%20(100%25)-brightgreen.svg)](./docs/testing.md)
 [![TypeScript: Strict](https://img.shields.io/badge/TypeScript-0%20Errors-blue.svg)](./tsconfig.json)
 [![Release: v2.0.5](https://img.shields.io/badge/Release-v2.0.5-crimson.svg)](https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.5)
 
@@ -241,7 +241,7 @@ flowchart LR
     end
 
     subgraph WebDesktop["Web Client (Desktop Browsers)"]
-        SimMode["Simulated Hardware Transceiver<br/>Full Cryptographic Suite<br/>Vault Management"]
+        GhostBridge["Ghost Bridge Daemon<br/>(127.0.0.1:41789, ACR122U USB)"]
     end
 
     subgraph AppleiOS["Apple iOS (Safari / Web)"]
@@ -256,12 +256,12 @@ flowchart LR
 
 | Feature / Capability | Android APK (v2.0.5) | Web Client (Chrome Android) | Web Client (iOS Web) | Web Client (Desktop) |
 | :--- | :---: | :---: | :---: | :---: |
-| **NDEF Record Reading** | Yes (Native) | Yes (Web NFC) | No (OS Limitation) | Simulated |
-| **NDEF Record Writing** | Yes (Native) | Yes (Web NFC) | No (OS Limitation) | Simulated |
+| **NDEF Record Reading** | Yes (Native) | Yes (Web NFC) | No (OS Limitation) | Yes (via Ghost Bridge) |
+| **NDEF Record Writing** | Yes (Native) | Yes (Web NFC) | No (OS Limitation) | Yes (via Ghost Bridge) |
 | **AES-256-GCM Encryption** | Yes (256-bit) | Yes (WebCrypto) | Yes (WebCrypto) | Yes (WebCrypto) |
 | **BIP-39 12-Word Recovery** | Yes | Yes | Yes | Yes |
-| **Single-Tag Vault** | Yes | Yes | Read-only with native app | Simulated |
-| **Bulk Multi-Tag Vault** | Yes | Yes | Read-only with native app | Simulated |
+| **Single-Tag Vault** | Yes | Yes | Read-only with native app | Yes (via Ghost Bridge) |
+| **Bulk Multi-Tag Vault** | Yes | Yes | Read-only with native app | Yes (via Ghost Bridge) |
 | **In-Memory Volatile Session** | Enforced (Zero Disk Cache) | Enforced (Zero Disk Cache) | Enforced (Zero Disk Cache) | Enforced (Zero Disk Cache) |
 | **Stop & Pause Controls** | Yes | Yes | Yes | Yes |
 | **Network Connectivity** | Offline-First (Optional Opt-In Sync) | Offline-First (Optional Opt-In Sync) | Offline-First (Optional Opt-In Sync) | Offline-First (Optional Opt-In Sync) |
@@ -282,10 +282,12 @@ Ghost-Tag automatically detects tag geometry and computes usable Ghost storage:
 
 ## 9. Verification & Quality Gates
 
-Ghost-Tag maintains 100% test passing rates across all cryptographic and hardware simulation suites:
+Ghost-Tag maintains 100% test passing rates across all cryptographic and hardware integration suites:
+
+> Ghost-Tag includes optional runtime environment checks, but these do not prevent reverse engineering or protect data on a compromised or unlocked device.
 
 ```bash
-# Run unit & integration tests (140 passing)
+# Run unit & integration tests (169 passing)
 npm test
 
 # Static type verification (0 errors)

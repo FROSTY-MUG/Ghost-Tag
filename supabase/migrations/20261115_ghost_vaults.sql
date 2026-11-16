@@ -176,38 +176,6 @@ begin
 end;
 $$;
 
--- Overload supporting char parameter type
-create or replace function public.check_and_record_recovery_attempt(
-  p_account_id uuid,
-  p_user_id uuid,
-  p_ip_hash char,
-  p_max_account int default 25,
-  p_max_user int default 20,
-  p_max_ip int default 100
-)
-returns table (
-  allowed boolean,
-  attempt_id uuid,
-  account_failures bigint,
-  user_failures bigint,
-  ip_failures bigint
-)
-language plpgsql
-security definer
-set search_path = pg_catalog, public
-as $$
-begin
-  return query select * from public.check_and_record_recovery_attempt(
-    p_account_id,
-    p_user_id,
-    p_ip_hash::text,
-    p_max_account,
-    p_max_user,
-    p_max_ip
-  );
-end;
-$$;
-
 -- Mark successful recovery attempt
 create or replace function public.mark_recovery_attempt_success(
   p_attempt_id uuid
@@ -228,16 +196,10 @@ $$;
 revoke execute on function public.check_and_record_recovery_attempt(uuid, uuid, text, int, int, int, interval)
 from anon, authenticated, public;
 
-revoke execute on function public.check_and_record_recovery_attempt(uuid, uuid, char, int, int, int)
-from anon, authenticated, public;
-
 revoke execute on function public.mark_recovery_attempt_success(uuid)
 from anon, authenticated, public;
 
 grant execute on function public.check_and_record_recovery_attempt(uuid, uuid, text, int, int, int, interval)
-to service_role;
-
-grant execute on function public.check_and_record_recovery_attempt(uuid, uuid, char, int, int, int)
 to service_role;
 
 grant execute on function public.mark_recovery_attempt_success(uuid)

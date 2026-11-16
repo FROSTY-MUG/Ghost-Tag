@@ -18,3 +18,4 @@ Ghost-Tag is a hardware-anchored, offline-first encrypted NFC distributed file v
 * **TypeScript Compilation**: 0 errors (`npx tsc --noEmit` in strict mode).
 * **Automated Audits**: Quality Audit and Security Audit agents passing 100%.
 * **APK SHA-256 Checksum**: Attached to official GitHub Releases.
+* **Security Boundary**: Ghost-Tag includes optional runtime environment checks, but these do not prevent reverse engineering or protect data on a compromised or unlocked device.

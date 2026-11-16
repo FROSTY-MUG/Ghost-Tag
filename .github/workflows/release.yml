@@ -79,7 +79,13 @@ jobs:
       - name: Verify APK Cryptographic Signature
         run: |
           echo "Verifying production APK signature via apksigner..."
-          $ANDROID_HOME/build-tools/*/apksigner verify --verbose android/app/build/outputs/apk/release/app-release.apk
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          if [ -z "$APKSIGNER" ] || [ ! -x "$APKSIGNER" ]; then
+            echo "::error::apksigner tool not found in $ANDROID_HOME/build-tools"
+            exit 1
+          fi
+          echo "Using apksigner at: $APKSIGNER"
+          "$APKSIGNER" verify --verbose android/app/build/outputs/apk/release/app-release.apk
 
       - name: Package Release Assets & Generate Checksum
         run: |

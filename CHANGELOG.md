@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Decryption Flow**: Decryption requires no Ghost account, Supabase login, or recovery phrase; user taps Decrypt Now and scans chips.
-- **Security Boundaries**: Qualified client-side defense boundaries stating clearly that runtime environment checks do not prevent reverse engineering or protect data on a compromised or unlocked device.
+- **Security Boundaries**: Qualified client-side defense boundaries stating clearly that: "Ghost-Tag includes optional runtime environment checks, but these do not prevent reverse engineering or protect data on a compromised or unlocked device."
 
 ### Fixed
 - **Anti-Takeover Defense**: Remediated account takeover risk by decoupling public account identifiers from private recovery authentication secrets and verifiers.

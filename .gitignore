@@ -88,6 +88,9 @@ skills-lock.json
 .env.production
 .env.development
 !.env.example
+supabase/.temp/
+supabase/functions/**/.env
+supabase/functions/**/.env.*
 *.keystore
 *.jks
 *.p12
@@ -99,6 +102,9 @@ skills-lock.json
 *.crt
 *.der
 *.pkcs12
+android/app/release.keystore
+android/app/build/
+web/dist/
 
 # Internal setup checklists, private operational guides & sensitive audits
 docs/USER-SETUP-CHECKLIST.md

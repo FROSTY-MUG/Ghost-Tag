@@ -37,4 +37,4 @@ enabled = true
 policy = "per_worker"
 
 [functions.recover-vault]
-verify_jwt = false
+verify_jwt = true

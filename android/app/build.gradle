@@ -114,7 +114,7 @@ android {
                 storePassword MYAPP_UPLOAD_STORE_PASSWORD
                 keyAlias MYAPP_UPLOAD_KEY_ALIAS
                 keyPassword MYAPP_UPLOAD_KEY_PASSWORD
-            } else if (System.getenv("ANDROID_KEYSTORE_PASSWORD") != null || System.getenv("KEYSTORE_PASSWORD") != null) {
+            } else if (file('release.keystore').exists()) {
                 storeFile file('release.keystore')
                 storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: System.getenv("KEYSTORE_PASSWORD")
                 keyAlias System.getenv("ANDROID_KEY_ALIAS") ?: System.getenv("KEY_ALIAS")

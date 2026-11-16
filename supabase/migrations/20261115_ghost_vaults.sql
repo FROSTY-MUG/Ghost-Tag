@@ -103,7 +103,7 @@ create or replace function check_and_record_recovery_attempt(
   p_account_id uuid,
   p_user_id uuid,
   p_ip_hash text,
-  p_max_account int default 5,
+  p_max_account int default 25,
   p_max_user int default 20,
   p_max_ip int default 100,
   p_window_interval interval default interval '15 minutes'
@@ -116,6 +116,7 @@ returns table (
 )
 language plpgsql
 security definer
+set search_path = pg_catalog, public
 as $$
 declare
   v_window_start timestamptz := now() - p_window_interval;
@@ -127,33 +128,35 @@ begin
   -- Serializes concurrent requests targeting the same account until transaction completes
   perform pg_advisory_xact_lock(hashtext(p_account_id::text));
 
-  -- 2. Count existing failed attempts in the sliding window
+  -- 2. Count ONLY failed attempts in the sliding window
   select count(*) into v_account_cnt
-  from ghost_recovery_attempts
+  from public.ghost_recovery_attempts
   where account_id = p_account_id and success = false and attempted_at >= v_window_start;
 
   if p_user_id is not null then
     select count(*) into v_user_cnt
-    from ghost_recovery_attempts
+    from public.ghost_recovery_attempts
     where user_id = p_user_id and success = false and attempted_at >= v_window_start;
   else
     v_user_cnt := 0;
   end if;
 
   select count(*) into v_ip_cnt
-  from ghost_recovery_attempts
+  from public.ghost_recovery_attempts
   where ip_hash = p_ip_hash and success = false and attempted_at >= v_window_start;
 
   -- 3. Evaluate limits atomically
   if v_account_cnt >= p_max_account or (p_user_id is not null and v_user_cnt >= p_max_user) or v_ip_cnt >= p_max_ip then
-    -- Limit breached: atomically record blocked attempt and disallow
-    insert into ghost_recovery_attempts (account_id, user_id, ip_hash, success, attempted_at)
-    values (p_account_id, p_user_id, p_ip_hash, false, now());
-
     return query select false, v_account_cnt, v_user_cnt, v_ip_cnt;
   else
-    -- Caller is within limits
     return query select true, v_account_cnt, v_user_cnt, v_ip_cnt;
   end if;
 end;
 $$;
+
+-- Lock down execution privileges: callable ONLY by service_role
+revoke execute on function public.check_and_record_recovery_attempt(uuid, uuid, text, int, int, int, interval)
+from anon, authenticated, public;
+
+grant execute on function public.check_and_record_recovery_attempt(uuid, uuid, text, int, int, int, interval)
+to service_role;

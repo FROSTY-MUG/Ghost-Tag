@@ -335,7 +335,7 @@ export async function recoverVaultWithVerifier(
   }
 
   if (rateRecord && rateRecord.failedAttempts >= MAX_FAILED_RECOVERY_ATTEMPTS) {
-    throw new Error('RECOVERY_FAILED: Rate limit exceeded. Too many attempts.');
+    throw new Error('RECOVERY_FAILED');
   }
 
   // Atomically register this attempt immediately before async execution

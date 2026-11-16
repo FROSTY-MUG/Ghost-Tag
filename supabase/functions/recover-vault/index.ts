@@ -6,7 +6,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.8";
 import { timingSafeEqual } from "node:crypto";
 
 // Layered Rate Limiting Constants (15-minute sliding window)
-const MAX_FAILED_PER_ACCOUNT = 5;
+// High per-account threshold prevents denial-of-service lockouts against legitimate owners
+const MAX_FAILED_PER_ACCOUNT = 25;
 const MAX_FAILED_PER_USER = 20;
 const MAX_FAILED_PER_IP = 100;
 const GLOBAL_ALERT_THRESHOLD = 500; // Alert-only monitoring threshold (non-blocking)
@@ -24,8 +25,7 @@ const ALLOWED_ORIGINS = new Set([
   "http://127.0.0.1:3000",
 ]);
 
-function getCorsHeaders(req: Request): Record<string, string> {
-  const origin = req.headers.get("Origin");
+function getCorsHeaders(origin: string | null): Record<string, string> {
   const headers: Record<string, string> = {
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -60,7 +60,6 @@ function getClientIp(req: Request): string {
 
   const forwarded = req.headers.get("x-forwarded-for");
   if (forwarded) {
-    // In a multi-proxy setup, take the client IP (first or trusted edge hop)
     const ips = forwarded.split(",").map((s) => s.trim()).filter(Boolean);
     if (ips.length > 0) return ips[0];
   }
@@ -77,7 +76,17 @@ async function hashIp(clientIp: string, salt: string): Promise<string> {
 }
 
 serve(async (req: Request) => {
-  const corsHeaders = getCorsHeaders(req);
+  const origin = req.headers.get("Origin");
+
+  // Reject unauthorized origins with HTTP 403
+  if (origin && !ALLOWED_ORIGINS.has(origin)) {
+    return new Response(JSON.stringify({ error: "RECOVERY_FAILED" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const corsHeaders = getCorsHeaders(origin);
 
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -148,7 +157,6 @@ serve(async (req: Request) => {
 
     const { account_id, recovery_verifier } = body;
 
-    // Strictly validate: account_id must be an RFC 4122 UUID, recovery_verifier must be 64 hex characters (32 bytes)
     const isValidAccountId = typeof account_id === "string" && RFC4122_UUID_REGEX.test(account_id);
     const isValidVerifier = typeof recovery_verifier === "string" && HEX64_REGEX.test(recovery_verifier);
 
@@ -162,7 +170,7 @@ serve(async (req: Request) => {
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
 
     // 4. Atomic PostgreSQL Transactional Rate-Limit Check
-    // Serializes concurrent requests per account_id to eliminate race condition bypasses
+    // Evaluates failed attempts only (success = false). Does not count successful recoveries.
     const { data: rateCheckRows, error: rateRpcError } = await adminClient.rpc(
       "check_and_record_recovery_attempt",
       {
@@ -195,7 +203,6 @@ serve(async (req: Request) => {
       .gte("attempted_at", windowStart);
 
     if (globalFailures !== null && globalFailures >= GLOBAL_ALERT_THRESHOLD) {
-      // Log security anomaly warning for administrative monitoring without blocking user requests
       console.warn(`[GHOST_MONITOR_ALERT] Global recovery failures exceeded threshold: ${globalFailures}`);
     }
 
@@ -228,7 +235,9 @@ serve(async (req: Request) => {
 
     // 7. Maintained Constant-Time Comparison via node:crypto
     const storedVerifierBytes = typeof vault.recovery_verifier === "string"
-      ? hexToBytes(vault.recovery_verifier)
+      ? (vault.recovery_verifier.startsWith("\\x")
+          ? hexToBytes(vault.recovery_verifier.slice(2))
+          : hexToBytes(vault.recovery_verifier))
       : new Uint8Array(vault.recovery_verifier);
 
     let isMatch = false;
@@ -256,6 +265,7 @@ serve(async (req: Request) => {
     }
 
     // 8. Verification Succeeded: Reassign owner_user_id and log success
+    // Do not delete attempt history; mark the successful attempt with success = true
     await adminClient
       .from("ghost_vaults")
       .update({
@@ -271,12 +281,24 @@ serve(async (req: Request) => {
       success: true,
     });
 
-    // 9. Return encrypted_vault_blob only after successful verification
+    // 9. Explicitly encode bytea encrypted_vault_blob to base64
+    let encryptedBlobBase64 = "";
+    if (typeof vault.encrypted_vault_blob === "string") {
+      if (vault.encrypted_vault_blob.startsWith("\\x")) {
+        const hex = vault.encrypted_vault_blob.slice(2);
+        encryptedBlobBase64 = Buffer.from(hexToBytes(hex)).toString("base64");
+      } else {
+        encryptedBlobBase64 = vault.encrypted_vault_blob;
+      }
+    } else if (vault.encrypted_vault_blob instanceof Uint8Array || Buffer.isBuffer(vault.encrypted_vault_blob)) {
+      encryptedBlobBase64 = Buffer.from(vault.encrypted_vault_blob).toString("base64");
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
         account_id: vault.account_id,
-        encrypted_vault_blob: vault.encrypted_vault_blob,
+        encrypted_vault_blob: encryptedBlobBase64,
         vault_version: vault.vault_version,
       }),
       { status: 200, headers: responseHeaders }

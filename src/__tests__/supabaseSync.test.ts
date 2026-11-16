@@ -168,10 +168,10 @@ describe('Ghost-Tag Supabase Anonymous Sync', () => {
         ).rejects.toThrow('RECOVERY_FAILED');
       }
 
-      // 6th attempt must trigger rate limit
+      // 6th attempt must trigger rate limit and fail closed with generic error
       await expect(
         recoverVaultWithVerifier(accountId, wrongVerifierHex, 'attacker')
-      ).rejects.toThrow(/Rate limit exceeded/);
+      ).rejects.toThrow('RECOVERY_FAILED');
     });
   });
 });

@@ -5,6 +5,44 @@ All notable changes to the Ghost-Tag project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.0.6] - 2026-11-20
+
+### Added
+- **AST and Build Integrity Test Suite**: Dedicated automated test (`src/__tests__/webSyntaxAndBuild.test.ts`) validating `web/app.js` syntax, module parsing, and Vite production bundle generation in CI.
+- **Atomic Dependency Patching**: Secure atomic temporary file staging and descriptor replacement in `scripts/patch_dependencies.js` preventing TOCTOU file system race conditions.
+- **Strict Execution-Time Keystore Enforcement**: Gradle task graph interceptor in `android/app/build.gradle` ensuring `:app:assembleRelease` and `:app:bundleRelease` fail immediately without production keystore credentials while preventing debug keystore leakage into release channels.
+
+### Changed
+- **CI / CD Signing Flow**: Android CI workflow (`.github/workflows/android-build.yml`) decoupled into distinct release (when secrets exist) and debug smoke test (when secrets absent) paths.
+- **Dynamic APK Signer Verification**: Release workflow (`.github/workflows/release.yml`) dynamically discovers Android SDK `apksigner` to verify release APK signatures and rejects Android debug keys.
+- **CodeQL Matrix**: Streamlined CodeQL configuration in `.github/workflows/codeql.yml` targeting `javascript-typescript`.
+
+### Fixed
+- **Web Client Syntax Error (CodeQL Alert #6)**: Removed orphaned `catch` block in `web/app.js:1168` restoring clean JavaScript AST parsing and zero-error web runtime execution.
+- **Input Validation & Trivial Conditional (CodeQL Warning #5)**: Replaced redundant condition in `src/operations/writeOperation.ts:73` with explicit type narrowing (`typeof === 'string'` and `Uint8Array`), rejecting empty payloads.
+- **DOM Cross-Site Scripting (CodeQL Alert #60)**: Refactored `renderScanHistory` in `web/app.js:818` to use safe DOM node construction (`document.createElement`, `textContent`) instead of untrusted HTML string concatenation.
+- **Incomplete Regex Meta-Character Sanitization (CodeQL Alert #61)**: Updated `tests/scan-unused.cjs:141` with complete regular expression special character escaping `/[.*+?^${}()|[\]\\]/g`.
+- **Unused Variable in Web Client (CodeQL Alert #62)**: Cleaned unused map key loop binding in `web/app.js:506`.
+- **Polynomial Regular Expression ReDoS (CodeQL Alert #1)**: Replaced unanchored regex on account IDs in `src/cloud/supabaseClient.ts:63` with strict RFC 4122 UUID validation.
+- **Insecure Randomness (CodeQL Alerts #2 & #3)**: Replaced `Math.random()` with WebCrypto CSPRNG `crypto.getRandomValues()` in `web/supabase.js:234` and `web/supabase.js:266`.
+
+### Security
+- **Zero Open CodeQL Alerts**: Remediated all open CodeQL alerts (#1, #2, #3, #4, #5, #6, #60, #61, #62, and informational alerts #7–#57) across the entire codebase.
+- **Zero Open Dependabot Alerts**: Resolved high-severity DoS in `minimatch` (`GHSA-7r86-5chv-c4rg`) via scoped npm override to `minimatch@^11.0.9`, and formally evaluated and dismissed withdrawn advisory in `deepmerge` as tolerable risk.
+- **Zero Secret Exposure**: Verified complete absence of hardcoded keys, credentials, or private certificates across tracked source and history.
+
+### Dependencies
+- Upgraded `minimatch` in `@typescript-eslint/typescript-estree` to `^11.0.9`.
+- Verified `npm audit` reports 0 vulnerabilities.
+
+### Removed
+- Removed dead imports, unreferenced bindings, and obsolete constants across `src/`, `web/`, and `desktop/`.
+- Removed debug keystore fallback logic for production builds.
+
+### Known limitations
+- Deployment blocked without production credentials: live Supabase deployment requires `SUPABASE_ACCESS_TOKEN` and linked project ref.
+- Physical NFC validation requires supported Android device and physical NTAG213/215/216 tags or ACS ACR122U USB reader for Ghost Bridge.
+
 ---
 
 ## [2.0.5] - 2026-11-16

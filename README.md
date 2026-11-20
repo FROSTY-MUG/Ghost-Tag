@@ -18,15 +18,15 @@
 [![Platform: Android](https://img.shields.io/badge/Platform-Android%20(API%2026%2B)-black.svg)](https://developer.android.com)
 [![Web Client: Live](https://img.shields.io/badge/Web%20Client-GitHub%20Pages-blue.svg)](https://frosty-mug.github.io/Ghost-Tag/)
 [![Crypto: AES--256--GCM](https://img.shields.io/badge/Crypto-AES--256--GCM%20%2B%20PBKDF2-blueviolet.svg)](./docs/security.md)
-[![Tests: 169 Passing](https://img.shields.io/badge/Tests-169%20Passing%20(100%25)-brightgreen.svg)](./docs/testing.md)
+[![Tests: 184 Passing](https://img.shields.io/badge/Tests-184%20Passing%20(100%25)-brightgreen.svg)](./docs/testing.md)
 [![TypeScript: Strict](https://img.shields.io/badge/TypeScript-0%20Errors-blue.svg)](./tsconfig.json)
-[![Release: v2.0.5](https://img.shields.io/badge/Release-v2.0.5-crimson.svg)](https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.5)
+[![Release: v2.0.6](https://img.shields.io/badge/Release-v2.0.6-crimson.svg)](https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.6)
 
 ---
 
 ### Quick Links
 - **[Launch Web Client](https://frosty-mug.github.io/Ghost-Tag/)** — Minimal client-side encrypted NFC app on GitHub Pages.
-- **[Download Android APK (v2.0.5)](https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.5)** — Primary native client (`Ghost-Tag-v2.0.5.apk`, SHA-256 verified).
+- **[Download Android APK (v2.0.6)](https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.6)** — Primary native client (`Ghost-Tag-v2.0.6.apk`, SHA-256 verified).
 - **[NDEF Envelope Specification](./docs/nfc-format.md)** — Canonical binary envelope layout.
 - **[Security Architecture](./docs/security.md)** — Zero-secrets policy and cryptographic threat boundaries.
 
@@ -254,7 +254,7 @@ flowchart LR
 
 ### Detailed Capability Matrix:
 
-| Feature / Capability | Android APK (v2.0.5) | Web Client (Chrome Android) | Web Client (iOS Web) | Web Client (Desktop) |
+| Feature / Capability | Android APK (v2.0.6) | Web Client (Chrome Android) | Web Client (iOS Web) | Web Client (Desktop) |
 | :--- | :---: | :---: | :---: | :---: |
 | **NDEF Record Reading** | Yes (Native) | Yes (Web NFC) | No (OS Limitation) | Yes (via Ghost Bridge) |
 | **NDEF Record Writing** | Yes (Native) | Yes (Web NFC) | No (OS Limitation) | Yes (via Ghost Bridge) |

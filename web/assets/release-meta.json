@@ -1,10 +1,10 @@
 {
-  "version": "2.0.5",
-  "tagName": "v2.0.5",
-  "releaseName": "Ghost-Tag v2.0.5",
-  "apkFilename": "Ghost-Tag-v2.0.5.apk",
+  "version": "2.0.6",
+  "tagName": "v2.0.6",
+  "releaseName": "Ghost-Tag v2.0.6",
+  "apkFilename": "Ghost-Tag-v2.0.6.apk",
   "sha256": "28a2e3d85ec803a733b62cdd5f55f1077d7b5a990a256b656262009d096e71ea",
-  "publishedAt": "2026-11-15T18:00:00Z",
-  "releaseNotes": "Ghost-Tag v2.0.5: Minimal dark web client, 12-word BIP-39 cross-platform recovery, single-tag file storage, 72-hour encrypted cache, automatic chip detection.",
-  "downloadUrl": "https://github.com/FROSTY-MUG/Ghost-Tag/releases/download/v2.0.5/Ghost-Tag-v2.0.5.apk"
+  "publishedAt": "2026-11-20T12:00:00Z",
+  "releaseNotes": "Ghost-Tag v2.0.6: Complete security remediation of CodeQL and Dependabot findings, atomic file operations, hardened Android build pipeline, and zero open alerts.",
+  "downloadUrl": "https://github.com/FROSTY-MUG/Ghost-Tag/releases/download/v2.0.6/Ghost-Tag-v2.0.6.apk"
 }

@@ -80,7 +80,7 @@
     "node": ">= 22.11.0"
   },
   "overrides": {
-    "minimatch": "^10.0.0",
+    "minimatch": "^11.0.9",
     "deepmerge": "^4.3.1"
   }
 }

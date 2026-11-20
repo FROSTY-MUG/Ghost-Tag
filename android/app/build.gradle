@@ -103,10 +103,12 @@ android {
     }
     signingConfigs {
         debug {
-            storeFile file('debug.keystore')
-            storePassword System.getenv("DEBUG_KEYSTORE_PASSWORD") ?: 'android'
-            keyAlias 'androiddebugkey'
-            keyPassword System.getenv("DEBUG_KEY_PASSWORD") ?: 'android'
+            if (file('debug.keystore').exists()) {
+                storeFile file('debug.keystore')
+                storePassword System.getenv("DEBUG_KEYSTORE_PASSWORD") ?: 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword System.getenv("DEBUG_KEY_PASSWORD") ?: 'android'
+            }
         }
         release {
             // No fallback signing of any kind. A release artifact is signed only

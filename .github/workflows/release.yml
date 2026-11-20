@@ -79,7 +79,7 @@ jobs:
           MYAPP_UPLOAD_KEY_PASSWORD: ${{ env.ANDROID_KEY_PASSWORD }}
         run: |
           cd android
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew :app:assembleRelease --no-daemon
 
       - name: Verify APK Cryptographic Signature
         run: |

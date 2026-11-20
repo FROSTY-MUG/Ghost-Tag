@@ -79,7 +79,7 @@ jobs:
           MYAPP_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           cd android
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew :app:assembleRelease --no-daemon
 
       - name: Verify Release APK Signature
         if: steps.signing.outputs.mode == 'release'
@@ -95,7 +95,7 @@ jobs:
         if: steps.signing.outputs.mode == 'debug'
         run: |
           cd android
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew :app:assembleDebug --no-daemon
 
       - name: Write Signing Mode Marker
         run: |

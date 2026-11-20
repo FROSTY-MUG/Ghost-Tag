@@ -132,7 +132,9 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            signingConfig (file('release.keystore').exists() || project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) ? signingConfigs.release : null
+            if (file('release.keystore').exists() || project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }

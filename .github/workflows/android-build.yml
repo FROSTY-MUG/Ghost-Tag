@@ -117,7 +117,7 @@ jobs:
 
       - name: Upload Signed Release APK
         if: steps.signing.outputs.mode == 'release'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ghost-tag-android-RELEASE
           path: |
@@ -128,7 +128,7 @@ jobs:
 
       - name: Upload Debug APK (DEBUG BUILD)
         if: steps.signing.outputs.mode == 'debug'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ghost-tag-android-DEBUG-BUILD
           path: |

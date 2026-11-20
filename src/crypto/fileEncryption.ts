@@ -14,10 +14,8 @@
  *      file, and index coordinates.
  */
 
-import QuickCrypto from 'react-native-quick-crypto';
 import { encrypt, decrypt } from './aesGcm';
-import { generateNonce } from './random';
-import { computeChunkHash, computeFileCiphertextHash } from './bulkEnvelope';
+import { computeFileCiphertextHash } from './bulkEnvelope';
 import {
   GhostTagError,
   GhostTagErrorCode,

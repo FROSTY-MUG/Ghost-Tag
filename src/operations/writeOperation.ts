@@ -60,17 +60,28 @@ export class WriteOperation {
     this.notify(currentContext, onStateChange);
 
     let plaintextBytes: Uint8Array | null = null;
+    let plaintextIsEmpty = false;
     let dek: Uint8Array | null = null;
 
     try {
-      // 1. Convert plaintext input
+      // 1. Validate & convert plaintext input
       if (typeof options.plaintext === 'string') {
         plaintextBytes = new Uint8Array(Buffer.from(options.plaintext, 'utf-8'));
-      } else {
+      } else if (options.plaintext instanceof Uint8Array) {
         plaintextBytes = new Uint8Array(options.plaintext);
+      } else {
+        throw new GhostTagError({
+          code: GhostTagErrorCode.PAYLOAD_TOO_LARGE,
+          userMessage: 'Payload cannot be empty.',
+          category: ErrorCategory.OPERATION,
+          severity: ErrorSeverity.ERROR,
+        });
       }
 
-      if (!plaintextBytes || plaintextBytes.length === 0) {
+      // Typed rather than truthiness-narrowed: an empty Uint8Array is still an
+      // object, so an explicit length check is required to reject it.
+      plaintextIsEmpty = plaintextBytes.length === 0;
+      if (plaintextIsEmpty) {
         throw new GhostTagError({
           code: GhostTagErrorCode.PAYLOAD_TOO_LARGE,
           userMessage: 'Payload cannot be empty.',
@@ -266,8 +277,10 @@ export class WriteOperation {
         error: gError,
       };
     } finally {
-      // Discard and zeroize all volatile sensitive plaintext and DEK material
-      if (plaintextBytes) {
+      // Discard and zeroize all volatile sensitive plaintext and DEK material.
+      // The length check keeps the zeroize guard explicit (an empty, length-0
+      // buffer holds no secret material and is skipped intentionally).
+      if (plaintextBytes && plaintextIsEmpty === false) {
         zeroize(plaintextBytes);
       }
       if (dek) {

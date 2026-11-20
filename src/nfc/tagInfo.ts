@@ -12,7 +12,6 @@ import {
   SupportedTagFamily,
   UnsupportedTagFamily,
   TAG_CAPACITIES,
-  TagMemoryProfile,
   TagInfo as ContractTagInfo,
 } from '../contracts/tags';
 import {

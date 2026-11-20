@@ -14,7 +14,7 @@ import { GhostTagError } from '../contracts/errors';
 declare const require: any;
 let nodeCrypto: any = null;
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  // Dynamic allowlist load: "crypto" is a literal specifier, not user-controlled input.
   nodeCrypto = typeof require !== 'undefined' ? require('crypto') : null;
 } catch {
   // Ignored in environments where node crypto is not available

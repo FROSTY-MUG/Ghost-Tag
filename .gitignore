@@ -26,6 +26,7 @@ DerivedData
 #
 build/
 .idea
+.vscode/
 .gradle
 local.properties
 *.iml
@@ -66,6 +67,7 @@ yarn-error.log
 
 # testing
 /coverage
+test-results/
 
 # Yarn
 .yarn/*

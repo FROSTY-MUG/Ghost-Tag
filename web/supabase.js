@@ -485,10 +485,32 @@
     }
   }
 
+  /**
+   * Get current connection and sync status for UI presentation
+   */
+  function getStatus() {
+    const config = getConfig();
+    if (!config.isConfigured || config.disabled) {
+      return {
+        configured: false,
+        label: 'Offline (Local Only)',
+        status: 'offline',
+        lastSyncTime: config.lastSyncTime || null
+      };
+    }
+    return {
+      configured: true,
+      label: 'Connected (Encrypted Sync)',
+      status: 'connected',
+      lastSyncTime: config.lastSyncTime || null
+    };
+  }
+
   return {
     getConfig,
     saveConfig,
     disableConfig,
+    getStatus,
     getCloudConfig,
     deriveAccountId,
     deriveRecoveryAuthSecret,

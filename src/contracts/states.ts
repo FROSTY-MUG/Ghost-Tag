@@ -15,7 +15,7 @@
 
 import { GhostTagEnvelope } from './envelope';
 import { GhostTagErrorCode } from './errors';
-import { SupportedTagFamily, TagInfo } from './tags';
+import { TagInfo } from './tags';
 
 // ---------------------------------------------------------------------------
 // Scan State Machine

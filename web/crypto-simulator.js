@@ -12,7 +12,7 @@ const GF_POLY = 0x11d; // x^8 + x^4 + x^3 + x^2 + 1
 const GF_EXP = new Uint8Array(512);
 const GF_LOG = new Uint8Array(256);
 
-(function initGaloisField() {
+(function () {
   let x = 1;
   for (let i = 0; i < 255; i++) {
     GF_EXP[i] = x;
@@ -29,12 +29,6 @@ const GF_LOG = new Uint8Array(256);
 function gfMul(a, b) {
   if (a === 0 || b === 0) return 0;
   return GF_EXP[GF_LOG[a] + GF_LOG[b]];
-}
-
-function gfDiv(a, b) {
-  if (a === 0) return 0;
-  if (b === 0) throw new Error('Division by zero in GF(2^8)');
-  return GF_EXP[(GF_LOG[a] - GF_LOG[b] + 255) % 255];
 }
 
 function gfInv(a) {

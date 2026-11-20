@@ -13,7 +13,6 @@ import {
   timingSafeEqual,
   sanitizeError,
   SanitizedLogger,
-  checkDeviceIntegrity,
   assertDeviceIntegrity,
   setTestIntegrityOverride,
   DeviceIntegrityStatus,

@@ -22,11 +22,9 @@ import { ReconstructionEngine } from '../operations/reconstructionEngine';
 import { FileViewerAndExporter } from '../operations/fileViewerAndExporter';
 import { TagInfo, NfcTag } from '../nfc/tagInfo';
 import { TagWriter } from '../nfc/tagWriter';
-import { TagReader } from '../nfc/tagReader';
 import { GhostTagErrorCode } from '../contracts/errors';
 import { KeyStatus, WrappedDEK } from '../contracts/keyHierarchy';
 import { RecoveryEnvelope } from '../contracts/recovery';
-import { encodeBulkGhostTagNdefMessage } from '../nfc/bulkNdefBuilder';
 import { serializeBulkEnvelope, computeChunkHash } from '../crypto/bulkEnvelope';
 import NfcManager from 'react-native-nfc-manager';
 
@@ -93,6 +91,7 @@ describe('Bulk Scanning v2 Operations Engine', () => {
   const bulkVaultManager = new BulkVaultManager();
   const journalManager = new JournalManager();
   const chunkCache = new ChunkCacheManager();
+  expect(chunkCache).toBeDefined();
 
   test('Vault Creation and Multi-File Preparation with Dynamic Tag Calculation', () => {
     let manifest = bulkVaultManager.createBulkVault(

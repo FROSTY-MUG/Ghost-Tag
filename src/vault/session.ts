@@ -14,7 +14,7 @@ import {
   ErrorCategory,
   ErrorSeverity,
 } from '../contracts/errors';
-import { zeroize, secureWipeBuffer } from '../crypto/secureMemory';
+import { secureWipeBuffer } from '../crypto/secureMemory';
 import { generateSecureRandom } from '../crypto/random';
 import { bytesToHex } from '../crypto/keyWrap';
 import { assertDeviceIntegrity } from '../security/deviceIntegrity';

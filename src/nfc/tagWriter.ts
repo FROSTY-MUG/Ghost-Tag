@@ -24,15 +24,9 @@ import {
   createTagUnsupportedError,
   createTagReadOnlyError,
   createTagCapacityInsufficientError,
-  createTagWriteFailedError,
   createTagWriteUnverifiedError,
 } from './errors';
-import {
-  GhostTagError,
-  GhostTagErrorCode,
-  ErrorCategory,
-  ErrorSeverity,
-} from '../contracts/errors';
+import { GhostTagError } from '../contracts/errors';
 import {
   ENVELOPE_MIME_TYPE,
   ENVELOPE_OFFSET_KEY_ID,

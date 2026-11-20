@@ -16,7 +16,6 @@ import {
   mapNfcError,
   createNfcDisabledError,
   createNfcUnsupportedError,
-  createTagNotDetectedError,
 } from './errors';
 import { GhostTagError, GhostTagErrorCode, ErrorCategory, ErrorSeverity } from '../contracts/errors';
 export type { NfcTag } from './tagInfo';
@@ -159,7 +158,7 @@ export class GhostNfcManager {
         if (this.activeCallback) {
           try {
             await this.activeCallback(tag);
-          } catch (callbackErr) {
+          } catch (_callbackErr) {
             // Callback errors are handled within the callback; do not crash listener
           }
         }
@@ -200,7 +199,7 @@ export class GhostNfcManager {
     try {
       NfcManager.setEventListener(NfcEvents.DiscoverTag, null);
       await NfcManager.unregisterTagEvent();
-    } catch (error) {
+    } catch (_error) {
       // Ignore unregister errors during teardown
     } finally {
       this.listening = false;

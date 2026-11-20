@@ -21,7 +21,6 @@ import { TagWriter } from '../nfc/tagWriter';
 import { TagReader } from '../nfc/tagReader';
 import { TagInfo, NfcTag } from '../nfc/tagInfo';
 import {
-  buildBulkGhostTagNdefRecord,
   encodeBulkGhostTagNdefMessage,
   extractBulkGhostTagPayload,
 } from '../nfc/bulkNdefBuilder';

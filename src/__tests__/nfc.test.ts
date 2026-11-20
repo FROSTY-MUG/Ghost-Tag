@@ -13,16 +13,8 @@ import {
   PAGE_SIZE_BYTES,
   buildGhostTagNdefRecord,
   buildGhostTagNdefMessage,
-  encodeGhostTagNdefMessage,
   extractGhostTagPayload,
   mapNfcError,
-  createNfcDisabledError,
-  createNfcUnsupportedError,
-  createTagLostError,
-  createTagNotDetectedError,
-  createTagReadOnlyError,
-  createTagCapacityInsufficientError,
-  createTagWriteUnverifiedError,
   NfcTag,
 } from '../nfc';
 import {
@@ -34,12 +26,10 @@ import {
 import {
   SupportedTagFamily,
   UnsupportedTagFamily,
-  TAG_CAPACITIES,
 } from '../contracts/tags';
 import {
   ENVELOPE_MIME_TYPE,
   ENVELOPE_FIXED_OVERHEAD_BYTES,
-  ENVELOPE_MAGIC_BYTES,
 } from '../contracts/envelope';
 import { ScanState, WriteState, WipeState } from '../contracts/states';
 import NfcManager, { NfcError, Ndef } from 'react-native-nfc-manager';

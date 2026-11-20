@@ -7,4 +7,7 @@ module.exports = {
     '^@ghost-tag/(.*)$': '<rootDir>/src/$1',
     '^react-native-quick-crypto$': '<rootDir>/node_modules/react-native-quick-crypto/jest',
   },
+  // The Vite production build takes ~1s locally but can exceed the 5s default
+  // on cold, disk-cached CI runners.
+  testTimeout: 60000,
 };

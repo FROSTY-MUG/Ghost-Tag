@@ -7,12 +7,10 @@
  */
 
 import {
-  BULK_ENVELOPE_MAGIC,
   BULK_FORMAT_VERSION_V2,
   RECORD_TYPE_BULK_CHUNK,
   BULK_ENVELOPE_FIXED_OVERHEAD,
   BULK_AAD_LENGTH,
-  BULK_ENVELOPE_MIME_TYPE,
   BulkOffsets,
 } from '../contracts/bulkEnvelope';
 import {
@@ -20,7 +18,6 @@ import {
   parseBulkEnvelope,
   constructBulkAAD,
   computeChunkHash,
-  computeFileCiphertextHash,
   validateBulkEnvelope,
 } from '../crypto/bulkEnvelope';
 import {

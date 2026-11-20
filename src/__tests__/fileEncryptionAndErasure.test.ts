@@ -17,7 +17,6 @@ import {
 import {
   encodeErasureChunks,
   decodeErasureChunks,
-  buildGeneratorMatrix,
   invertMatrix,
   gfAdd,
   gfMul,

@@ -10,9 +10,6 @@ import QuickCrypto from 'react-native-quick-crypto';
 import { Buffer } from 'buffer';
 import {
   RECOVERY_KEY_WRAP_PURPOSE_BYTE,
-  RECOVERY_PHRASE_WORD_COUNT,
-  RECOVERY_PHRASE_12_WORD_COUNT,
-  RECOVERY_PHRASE_24_WORD_COUNT,
   RECOVERY_SECRET_BYTE_LENGTH,
   RECOVERY_12_WORD_SECRET_BYTE_LENGTH,
   RecoveryEnvelope,
@@ -36,7 +33,7 @@ import { generateSecureRandom } from '../crypto/random';
 import { deriveKEK } from '../crypto/argon2';
 import { encrypt, decrypt } from '../crypto/aesGcm';
 import { unwrapDEK, bytesToHex, hexToBytes } from '../crypto/keyWrap';
-import { zeroize, zeroizeAll } from '../crypto/secureMemory';
+import { zeroize } from '../crypto/secureMemory';
 import { timingSafeEqual } from '../security/antiLeak';
 import { getWord, getWordIndex, isValidWord } from './wordlist';
 import { VaultDatabase } from './database';

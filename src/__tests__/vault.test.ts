@@ -16,15 +16,12 @@ import {
   getWord,
   getWordIndex,
   isValidWord,
-  DEFAULT_AUTO_LOCK_TIMEOUT_MS,
 } from '../vault';
 import {
   KeyStatus,
   AuditEventType,
   GhostTagError,
-  GhostTagErrorCode,
 } from '../contracts';
-import { generateSecureRandom, generateDEK } from '../crypto/random';
 import { zeroize } from '../crypto/secureMemory';
 
 describe('Phase 3 Vault Subsystem', () => {
@@ -249,7 +246,8 @@ describe('Phase 3 Vault Subsystem', () => {
 
       // Test corrupt checksum
       const badWords = [...words];
-      badWords[0] = badWords[0] === 'abandon' ? 'ability' : 'abandon';
+      const lastWordIdx = getWordIndex(badWords[11]);
+      badWords[11] = getWord(lastWordIdx ^ 1);
       expect(await recoveryManager.verifyRecoveryPhrase(badWords.join(' '))).toBe(false);
     });
   });

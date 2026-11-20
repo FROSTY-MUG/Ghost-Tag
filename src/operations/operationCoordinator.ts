@@ -20,7 +20,6 @@ import { VerifyOperation, VerifyOperationResult } from './verifyOperation';
 import { RepairOperation, RepairOperationResult } from './repairOperation';
 import { DiagnosticsExporter, DiagnosticsReport } from './diagnosticsExporter';
 
-import { GhostTagErrorCode, GhostTagError, ErrorCategory, ErrorSeverity } from '../contracts/errors';
 
 export type GeneralStatusListener = (statusLine: string, level?: 'info' | 'warn' | 'error' | 'success') => void;
 

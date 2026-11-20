@@ -7,7 +7,6 @@ import { ScanOperation } from '../operations/scanOperation';
 import { WriteOperation } from '../operations/writeOperation';
 import { WipeOperation } from '../operations/wipeOperation';
 import { VerifyOperation } from '../operations/verifyOperation';
-import { RepairOperation } from '../operations/repairOperation';
 import { DiagnosticsExporter } from '../operations/diagnosticsExporter';
 import { OperationCoordinator } from '../operations/operationCoordinator';
 
@@ -16,7 +15,7 @@ import { TagReader } from '../nfc/tagReader';
 import { TagWriter } from '../nfc/tagWriter';
 import { TagWiper } from '../nfc/tagWiper';
 import { TagInfo } from '../nfc/tagInfo';
-import { GhostNfcManager, NfcTag } from '../nfc/nfcManager';
+import { GhostNfcManager } from '../nfc/nfcManager';
 
 import { ScanState, WriteState, WipeState } from '../contracts/states';
 import { EnvelopePurpose, ENVELOPE_FORMAT_VERSION_V1, ENVELOPE_MAGIC } from '../contracts/envelope';
@@ -25,8 +24,8 @@ import { SupportedTagFamily } from '../contracts/tags';
 
 import { encrypt } from '../crypto/aesGcm';
 import { constructAAD, serializeEnvelope } from '../crypto/envelope';
-import { generateKeyId, generateNonce, generateDEK } from '../crypto/random';
-import { bytesToHex, hexToBytes } from '../crypto/keyWrap';
+import { generateKeyId, generateNonce } from '../crypto/random';
+import { hexToBytes } from '../crypto/keyWrap';
 
 // Mock dependencies
 jest.mock('react-native-mmkv');
@@ -233,6 +232,50 @@ describe('Ghost-Tag Tag Operations Engine Suite', () => {
       expect(result.success).toBe(false);
       expect(result.error?.code).toBe(GhostTagErrorCode.PAYLOAD_TOO_LARGE);
       expect(mockWriter.writeAndVerify).not.toHaveBeenCalled();
+    });
+
+    it('rejects empty plaintext string and empty Uint8Array', async () => {
+      await vaultManager.openVault(testPassphrase);
+      const writeOp = new WriteOperation(vaultManager, mockWriter, tagInfo);
+
+      // Test empty string
+      const emptyStrResult = await writeOp.execute(sampleTag, { plaintext: '' });
+      expect(emptyStrResult.success).toBe(false);
+      expect(emptyStrResult.error?.code).toBe(GhostTagErrorCode.PAYLOAD_TOO_LARGE);
+      expect(emptyStrResult.error?.userMessage).toBe('Payload cannot be empty.');
+
+      // Test empty byte array
+      const emptyBytesResult = await writeOp.execute(sampleTag, { plaintext: new Uint8Array(0) });
+      expect(emptyBytesResult.success).toBe(false);
+      expect(emptyBytesResult.error?.code).toBe(GhostTagErrorCode.PAYLOAD_TOO_LARGE);
+      expect(emptyBytesResult.error?.userMessage).toBe('Payload cannot be empty.');
+
+      // Test non-string, non-Uint8Array input (rejected as an invalid envelope)
+      const nullResult = await writeOp.execute(sampleTag, { plaintext: null as any });
+      expect(nullResult.success).toBe(false);
+      expect(nullResult.error?.code).toBe(GhostTagErrorCode.INVALID_ENVELOPE);
+      expect(nullResult.error?.userMessage).toBe('Payload must be a string or a Uint8Array.');
+
+      // None of the rejected inputs may reach the physical writer
+      expect(mockWriter.writeAndVerify).not.toHaveBeenCalled();
+    });
+
+    it('accepts a non-empty Uint8Array payload exactly once into the write pipeline', async () => {
+      await vaultManager.openVault(testPassphrase);
+
+      mockWriter.writeAndVerify.mockResolvedValueOnce({
+        success: true,
+        state: WriteState.WRITE_VERIFIED,
+      } as any);
+
+      const writeOp = new WriteOperation(vaultManager, mockWriter, tagInfo);
+      const result = await writeOp.execute(sampleTag, {
+        plaintext: new Uint8Array([0x67, 0x68, 0x6f, 0x73, 0x74]),
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.context.state).toBe(WriteState.WRITE_VERIFIED);
+      expect(mockWriter.writeAndVerify).toHaveBeenCalledTimes(1);
     });
 
     it('handles WRITE_UNVERIFIED terminal state when read-back fails', async () => {

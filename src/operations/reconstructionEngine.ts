@@ -6,7 +6,7 @@
  * full-file SHA-256 ciphertext hash verification, and AES-256-GCM decryption.
  */
 
-import { BulkFileRecord, BulkVaultManifest, CachedChunk } from '../contracts/bulkVault';
+import { BulkFileRecord, BulkVaultManifest } from '../contracts/bulkVault';
 import { ChunkCacheManager } from '../vault/chunkCache';
 import { decodeErasureChunks, AvailableChunk } from '../crypto/erasureCoding';
 import { joinChunks, decryptFile } from '../crypto/fileEncryption';

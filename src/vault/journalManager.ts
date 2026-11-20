@@ -9,7 +9,6 @@
 import {
   WriteJournal,
   ScanJournal,
-  WriteSessionStatus,
   CHUNK_CACHE_TTL_MS,
 } from '../contracts/bulkVault';
 import {

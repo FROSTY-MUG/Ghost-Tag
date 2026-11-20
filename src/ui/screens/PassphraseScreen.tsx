@@ -30,7 +30,6 @@ const SAMPLE_RECOVERY_WORDS = [
 ];
 
 export const PassphraseScreen: React.FC<PassphraseScreenProps> = () => {
-  const [currentPass, setCurrentPass] = useState<string>('correct-horse-battery-staple');
   const [newPass, setNewPass] = useState<string>('');
   const [confirmPass, setConfirmPass] = useState<string>('');
   const [sessionActive, setSessionActive] = useState<boolean>(true);
@@ -47,7 +46,6 @@ export const PassphraseScreen: React.FC<PassphraseScreenProps> = () => {
       return;
     }
 
-    setCurrentPass(newPass);
     setNewPass('');
     setConfirmPass('');
     setStatusMsg('Success: Master Passphrase updated. Volatile KEK re-derived with fresh salt.');

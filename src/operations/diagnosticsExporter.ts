@@ -15,7 +15,7 @@
  */
 
 import { VaultManager } from '../vault/vaultManager';
-import { TagInfo, TagIdentification } from '../nfc/tagInfo';
+import { TagInfo } from '../nfc/tagInfo';
 import { GhostNfcManager, NfcTag } from '../nfc/nfcManager';
 import { AuditEntry } from '../contracts/vault';
 

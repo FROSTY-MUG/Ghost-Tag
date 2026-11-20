@@ -19,7 +19,7 @@ import { zeroize } from '../crypto/secureMemory';
 // Safe lazy loader for react-native-mmkv
 let getCreateMMKV: (() => ((config: any) => MMKV) | null) = () => {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // Dynamic allowlist load: fixed "react-native-mmkv" specifier, not user-controlled input.
     const mmkv = require('react-native-mmkv');
     return mmkv.createMMKV ?? null;
   } catch {

@@ -16,8 +16,8 @@ import { constructAAD } from '../crypto/envelope';
 import { bytesToHex } from '../crypto/keyWrap';
 import { zeroize } from '../crypto/secureMemory';
 import { Buffer } from 'buffer';
-import { TagReader, GhostTagRecord } from '../nfc/tagReader';
-import { TagInfo, TagIdentification } from '../nfc/tagInfo';
+import { TagReader } from '../nfc/tagReader';
+import { TagInfo } from '../nfc/tagInfo';
 import { VaultManager } from '../vault/vaultManager';
 import { NfcTag } from '../nfc/nfcManager';
 

@@ -137,9 +137,8 @@ function parseNdefRecords(buffer) {
 
   while (offset < buffer.length) {
     const header = buffer[offset++];
-    const mb = (header & 0x80) !== 0; // Message Begin
+    // Bit 7: Message Begin (MB), Bit 5: Chunk Flag (CF)
     const me = (header & 0x40) !== 0; // Message End
-    const cf = (header & 0x20) !== 0; // Chunk Flag
     const sr = (header & 0x10) !== 0; // Short Record
     const il = (header & 0x08) !== 0; // ID Length Present
     const tnf = header & 0x07;       // Type Name Format

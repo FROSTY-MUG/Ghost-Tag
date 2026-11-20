@@ -15,14 +15,11 @@
 
 import {
   AuditEventType,
-  AuditEntry,
   VAULT_SCHEMA_VERSION,
 } from '../contracts/vault';
 import { Buffer } from 'buffer';
 import {
   KdfParameters,
-  WrappedDEK,
-  KEY_ID_BYTE_LENGTH,
 } from '../contracts/keyHierarchy';
 import {
   GhostTagError,
@@ -37,7 +34,7 @@ import {
 } from '../crypto/argon2';
 import { generateSecureRandom } from '../crypto/random';
 import { bytesToHex, hexToBytes, unwrapDEK } from '../crypto/keyWrap';
-import { zeroize, secureWipeBuffer } from '../crypto/secureMemory';
+import { zeroize } from '../crypto/secureMemory';
 import { assertDeviceIntegrity } from '../security/deviceIntegrity';
 import { VaultDatabase } from './database';
 import { VaultSession } from './session';

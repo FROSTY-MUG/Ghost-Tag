@@ -29,13 +29,11 @@ import {
   serializeEnvelope,
   parseEnvelope,
   constructAAD,
-  validateEnvelope,
 } from '../crypto/envelope';
 import {
   wrapDEK,
   unwrapDEK,
   bytesToHex,
-  hexToBytes,
 } from '../crypto/keyWrap';
 import {
   zeroize,
@@ -54,7 +52,7 @@ import {
   EnvelopePurpose,
   GhostTagEnvelope,
 } from '../contracts/envelope';
-import { DeviceTier, KdfParameters, WrappedDEK } from '../contracts/keyHierarchy';
+import { DeviceTier, KdfParameters } from '../contracts/keyHierarchy';
 
 // Fast mock provider for test suites
 const mockArgon2Provider = async (

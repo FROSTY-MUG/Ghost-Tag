@@ -11,7 +11,6 @@ import {
   KeyStatus,
   WrappedDEK,
   KEY_ID_BYTE_LENGTH,
-  DEK_BYTE_LENGTH,
   KEK_BYTE_LENGTH,
 } from '../contracts/keyHierarchy';
 import { Buffer } from 'buffer';

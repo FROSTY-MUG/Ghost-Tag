@@ -52,6 +52,7 @@
   const state = {
     account: null, // { accountId, createdAt }
     vault: null, // Local vault metadata
+    activeObjectUrl: null, // Blob URL currently previewed in the view modal
     kek: null, // Volatile CryptoKey
     isUnlocked: false,
     activeView: 'view-landing',
@@ -611,8 +612,7 @@
     // 2. Desktop Companion via Ghost Bridge
     const bridgeStatus = await ghostBridge.checkStatus();
     if (!bridgeStatus) {
-      ghostBridge.connect();
-      // On desktop without bridge daemon
+      // On desktop without a bridge daemon there is no physical reader to use
       showHardwareNotice('NO_USB_NFC_READER');
       throw new Error('NO USB NFC READER DETECTED');
     }
@@ -900,9 +900,6 @@
       if (iosBanner) iosBanner.style.display = 'block';
     }
 
-    // Initialize Ghost Bridge connection in background
-    ghostBridge.connect();
-
     // Bind UI actions & setup display
     bindEvents();
     updateAccountDisplay();
@@ -1160,25 +1157,6 @@
         if (btn) btn.classList.remove('btn-loading');
       }
     });
-            localStorage.setItem(STORAGE_KEY_LOCAL_VAULT, JSON.stringify(state.vault));
-
-            updateAccountDisplay();
-            alert('Ghost Account restored successfully.');
-            showView('view-app');
-          } catch (e) {
-            alert('Decryption failed. Passphrase may be incorrect: ' + e.message);
-          }
-        });
-      } catch (err) {
-        if (errEl) {
-          errEl.textContent = 'Restore failed: ' + err.message;
-          errEl.style.display = 'block';
-        }
-      } finally {
-        const btn = document.getElementById('btnSubmitRestoreAccount');
-        if (btn) btn.classList.remove('btn-loading');
-      }
-    };
 
     document.getElementById('btnSubmitRestoreAccount')?.addEventListener('click', handleRestoreAccount);
     document.getElementById('btnRestoreAccountInAccount')?.addEventListener('click', () => {
@@ -2080,6 +2058,10 @@
       if (metaEl) metaEl.textContent = `Type: ${e.type} | Size: ${formatBytes(e.size)} | MIME: ${e.mime}`;
 
       if (bodyEl) {
+        if (state.activeObjectUrl) {
+          URL.revokeObjectURL(state.activeObjectUrl);
+          state.activeObjectUrl = null;
+        }
         bodyEl.innerHTML = '';
         if (e.type === 'Text' || e.type === 'URL') {
           bodyEl.textContent = e.content || new TextDecoder().decode(e.data);
@@ -2087,6 +2069,9 @@
           const blob = new Blob([e.data], { type: e.mime || 'image/jpeg' });
           const imgUrl = URL.createObjectURL(blob);
           bodyEl.innerHTML = `<img src="${imgUrl}" style="max-width:100%; height:auto; border-radius:4px;" alt="${e.name}">`;
+          // Retain the object URL for the lifetime of the view modal; it is
+          // revoked when the same modal is opened again or closed.
+          state.activeObjectUrl = imgUrl;
         } else {
           bodyEl.textContent = `[Binary Payload: ${formatBytes(e.size)} verified]\nUse Download to save this file locally.`;
         }

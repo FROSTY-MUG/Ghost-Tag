@@ -16,7 +16,6 @@ import { Buffer } from 'buffer';
 import { AuditEntry, AuditEventType } from '../contracts/vault';
 import { SupportedTagFamily } from '../contracts/tags';
 import { GhostTagErrorCode, GhostTagError, ErrorCategory, ErrorSeverity } from '../contracts/errors';
-import { bytesToHex, hexToBytes } from '../crypto/keyWrap';
 import { VaultDatabase } from './database';
 
 /** Storage key for persisting audit entries in VaultDatabase. */

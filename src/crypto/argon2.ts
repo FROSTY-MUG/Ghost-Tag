@@ -27,7 +27,7 @@ import {
 } from '../contracts/errors';
 import { generateSalt } from './random';
 import { bytesToHex, hexToBytes } from './keyWrap';
-import { zeroize, secureWipeBuffer } from './secureMemory';
+import { zeroize } from './secureMemory';
 import { assertDeviceIntegrity } from '../security/deviceIntegrity';
 import { sanitizeError } from '../security/antiLeak';
 

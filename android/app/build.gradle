@@ -124,12 +124,6 @@ android {
                 storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
                 keyAlias System.getenv("ANDROID_KEY_ALIAS")
                 keyPassword System.getenv("ANDROID_KEY_PASSWORD")
-            } else {
-                throw new GradleException(
-                    "Production release keystore not found. Place release.keystore in android/app/ " +
-                    "or provide MYAPP_UPLOAD_STORE_FILE/PASSWORD/KEY_ALIAS/KEY_PASSWORD. " +
-                    "Debug signing is never used for release builds."
-                )
             }
         }
     }
@@ -138,9 +132,21 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            signingConfig signingConfigs.release
+            signingConfig (file('release.keystore').exists() || project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) ? signingConfigs.release : null
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+        }
+    }
+}
+
+gradle.taskGraph.whenReady { taskGraph ->
+    if (taskGraph.hasTask(":app:assembleRelease") || taskGraph.hasTask(":app:bundleRelease")) {
+        if (!file('release.keystore').exists() && !project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) {
+            throw new GradleException(
+                "Production release keystore not found. Place release.keystore in android/app/ " +
+                "or provide MYAPP_UPLOAD_STORE_FILE/PASSWORD/KEY_ALIAS/KEY_PASSWORD. " +
+                "Debug signing is strictly prohibited for release builds."
+            )
         }
     }
 }

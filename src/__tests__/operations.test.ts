@@ -254,7 +254,7 @@ describe('Ghost-Tag Tag Operations Engine Suite', () => {
       const nullResult = await writeOp.execute(sampleTag, { plaintext: null as any });
       expect(nullResult.success).toBe(false);
       expect(nullResult.error?.code).toBe(GhostTagErrorCode.INVALID_ENVELOPE);
-      expect(nullResult.error?.userMessage).toBe('Payload must be a string or a Uint8Array.');
+      expect(nullResult.error?.userMessage).toBe('Payload cannot be empty.');
 
       // None of the rejected inputs may reach the physical writer
       expect(mockWriter.writeAndVerify).not.toHaveBeenCalled();

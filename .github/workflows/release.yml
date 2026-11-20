@@ -41,6 +41,11 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      - name: Dependency Vulnerability Audit Gate
+        run: |
+          npm audit --audit-level=moderate
+          npm --prefix web audit --audit-level=moderate
+
       - name: Code Quality & Lint Gate
         run: npm run lint
 
@@ -78,6 +83,11 @@ jobs:
 
       - name: Verify APK Cryptographic Signature
         run: |
+          APK_PATH="android/app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$APK_PATH" ]; then
+            echo "::error::Release APK not produced at $APK_PATH"
+            exit 1
+          fi
           echo "Verifying production APK signature via apksigner..."
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
           if [ -z "$APKSIGNER" ] || [ ! -x "$APKSIGNER" ]; then
@@ -85,7 +95,12 @@ jobs:
             exit 1
           fi
           echo "Using apksigner at: $APKSIGNER"
-          "$APKSIGNER" verify --verbose android/app/build/outputs/apk/release/app-release.apk
+          "$APKSIGNER" verify --verbose "$APK_PATH"
+          # Refuse to publish an artifact signed with the Android debug key
+          if "$APKSIGNER" verify --print-certs "$APK_PATH" | grep -qi "CN=Android Debug"; then
+            echo "::error::APK is debug-signed. Refusing to publish it as a release."
+            exit 1
+          fi
 
       - name: Package Release Assets & Generate Checksum
         run: |

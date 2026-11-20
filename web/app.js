@@ -503,7 +503,7 @@
                 cb.resolve(msg);
               }
             } else if (msg.type === 'error') {
-              for (const [key, cb] of this.callbacks.entries()) {
+              for (const cb of this.callbacks.values()) {
                 cb.reject(new Error(msg.message));
               }
               this.callbacks.clear();
@@ -815,19 +815,65 @@
       return;
     }
 
-    list.innerHTML = logs.map(l => `
-      <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid #161616;">
-        <div>
-          <span style="color: var(--accent-green); text-transform: uppercase;">[${l.action}]</span>
-          <span style="color: #bbb; margin-left: 6px;">${l.maskedUid}</span>
-          <span style="color: #777; margin-left: 6px;">(Chunk ${l.chunkIndex + 1}/${l.totalChunks})</span>
-        </div>
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="color: #555; font-size: 10px;">${l.timestamp.split('T')[1].slice(0, 8)}</span>
-          <button style="background: none; border: none; color: #ff4444; cursor: pointer; font-family: monospace; font-size: 12px;" onclick="GhostApp.deleteHistoryItem('${l.id}')">×</button>
-        </div>
-      </div>
-    `).join('');
+    list.replaceChildren();
+    logs.forEach(l => {
+      const row = document.createElement('div');
+      row.style.display = 'flex';
+      row.style.justifyContent = 'space-between';
+      row.style.alignItems = 'center';
+      row.style.padding = '4px 0';
+      row.style.borderBottom = '1px solid #161616';
+
+      const infoDiv = document.createElement('div');
+      const actionSpan = document.createElement('span');
+      actionSpan.style.color = 'var(--accent-green)';
+      actionSpan.style.textTransform = 'uppercase';
+      actionSpan.textContent = `[${String(l.action || '')}]`;
+
+      const uidSpan = document.createElement('span');
+      uidSpan.style.color = '#bbb';
+      uidSpan.style.marginLeft = '6px';
+      uidSpan.textContent = String(l.maskedUid || '');
+
+      const chunkSpan = document.createElement('span');
+      chunkSpan.style.color = '#777';
+      chunkSpan.style.marginLeft = '6px';
+      chunkSpan.textContent = `(Chunk ${(Number(l.chunkIndex) || 0) + 1}/${Number(l.totalChunks) || 1})`;
+
+      infoDiv.appendChild(actionSpan);
+      infoDiv.appendChild(uidSpan);
+      infoDiv.appendChild(chunkSpan);
+
+      const rightDiv = document.createElement('div');
+      rightDiv.style.display = 'flex';
+      rightDiv.style.alignItems = 'center';
+      rightDiv.style.gap = '8px';
+
+      const timeSpan = document.createElement('span');
+      timeSpan.style.color = '#555';
+      timeSpan.style.fontSize = '10px';
+      const timeStr = String(l.timestamp || '');
+      timeSpan.textContent = timeStr.includes('T') ? timeStr.split('T')[1].slice(0, 8) : timeStr;
+
+      const delBtn = document.createElement('button');
+      delBtn.style.background = 'none';
+      delBtn.style.border = 'none';
+      delBtn.style.color = '#ff4444';
+      delBtn.style.cursor = 'pointer';
+      delBtn.style.fontFamily = 'monospace';
+      delBtn.style.fontSize = '12px';
+      delBtn.textContent = '×';
+      delBtn.addEventListener('click', () => {
+        GhostApp.deleteHistoryItem(l.id);
+      });
+
+      rightDiv.appendChild(timeSpan);
+      rightDiv.appendChild(delBtn);
+
+      row.appendChild(infoDiv);
+      row.appendChild(rightDiv);
+      list.appendChild(row);
+    });
   }
 
   // --- View Navigation System ---

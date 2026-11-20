@@ -71,15 +71,15 @@ export class WriteOperation {
         plaintextBytes = new Uint8Array(options.plaintext);
       } else {
         throw new GhostTagError({
-          code: GhostTagErrorCode.PAYLOAD_TOO_LARGE,
+          code: GhostTagErrorCode.INVALID_ENVELOPE,
           userMessage: 'Payload cannot be empty.',
           category: ErrorCategory.OPERATION,
           severity: ErrorSeverity.ERROR,
         });
       }
 
-      // Typed rather than truthiness-narrowed: an empty Uint8Array is still an
-      // object, so an explicit length check is required to reject it.
+      // An empty Uint8Array is still an object, so the emptiness guard must be an
+      // explicit length check rather than a truthiness check.
       plaintextIsEmpty = plaintextBytes.length === 0;
       if (plaintextIsEmpty) {
         throw new GhostTagError({

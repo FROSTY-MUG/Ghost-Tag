@@ -25,17 +25,19 @@ jobs:
           cache: 'npm'
 
       - name: Install Node Dependencies
-        run: npm ci
+        run: |
+          npm ci
+          npm --prefix web ci
 
       - name: Dependency Vulnerability Audit
         run: |
-          npm audit --audit-level=high
-          npm --prefix web audit --audit-level=high
+          npm audit --audit-level=moderate
+          npm --prefix web audit --audit-level=moderate
 
       - name: Verify TypeScript Invariants
         run: npx tsc --noEmit
 
-      - name: Execute Jest Test Suite (140 Tests)
+      - name: Execute Jest Test Suite
         run: npm test -- --ci --coverage --maxWorkers=2
 
       - name: Upload Test Coverage

@@ -4,26 +4,51 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "UTC"
     open-pull-requests-limit: 10
     groups:
-      minor-and-patch:
+      react-native-ecosystem:
+        patterns:
+          - "react-native*"
+          - "@react-native*"
         update-types:
           - "minor"
           - "patch"
-
-  - package-ecosystem: "npm"
-    directory: "/web"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 10
-    groups:
-      minor-and-patch:
+      dev-dependencies:
+        patterns:
+          - "@types/*"
+          - "@babel/*"
+          - "eslint"
+          - "jest"
+          - "typescript"
+          - "prettier"
         update-types:
           - "minor"
           - "patch"
-
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "npm"
+    ignore:
+      - dependency-name: "minimatch"
+        versions: ["3.x", "4.x", "5.x", "6.x", "7.x", "8.x", "9.x"]
+      - dependency-name: "deepmerge"
+        versions: ["4.x"]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 10
+      day: "monday"
+      time: "04:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"

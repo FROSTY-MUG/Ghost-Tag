@@ -109,6 +109,9 @@ android {
             keyPassword System.getenv("DEBUG_KEY_PASSWORD") ?: 'android'
         }
         release {
+            // No fallback signing of any kind. A release artifact is signed only
+            // with the production keystore supplied through GitHub Secrets; if it is
+            // absent the Gradle build fails rather than producing a debug-signed APK.
             if (project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) {
                 storeFile file(MYAPP_UPLOAD_STORE_FILE)
                 storePassword MYAPP_UPLOAD_STORE_PASSWORD
@@ -116,14 +119,15 @@ android {
                 keyPassword MYAPP_UPLOAD_KEY_PASSWORD
             } else if (file('release.keystore').exists()) {
                 storeFile file('release.keystore')
-                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: System.getenv("KEYSTORE_PASSWORD")
-                keyAlias System.getenv("ANDROID_KEY_ALIAS") ?: System.getenv("KEY_ALIAS")
-                keyPassword System.getenv("ANDROID_KEY_PASSWORD") ?: System.getenv("KEY_PASSWORD")
+                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword System.getenv("ANDROID_KEY_PASSWORD")
             } else {
-                storeFile file('debug.keystore')
-                storePassword System.getenv("DEBUG_KEYSTORE_PASSWORD") ?: 'android'
-                keyAlias 'androiddebugkey'
-                keyPassword System.getenv("DEBUG_KEY_PASSWORD") ?: 'android'
+                throw new GradleException(
+                    "Production release keystore not found. Place release.keystore in android/app/ " +
+                    "or provide MYAPP_UPLOAD_STORE_FILE/PASSWORD/KEY_ALIAS/KEY_PASSWORD. " +
+                    "Debug signing is never used for release builds."
+                )
             }
         }
     }

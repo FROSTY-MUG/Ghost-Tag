@@ -30,7 +30,9 @@ jobs:
           cache: 'npm'
 
       - name: Install Node Dependencies
-        run: npm ci
+        run: |
+          npm ci
+          npm --prefix web ci
 
       - name: Execute Quality Audit Agent
         run: python scripts/quality_audit_agent.py

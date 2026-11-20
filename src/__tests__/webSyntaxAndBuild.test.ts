@@ -60,6 +60,9 @@ describe('Ghost-Tag Web Client Syntax & Build Integrity', () => {
   });
 
   test('web production build succeeds and outputs valid artifacts', () => {
+    if (!fs.existsSync(path.join(webDir, 'node_modules'))) {
+      execSync('npm --prefix web ci', { stdio: 'pipe', timeout: 60000 });
+    }
     expect(() => {
       execSync('npm --prefix web run build', { stdio: 'pipe', timeout: 30000 });
     }).not.toThrow();

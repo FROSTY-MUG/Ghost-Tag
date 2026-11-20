@@ -138,7 +138,7 @@ for (const rel of targets) {
 
   for (const [name, line] of names) {
     if (BUILTINS.has(name)) continue;
-    const escape = name.replace(/\$/g, '\\$');
+    const escape = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const uses = code.match(new RegExp(`(?<!(?:[a-zA-Z0-9_$\\]\\)]\\s*\\.|[\\w$]))${escape}(?![\\w$])`, 'g'));
     const count = uses ? uses.length : 0;
     if (count <= 1) {

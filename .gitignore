@@ -108,17 +108,14 @@ android/app/release.keystore
 android/app/build/
 web/dist/
 
-# Internal setup checklists, private operational guides & sensitive audits
+# Internal setup checklists & sensitive drafts
 docs/USER-SETUP-CHECKLIST.md
 *USER-SETUP-CHECKLIST.md
 *SETUP-CHECKLIST.md
 *checklist*.md
 *CHECKLIST*.md
-PROJECT-STATUS.md
-*PROJECT-STATUS*.md
 docs/PROJECT_STATE_MEMORY.md
 *PROJECT_STATE_MEMORY.md
-docs/security-audit.md
 docs/planning/
 *.audit.md
 

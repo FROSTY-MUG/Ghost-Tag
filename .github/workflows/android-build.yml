@@ -1,4 +1,10 @@
-name: Android Release Build
+name: Android Build
+
+# Signing policy (no silent fallback):
+#   All four signing secrets present -> build a signed RELEASE APK and verify it with apksigner.
+#   Any signing secret missing       -> build a DEBUG APK only, labelled DEBUG BUILD.
+# This workflow never generates a keystore, never creates a GitHub Release, and never
+# calls a debug artifact a release. Official releases are produced only by release.yml.
 
 on:
   push:
@@ -14,10 +20,13 @@ permissions:
 
 jobs:
   build-apk:
-    name: Build Signed Android Release APK
+    name: Build Android APK (signed release only with secrets, otherwise debug)
     runs-on: ubuntu-latest
     env:
       ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
@@ -45,19 +54,26 @@ jobs:
       - name: Make Gradle Wrapper Executable
         run: chmod +x android/gradlew
 
-      - name: Configure Keystore
+      - name: Determine Signing Mode
+        id: signing
+        # Secrets are only tested for presence here; no secret value is ever echoed.
         run: |
-          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
-            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
-          elif [ ! -f android/app/debug.keystore ] && [ ! -f android/app/release.keystore ]; then
-            keytool -genkey -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ] && [ -n "$ANDROID_KEY_ALIAS" ] && [ -n "$ANDROID_KEY_PASSWORD" ]; then
+            echo "mode=release" >> "$GITHUB_OUTPUT"
+            echo "Signing secrets present: building a signed RELEASE APK."
+          else
+            echo "mode=debug" >> "$GITHUB_OUTPUT"
+            echo "::warning::One or more Android signing secrets are missing. Building a DEBUG APK only. No keystore will be generated and no release will be produced."
           fi
 
-      - name: Build Android Release APK
+      - name: Decode Production Keystore
+        if: steps.signing.outputs.mode == 'release'
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+
+      - name: Build Signed Release APK
+        if: steps.signing.outputs.mode == 'release'
         env:
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           MYAPP_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           MYAPP_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           MYAPP_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
@@ -65,17 +81,58 @@ jobs:
           cd android
           ./gradlew assembleRelease --no-daemon
 
+      - name: Verify Release APK Signature
+        if: steps.signing.outputs.mode == 'release'
+        run: |
+          APKSIGNER="$(find "${ANDROID_HOME}/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          if [ -z "$APKSIGNER" ] || [ ! -x "$APKSIGNER" ]; then
+            echo "::error::apksigner not found under ${ANDROID_HOME}/build-tools"
+            exit 1
+          fi
+          "$APKSIGNER" verify --verbose android/app/build/outputs/apk/release/app-release.apk
+
+      - name: Build Debug APK
+        if: steps.signing.outputs.mode == 'debug'
+        run: |
+          cd android
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Write Signing Mode Marker
+        run: |
+          mkdir -p artifact
+          if [ "${{ steps.signing.outputs.mode }}" = "release" ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk artifact/Ghost-Tag-release.apk
+            echo "SIGNED RELEASE BUILD" > artifact/BUILD-MODE.txt
+          else
+            cp android/app/build/outputs/apk/debug/app-debug.apk artifact/Ghost-Tag-DEBUG-BUILD.apk
+            printf 'DEBUG BUILD\n\nThis artifact is an unsigned-by-production-key debug APK for CI smoke testing only.\nIt is NOT a release and must never be distributed as an official build.\n' > artifact/BUILD-MODE.txt
+          fi
+          cat artifact/BUILD-MODE.txt
+
       - name: Compute SHA-256 Checksum
         run: |
-          cd android/app/build/outputs/apk/release/
-          sha256sum *.apk > CHECKSUM-SHA256.txt
+          cd artifact
+          sha256sum ./*.apk > CHECKSUM-SHA256.txt
           cat CHECKSUM-SHA256.txt
 
-      - name: Upload Release APK & Checksums
+      - name: Upload Signed Release APK
+        if: steps.signing.outputs.mode == 'release'
         uses: actions/upload-artifact@v4
         with:
-          name: ghost-tag-android-apk
+          name: ghost-tag-android-RELEASE
           path: |
-            android/app/build/outputs/apk/release/*.apk
-            android/app/build/outputs/apk/release/CHECKSUM-SHA256.txt
+            artifact/Ghost-Tag-release.apk
+            artifact/CHECKSUM-SHA256.txt
+            artifact/BUILD-MODE.txt
           retention-days: 30
+
+      - name: Upload Debug APK (DEBUG BUILD)
+        if: steps.signing.outputs.mode == 'debug'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghost-tag-android-DEBUG-BUILD
+          path: |
+            artifact/Ghost-Tag-DEBUG-BUILD.apk
+            artifact/CHECKSUM-SHA256.txt
+            artifact/BUILD-MODE.txt
+          retention-days: 14

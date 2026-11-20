@@ -121,7 +121,7 @@ jobs:
           cp RELEASE-NOTES.md "$RELEASE_DIR/RELEASE-NOTES.md"
 
       - name: Create Official GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: Ghost-Tag ${{ github.ref_name }}
           body_path: RELEASE-NOTES.md

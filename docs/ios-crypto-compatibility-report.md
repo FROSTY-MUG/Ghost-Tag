@@ -14,7 +14,7 @@ Android is established as the **canonical Ghost-Tag cryptographic reference impl
 - Argon2id RFC 9106 ($m=32768$ KiB, $t=3$, $p=2$, $h=32$, $v=0x13$, 32-byte salt) for `recovery_verifier` via an offline, self-contained WebAssembly bundle (`hash-wasm`).
 - Wire format alignment: Little-Endian multi-byte integers, canonical 26-byte AAD for v1 envelopes, 74-byte AAD for v2 bulk chunk envelopes, and record type `0x10` (`RECORD_TYPE_BULK_CHUNK`).
 
-A dedicated 59-test cross-platform compatibility test suite (`src/__tests__/crossPlatformCryptoCompatibility.test.ts`) verifies 30 explicit cryptographic and architectural invariants against deterministic golden reference fixtures. All 15 test suites and 255 unit tests in the project currently pass (`tsc --noEmit && jest`).
+A dedicated 59-test cross-platform compatibility test suite (`src/__tests__/crossPlatformCryptoCompatibility.test.ts`) verifies 30 explicit cryptographic and architectural invariants against deterministic golden reference fixtures. All 15 test suites and 256 unit tests in the project currently pass (`tsc --noEmit && jest`).
 
 ---
 
@@ -230,7 +230,7 @@ When building the native iOS target (`/ios`):
 | **Gate 2** | Cross-platform compatibility test suite implemented and passing (59/59) | **COMPLETE** |
 | **Gate 3** | Deterministic JSON and `.bin` reference fixtures persisted | **COMPLETE** |
 | **Gate 4** | Resolution of Android vs Web KDF discrepancy decided and implemented | **COMPLETE (Aligned to Android)** |
-| **Gate 5** | Full test suite regression verification (15/15 suites, 255/255 tests passing) | **COMPLETE** |
+| **Gate 5** | Full test suite regression verification (15/15 suites, 256/256 tests passing) | **COMPLETE** |
 | **Gate 6** | Native iOS cryptographic foundation & Swift/C architecture implemented | **IMPLEMENTED IN SOURCE (Pending macOS build & XCTest validation)** |
 | **Gate 7** | Legacy web recovery migration flow implemented with zero-knowledge ownership proof | **COMPLETE** |
 | **Gate 8** | Supabase zero-knowledge compatibility audit completed across all 25 inquiries | **COMPLETE** |
@@ -392,16 +392,16 @@ Implemented in `supabase/functions/migrate-recovery-verifier/index.ts`:
   {
     "account_id": "<legacy account_id>",
     "legacy_recovery_verifier": "<legacy PBKDF2 verifier>",
-    "new_recovery_verifier": "<canonical Argon2id verifier>"
+    "new_recovery_verifier": "<canonical Argon2id verifier>",
+    "recovery_salt": "<canonical phrase-derived recovery_salt>"
   }
   ```
-- **Strict Salt Verification**: To prevent arbitrary client salt injection, the server strictly rejects any request payload that includes `recovery_salt` with `HTTP 400 {"error": "MIGRATION_FAILED"}`.
-- **Server-Derived Deterministic Salt**: The server binds the migrated record to a canonical deterministic salt derived server-side via `SHA256("ghost-canonical-migrated-salt-v2.1.0:" || account_id || ":" || legacy_recovery_verifier)`.
-- **Ownership Verification**: Queries `ghost_vaults` for `account_id`, checks `recovery_kdf_version = 1`, and compares `legacy_recovery_verifier` against the stored verifier using `timingSafeEqual()`. Fails with HTTP 403 generic error if not matching or already migrated.
+- **Ownership Verification**: Queries `ghost_vaults` for `account_id`, checks `recovery_kdf_version = 1`, and compares `legacy_recovery_verifier` against the stored verifier using `timingSafeEqual()`. The legacy PBKDF2 verifier proves ownership because only someone knowing the original 12-word recovery phrase can derive it. Fails with generic HTTP 403 error if not matching or already migrated.
+- **Canonical Salt Preservation**: Validates that `recovery_salt` is exactly 64 lowercase hexadecimal characters (32 raw bytes) and stores it directly. This guarantees that later recovery on a brand-new device derives the exact same phrase-derived salt: `SHA256("ghost-recovery-salt-v2.0.5:" || cleanPhrase)`.
 - **Atomic Rate Limiting**: Shares the atomic `check_and_record_recovery_attempt` PostgreSQL rate-limit tracker (25/account, 100/IP).
-- **Update**: Updates `recovery_verifier` to Argon2id, deterministic `recovery_salt`, and sets `recovery_kdf_version = 2`.
+- **Update**: Updates `recovery_verifier` to Argon2id, stores the canonical phrase-derived `recovery_salt`, and sets `recovery_kdf_version = 2`.
 - **Preservation**: Leaves `encrypted_vault_blob` and `vault_version` completely intact.
-- **Zero Logging**: Never logs passphrases, secrets, recovery phrases, or intermediate KDF outputs.
+- **Zero Logging**: Never logs passphrases, secrets, recovery phrases, intermediate KDF outputs, verifiers, or salts.
 
 ### 10.2 Client-Side Migration Flow
 Implemented in `web/app.js` and `web/supabase.js`:
@@ -411,7 +411,7 @@ Implemented in `web/app.js` and `web/supabase.js`:
 4. Derives canonical `recovery_auth_secret` and deterministic `recovery_salt` (Option A) from recovery phrase.
 5. Computes canonical Argon2id verifier.
 6. Computes legacy PBKDF2 verifier as proof of ownership.
-7. Calls `migrateRecoveryVerifier(accountId, legacyVerifierHex, newVerifierHex)`.
+7. Calls `migrateRecoveryVerifier(accountId, legacyVerifierHex, newVerifierHex, recoverySaltHex)`.
 8. Logs non-sensitive audit event: `logAuditEvent({ action: 'recovery_verifier_migrated' })`. Zero sensitive fields (phrase, secrets, verifiers, salts, keys) are logged.
 9. Allows user to defer via `[ Skip for Now ]` without disrupting offline usage.
 

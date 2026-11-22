@@ -18,7 +18,7 @@
 | Canonical KDF Parameter Unification | ✅ Aligned | Android, Web, and Supabase use identical single-pass domain separation and Argon2id parameters |
 | Wire Format & Envelope Layout | ✅ Aligned | Canonical `RECORD_TYPE_BULK_CHUNK` (`0x10`), Little-Endian integers, 26B/74B canonical AAD |
 | Golden Reference Fixtures | ✅ Generated | `scripts/generate_compatibility_fixtures.js` outputs deterministic JSON/bin vectors |
-| Full Test Suite Integrity | ✅ Passed | 15/15 test suites passed (255/255 tests passing) |
+| Full Test Suite Integrity | ✅ Passed | 15/15 test suites passed (256/256 tests passing) |
 | TypeScript Strict Check | ✅ Passed | 0 errors via `npx tsc --noEmit` |
 | CodeQL Alert #1 (polynomial ReDoS) | ✅ Fixed | Strict RFC 4122 UUID validation in `src/cloud/supabaseClient.ts:63` |
 | CodeQL Alert #2 (insecure random) | ✅ Fixed | WebCrypto CSPRNG `crypto.getRandomValues` in `web/supabase.js:234` |
@@ -107,7 +107,7 @@
 | Clean Dependency Installation | `npm ci` & `npm --prefix web ci` | Passed (0 errors) |
 | ESLint Code Quality Gate | `npm run lint` | Passed (0 errors) |
 | Strict TypeScript Compilation | `npm run typecheck` | Passed (0 errors) |
-| Automated Jest Test Suite | `npm test` (15 suites, 255 tests) | Passed (100%) |
+| Automated Jest Test Suite | `npm test` (15 suites, 256 tests) | Passed (100%) |
 | iOS Cryptographic Foundation | Native Swift + Clibargon2 (`ios/`) | Implemented in Source (Pending macOS build & XCTest) |
 | Web Legacy Recovery Migration Flow | `web/app.js`, `web/index.html` | Completed (Explicit User Consent) |
 | Cross-Platform Reference Fixtures | `test-fixtures/` (JSON & `.bin`) | Verified & Embedded in iOS |
@@ -127,7 +127,7 @@ The following items are strictly bounded and cannot proceed without external cre
 2. **iOS Platform Status & Validation**:
    > **Blocked: iOS cryptographic foundation is implemented in source code, but remains pending macOS build validation, XCTest validation, cross-platform fixture validation, and physical iPhone NFC validation. iOS is not supported, verified, complete, or release-ready. iOS UI and Core NFC are not implemented.**
 3. **Web Legacy Recovery Migration Status**:
-   > **Notice: Existing Web recovery records with recovery_kdf_version = 1 are recoverable only after successful migration using the original 12-word recovery phrase. Migration must be validated end-to-end before this claim is considered production-ready.**
+   > **Notice: Existing Web recovery records with recovery_kdf_version = 1 are recoverable only after successful migration using the original 12-word recovery phrase. Migration must be validated end-to-end before this claim is considered production-ready. The migration flow submits the canonical phrase-derived recovery_salt alongside the Argon2id verifier with legacy PBKDF2 proof of ownership, ensuring seamless cross-device recovery.**
 4. **Physical NFC Hardware Validation**:
    > **Blocked: Physical NFC validation requires a supported Android device, physical NTAG213/215/216 tags, and optionally an ACS ACR122U USB reader for Ghost Bridge testing. Physical Ghost tags remain offline-decryptable and are unaffected by Supabase recovery changes.**
 5. **Official GitHub Release / Tagging Policy**:

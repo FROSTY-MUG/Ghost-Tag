@@ -1174,6 +1174,7 @@ describe('Ghost-Tag Cross-Platform Cryptographic Compatibility Suite', () => {
       const legacyId = 'e207b669-e7d1-4475-80f0-8c2049e7bdf5';
       const legacyVerifier = '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff';
       const newVerifier = recoveryFixture.vectors[0].recovery_verifier_hex;
+      const canonicalSalt = recoveryFixture.vectors[0].recovery_salt_hex;
 
       let capturedUrl = '';
       let capturedBody: any = null;
@@ -1208,7 +1209,7 @@ describe('Ghost-Tag Cross-Platform Cryptographic Compatibility Suite', () => {
       };
 
       try {
-        const res = await WebSupabase.migrateRecoveryVerifier(legacyId, legacyVerifier, newVerifier);
+        const res = await WebSupabase.migrateRecoveryVerifier(legacyId, legacyVerifier, newVerifier, canonicalSalt);
         expect(res.success).toBe(true);
         expect(res.recoveryKdfVersion).toBe(2);
         expect(capturedUrl).toContain('/functions/v1/migrate-recovery-verifier');
@@ -1216,8 +1217,8 @@ describe('Ghost-Tag Cross-Platform Cryptographic Compatibility Suite', () => {
         expect(capturedBody.account_id).toBe(legacyId);
         expect(capturedBody.legacy_recovery_verifier).toBe(legacyVerifier);
         expect(capturedBody.new_recovery_verifier).toBe(newVerifier);
-        // Client does NOT send recovery_salt; server derives it via zero-knowledge binding
-        expect(capturedBody.recovery_salt).toBeUndefined();
+        // Client sends canonical phrase-derived recovery_salt to preserve cross-device recovery
+        expect(capturedBody.recovery_salt).toBe(canonicalSalt);
       } finally {
         (global as any).fetch = originalFetch;
         delete (global as any).localStorage;
@@ -1228,6 +1229,7 @@ describe('Ghost-Tag Cross-Platform Cryptographic Compatibility Suite', () => {
       const legacyId = 'e207b669-e7d1-4475-80f0-8c2049e7bdf5';
       const legacyVerifier = 'aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899';
       const newVerifier = recoveryFixture.vectors[0].recovery_verifier_hex;
+      const canonicalSalt = recoveryFixture.vectors[0].recovery_salt_hex;
 
       let capturedBody: any = null;
       const originalFetch = (global as any).fetch;
@@ -1255,18 +1257,18 @@ describe('Ghost-Tag Cross-Platform Cryptographic Compatibility Suite', () => {
       };
 
       try {
-        await WebSupabase.migrateRecoveryVerifier(legacyId, legacyVerifier, newVerifier);
+        await WebSupabase.migrateRecoveryVerifier(legacyId, legacyVerifier, newVerifier, canonicalSalt);
         const keys = Object.keys(capturedBody).sort();
         expect(keys).toEqual([
           'account_id',
           'legacy_recovery_verifier',
-          'new_recovery_verifier'
+          'new_recovery_verifier',
+          'recovery_salt'
         ]);
 
         expect(capturedBody.passphrase).toBeUndefined();
         expect(capturedBody.recovery_phrase).toBeUndefined();
         expect(capturedBody.recovery_auth_secret).toBeUndefined();
-        expect(capturedBody.recovery_salt).toBeUndefined();
         expect(capturedBody.kek).toBeUndefined();
         expect(capturedBody.dek).toBeUndefined();
         expect(capturedBody.plaintext).toBeUndefined();
@@ -1279,24 +1281,25 @@ describe('Ghost-Tag Cross-Platform Cryptographic Compatibility Suite', () => {
     it('Point 24: Migration rejects malformed input and mismatched legacy verifiers', async () => {
       // Missing or invalid account_id
       await expect(
-        WebSupabase.migrateRecoveryVerifier('', '1122', 'a'.repeat(64))
+        WebSupabase.migrateRecoveryVerifier('', '1'.repeat(64), 'a'.repeat(64), '0'.repeat(64))
       ).rejects.toThrow('MIGRATION_FAILED');
 
       // Invalid new_recovery_verifier length
       await expect(
-        WebSupabase.migrateRecoveryVerifier('e207b669-e7d1-4475-80f0-8c2049e7bdf5', '1122', 'short')
+        WebSupabase.migrateRecoveryVerifier('e207b669-e7d1-4475-80f0-8c2049e7bdf5', '1'.repeat(64), 'short', '0'.repeat(64))
       ).rejects.toThrow('MIGRATION_FAILED');
 
       // Arbitrary/invalid recovery_salt rejected
       await expect(
-        WebSupabase.migrateRecoveryVerifier('e207b669-e7d1-4475-80f0-8c2049e7bdf5', '1122', 'a'.repeat(64), 'arbitrary_invalid_salt')
+        WebSupabase.migrateRecoveryVerifier('e207b669-e7d1-4475-80f0-8c2049e7bdf5', '1'.repeat(64), 'a'.repeat(64), 'arbitrary_invalid_salt')
       ).rejects.toThrow('MIGRATION_FAILED');
     });
 
-    it('Point 25: Mock core verifies migration preserves encrypted vault blob intact and derives deterministic salt', async () => {
+    it('Point 25: Mock core verifies migration preserves encrypted vault blob intact and stores canonical salt', async () => {
       const testAccountId = 'a0000000-0000-4000-8000-000000000001';
       const legacyVerifier = '1111111111111111111111111111111111111111111111111111111111111111';
       const originalBlob = 'ORIGINAL_ENCRYPTED_VAULT_BLOB_UNCHANGED';
+      const canonicalSalt = recoveryFixture.vectors[0].recovery_salt_hex;
 
       // Seed mock store with legacy vault (recovery_kdf_version = 1)
       await uploadEncryptedVaultMetadata({
@@ -1311,7 +1314,7 @@ describe('Ghost-Tag Cross-Platform Cryptographic Compatibility Suite', () => {
       const newVerifier = '2222222222222222222222222222222222222222222222222222222222222222';
 
       const { migrateRecoveryVerifier: clientMigrate } = require('../cloud/supabaseClient');
-      const migResult = await clientMigrate(testAccountId, legacyVerifier, newVerifier);
+      const migResult = await clientMigrate(testAccountId, legacyVerifier, newVerifier, canonicalSalt);
       expect(migResult.success).toBe(true);
       expect(migResult.recoveryKdfVersion).toBe(2);
 
@@ -1322,7 +1325,7 @@ describe('Ghost-Tag Cross-Platform Cryptographic Compatibility Suite', () => {
 
       // Verify re-migration fails (kdf_version is already 2)
       await expect(
-        clientMigrate(testAccountId, legacyVerifier, newVerifier)
+        clientMigrate(testAccountId, legacyVerifier, newVerifier, canonicalSalt)
       ).rejects.toThrow('MIGRATION_FAILED');
     });
 
@@ -1461,6 +1464,7 @@ describe('Ghost-Tag Cross-Platform Cryptographic Compatibility Suite', () => {
         const correctLegacy = '3'.repeat(64);
         const wrongLegacy = '4'.repeat(64);
         const targetNew = '5'.repeat(64);
+        const canonicalSalt = '01'.repeat(32);
 
         await uploadEncryptedVaultMetadata({
           accountId: accId,
@@ -1472,23 +1476,26 @@ describe('Ghost-Tag Cross-Platform Cryptographic Compatibility Suite', () => {
         });
 
         // Rejects wrong legacy verifier
-        await expect(clientMigrate(accId, wrongLegacy, targetNew)).rejects.toThrow('MIGRATION_FAILED');
+        await expect(clientMigrate(accId, wrongLegacy, targetNew, canonicalSalt)).rejects.toThrow('MIGRATION_FAILED');
 
         // Works for kdf_version = 1
-        const mig = await clientMigrate(accId, correctLegacy, targetNew);
+        const mig = await clientMigrate(accId, correctLegacy, targetNew, canonicalSalt);
         expect(mig.success).toBe(true);
         expect(mig.recoveryKdfVersion).toBe(2);
 
         // Rejects kdf_version = 2 (already migrated)
-        await expect(clientMigrate(accId, correctLegacy, targetNew)).rejects.toThrow('MIGRATION_FAILED');
+        await expect(clientMigrate(accId, correctLegacy, targetNew, canonicalSalt)).rejects.toThrow('MIGRATION_FAILED');
       });
 
-      it('14 & 15: Migration rejects malformed inputs and arbitrary recovery_salt', async () => {
+      it('14 & 15: Migration rejects malformed inputs and invalid recovery_salt', async () => {
         const { migrateRecoveryVerifier: clientMigrate } = require('../cloud/supabaseClient');
-        await expect(clientMigrate('not-uuid', '1111', 'a'.repeat(64))).rejects.toThrow('MIGRATION_FAILED');
-        await expect(clientMigrate('b0000000-0000-4000-8000-000000000002', '1111', 'short')).rejects.toThrow('MIGRATION_FAILED');
-        // Rejects arbitrary recovery salt
-        await expect(clientMigrate('b0000000-0000-4000-8000-000000000002', '1111', 'a'.repeat(64), 'arbitrary_salt')).rejects.toThrow('MIGRATION_FAILED');
+        const validSalt = '01'.repeat(32);
+        await expect(clientMigrate('not-uuid', '1'.repeat(64), 'a'.repeat(64), validSalt)).rejects.toThrow('MIGRATION_FAILED');
+        await expect(clientMigrate('b0000000-0000-4000-8000-000000000002', '1'.repeat(64), 'short', validSalt)).rejects.toThrow('MIGRATION_FAILED');
+        await expect(clientMigrate('b0000000-0000-4000-8000-000000000002', 'short', 'a'.repeat(64), validSalt)).rejects.toThrow('MIGRATION_FAILED');
+        // Rejects non-hex or non-64-char recovery salt
+        await expect(clientMigrate('b0000000-0000-4000-8000-000000000002', '1'.repeat(64), 'a'.repeat(64), 'arbitrary_non_hex_salt')).rejects.toThrow('MIGRATION_FAILED');
+        await expect(clientMigrate('b0000000-0000-4000-8000-000000000002', '1'.repeat(64), 'a'.repeat(64), '1234')).rejects.toThrow('MIGRATION_FAILED');
       });
 
       it('16, 17, 18, 19, 20: Migration preserves blob/version, updates kdf to 2, prevents replay and cross-user overwrite', async () => {
@@ -1496,6 +1503,7 @@ describe('Ghost-Tag Cross-Platform Cryptographic Compatibility Suite', () => {
         const userA = 'c0000000-0000-4000-8000-000000000003';
         const legacyVerA = 'a'.repeat(64);
         const originalBlob = 'USER_A_BLOB_PRESERVED';
+        const canonicalSalt = '02'.repeat(32);
 
         await uploadEncryptedVaultMetadata({
           accountId: userA,
@@ -1507,7 +1515,7 @@ describe('Ghost-Tag Cross-Platform Cryptographic Compatibility Suite', () => {
         });
 
         const newVerA = 'b'.repeat(64);
-        const res = await clientMigrate(userA, legacyVerA, newVerA);
+        const res = await clientMigrate(userA, legacyVerA, newVerA, canonicalSalt);
         expect(res.success).toBe(true);
         expect(res.recoveryKdfVersion).toBe(2);
 
@@ -1517,11 +1525,11 @@ describe('Ghost-Tag Cross-Platform Cryptographic Compatibility Suite', () => {
         expect(recovered.vaultVersion).toBe(2);
 
         // Cannot replay migration
-        await expect(clientMigrate(userA, legacyVerA, newVerA)).rejects.toThrow('MIGRATION_FAILED');
+        await expect(clientMigrate(userA, legacyVerA, newVerA, canonicalSalt)).rejects.toThrow('MIGRATION_FAILED');
 
         // Cannot update another user's account with user A's verifier
         const userB = 'd0000000-0000-4000-8000-000000000004';
-        await expect(clientMigrate(userB, legacyVerA, newVerA)).rejects.toThrow('MIGRATION_FAILED');
+        await expect(clientMigrate(userB, legacyVerA, newVerA, canonicalSalt)).rejects.toThrow('MIGRATION_FAILED');
       });
 
       it('21 & 22: Migration returns generic errors and obeys atomic rate limit', async () => {
@@ -1544,7 +1552,7 @@ describe('Ghost-Tag Cross-Platform Cryptographic Compatibility Suite', () => {
 
         try {
           await expect(
-            WebSupabase.migrateRecoveryVerifier('c0000000-0000-4000-8000-000000000003', '1'.repeat(64), '2'.repeat(64))
+            WebSupabase.migrateRecoveryVerifier('c0000000-0000-4000-8000-000000000003', '1'.repeat(64), '2'.repeat(64), '3'.repeat(64))
           ).rejects.toThrow('MIGRATION_FAILED');
         } finally {
           (global as any).fetch = originalFetch;
@@ -1585,14 +1593,13 @@ describe('Ghost-Tag Cross-Platform Cryptographic Compatibility Suite', () => {
           await WebSupabase.recoverVaultWithVerifier('c0000000-0000-4000-8000-000000000003', '1'.repeat(64));
           expect(Object.keys(sentRecoveryBody).sort()).toEqual(['account_id', 'recovery_verifier']);
 
-          await WebSupabase.migrateRecoveryVerifier('c0000000-0000-4000-8000-000000000003', '1'.repeat(64), '2'.repeat(64));
-          expect(Object.keys(sentMigrationBody).sort()).toEqual(['account_id', 'legacy_recovery_verifier', 'new_recovery_verifier']);
+          await WebSupabase.migrateRecoveryVerifier('c0000000-0000-4000-8000-000000000003', '1'.repeat(64), '2'.repeat(64), '3'.repeat(64));
+          expect(Object.keys(sentMigrationBody).sort()).toEqual(['account_id', 'legacy_recovery_verifier', 'new_recovery_verifier', 'recovery_salt']);
 
           for (const body of [sentRecoveryBody, sentMigrationBody]) {
             expect(body.passphrase).toBeUndefined();
             expect(body.recovery_phrase).toBeUndefined();
             expect(body.recovery_auth_secret).toBeUndefined();
-            expect(body.recovery_salt).toBeUndefined();
             expect(body.kek).toBeUndefined();
             expect(body.dek).toBeUndefined();
             expect(body.plaintext).toBeUndefined();
@@ -1615,6 +1622,7 @@ describe('Ghost-Tag Cross-Platform Cryptographic Compatibility Suite', () => {
         expect(swiftClientSource).toContain('public struct VaultMigrationRequest: Encodable {');
         expect(swiftClientSource).toContain('public let legacy_recovery_verifier: String');
         expect(swiftClientSource).toContain('public let new_recovery_verifier: String');
+        expect(swiftClientSource).toContain('public let recovery_salt: String');
 
         // Negative check: Zero secrets in Swift API payloads
         expect(swiftClientSource).not.toContain('let passphrase');
@@ -1622,6 +1630,53 @@ describe('Ghost-Tag Cross-Platform Cryptographic Compatibility Suite', () => {
         expect(swiftClientSource).not.toContain('let recovery_auth_secret');
         expect(swiftClientSource).not.toContain('let kek');
         expect(swiftClientSource).not.toContain('let dek');
+      });
+
+      it('28, 29, 30: Migration stores canonical phrase-derived salt and enables seamless cross-device recovery', async () => {
+        const words = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'.split(' ');
+        
+        // Canonical derivations from phrase
+        const accountId = await WebSupabase.deriveAccountId(words);
+        const authSecret = await WebSupabase.deriveRecoveryAuthSecret(words);
+        const canonicalSalt = await WebSupabase.deriveRecoverySalt(words);
+        const canonicalSaltHex = WebSupabase.bytesToHex(canonicalSalt);
+        const canonicalArgon2VerifierHex = await WebSupabase.computeRecoveryVerifier(authSecret, canonicalSalt);
+        
+        // Legacy derivation from phrase
+        const legacyVerifierHex = await WebSupabase.deriveLegacyRecoveryVerifier(words);
+        
+        // Seed legacy vault in mock store with kdf_version = 1
+        const originalVaultBlob = 'CIPHERTEXT_BLOB_V2_METADATA_CONTINUITY_TEST';
+        await uploadEncryptedVaultMetadata({
+          accountId,
+          recoveryVerifierHex: legacyVerifierHex,
+          recoverySaltHex: '00'.repeat(32),
+          recoveryKdfVersion: 1,
+          encryptedBlobBase64: originalVaultBlob,
+          vaultVersion: 2
+        });
+        
+        // 1. Perform migration submitting canonical phrase-derived salt
+        const { migrateRecoveryVerifier: clientMigrate } = require('../cloud/supabaseClient');
+        const migResult = await clientMigrate(accountId, legacyVerifierHex, canonicalArgon2VerifierHex, canonicalSaltHex);
+        expect(migResult.success).toBe(true);
+        expect(migResult.recoveryKdfVersion).toBe(2);
+        
+        // 2. Simulate brand-new device with 0 local cache & 0 owner JWT performing recovery
+        // The new device derives account_id, canonical recovery_salt, and Argon2id verifier from phrase
+        const brandNewDeviceAccountId = await WebSupabase.deriveAccountId(words);
+        const brandNewDeviceAuthSecret = await WebSupabase.deriveRecoveryAuthSecret(words);
+        const brandNewDeviceSalt = await WebSupabase.deriveRecoverySalt(words);
+        const brandNewDeviceVerifierHex = await WebSupabase.computeRecoveryVerifier(brandNewDeviceAuthSecret, brandNewDeviceSalt);
+        
+        expect(brandNewDeviceAccountId).toBe(accountId);
+        expect(WebSupabase.bytesToHex(brandNewDeviceSalt)).toBe(canonicalSaltHex);
+        expect(brandNewDeviceVerifierHex).toBe(canonicalArgon2VerifierHex);
+        
+        // 3. Recovery succeeds using derived verifier
+        const recoveredVault = await recoverVaultWithVerifier(brandNewDeviceAccountId, brandNewDeviceVerifierHex);
+        expect(recoveredVault.encryptedBlob).toBe(originalVaultBlob);
+        expect(recoveredVault.vaultVersion).toBe(2);
       });
     });
   });

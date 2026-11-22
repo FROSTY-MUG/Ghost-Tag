@@ -21,11 +21,13 @@ public struct VaultMigrationRequest: Encodable {
     public let account_id: String
     public let legacy_recovery_verifier: String
     public let new_recovery_verifier: String
+    public let recovery_salt: String
 
-    public init(accountId: UUID, legacyVerifierHex: String, newVerifierHex: String) {
+    public init(accountId: UUID, legacyVerifierHex: String, newVerifierHex: String, recoverySaltHex: String) {
         self.account_id = accountId.uuidString.lowercased()
         self.legacy_recovery_verifier = legacyVerifierHex.lowercased()
         self.new_recovery_verifier = newVerifierHex.lowercased()
+        self.recovery_salt = recoverySaltHex.lowercased()
     }
 }
 
@@ -106,11 +108,17 @@ public final class SupabaseRecoveryClient {
         accountId: UUID,
         legacyVerifierHex: String,
         newVerifierHex: String,
+        recoverySaltHex: String,
         authToken: String? = nil
     ) async throws -> VaultMigrationResponse {
         let cleanNewVerifier = newVerifierHex.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let cleanLegacyVerifier = legacyVerifierHex.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let cleanSalt = recoverySaltHex.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let hexPattern = "^[0-9a-f]{64}$"
-        guard cleanNewVerifier.range(of: hexPattern, options: .regularExpression) != nil else {
+
+        guard cleanNewVerifier.range(of: hexPattern, options: .regularExpression) != nil,
+              cleanLegacyVerifier.range(of: hexPattern, options: .regularExpression) != nil,
+              cleanSalt.range(of: hexPattern, options: .regularExpression) != nil else {
             throw SupabaseRecoveryError.invalidVerifierFormat
         }
 
@@ -124,8 +132,9 @@ public final class SupabaseRecoveryClient {
 
         let payload = VaultMigrationRequest(
             accountId: accountId,
-            legacyVerifierHex: legacyVerifierHex,
-            newVerifierHex: cleanNewVerifier
+            legacyVerifierHex: cleanLegacyVerifier,
+            newVerifierHex: cleanNewVerifier,
+            recoverySaltHex: cleanSalt
         )
         request.httpBody = try JSONEncoder().encode(payload)
 

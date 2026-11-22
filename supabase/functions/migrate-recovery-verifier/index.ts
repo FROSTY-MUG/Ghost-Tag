@@ -140,22 +140,15 @@ serve(async (req: Request) => {
       account_id,
       legacy_recovery_verifier,
       new_recovery_verifier,
+      recovery_salt,
     } = body;
 
-    // Security Invariant: The server does not accept an arbitrary client-submitted recovery_salt.
-    // If a client attempts to submit an arbitrary recovery_salt, strictly reject it.
-    if ("recovery_salt" in body && body.recovery_salt !== undefined) {
-      return new Response(JSON.stringify({ error: "MIGRATION_FAILED" }), {
-        status: 400,
-        headers: responseHeaders,
-      });
-    }
-
     const isValidAccountId = typeof account_id === "string" && RFC4122_UUID_REGEX.test(account_id);
-    const isValidLegacyVerifier = typeof legacy_recovery_verifier === "string" && legacy_recovery_verifier.length > 0;
+    const isValidLegacyVerifier = typeof legacy_recovery_verifier === "string" && HEX64_REGEX.test(legacy_recovery_verifier);
     const isValidNewVerifier = typeof new_recovery_verifier === "string" && HEX64_REGEX.test(new_recovery_verifier);
+    const isValidRecoverySalt = typeof recovery_salt === "string" && HEX64_REGEX.test(recovery_salt);
 
-    if (!isValidAccountId || !isValidLegacyVerifier || !isValidNewVerifier) {
+    if (!isValidAccountId || !isValidLegacyVerifier || !isValidNewVerifier || !isValidRecoverySalt) {
       return new Response(JSON.stringify({ error: "MIGRATION_FAILED" }), {
         status: 400,
         headers: responseHeaders,
@@ -248,21 +241,12 @@ serve(async (req: Request) => {
         .eq("id", currentAttemptId);
     }
 
-    // Derive canonical deterministic recovery_salt server-side using safe zero-knowledge binding
-    // Eliminates arbitrary salt injection while ensuring reproducibility
-    const saltDerivationInput = new TextEncoder().encode(
-      `ghost-canonical-migrated-salt-v2.1.0:${account_id}:${legacy_recovery_verifier.toLowerCase()}`
-    );
-    const serverDerivedSaltBuffer = await crypto.subtle.digest("SHA-256", saltDerivationInput);
-    const serverDerivedSaltHex = Array.from(new Uint8Array(serverDerivedSaltBuffer))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-
-    // Update vault to canonical Argon2id verifier with server-derived deterministic salt
-    // Preserves encrypted_vault_blob and vault_version intact
+    // Update vault to canonical Argon2id verifier with submitted canonical phrase-derived recovery_salt
+    // Ownership is proven via legacy PBKDF2 verifier verification.
+    // Preserves encrypted_vault_blob and vault_version intact.
     const updatePayload: Record<string, any> = {
       recovery_verifier: `\\x${new_recovery_verifier.toLowerCase()}`,
-      recovery_salt: `\\x${serverDerivedSaltHex}`,
+      recovery_salt: `\\x${recovery_salt.toLowerCase()}`,
       recovery_kdf_version: 2,
       updated_at: new Date().toISOString(),
     };

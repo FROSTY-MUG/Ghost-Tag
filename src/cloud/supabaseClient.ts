@@ -453,20 +453,24 @@ export async function recoverVaultWithVerifier(
 /**
  * Executes migration of a legacy PBKDF2 recovery verifier to Argon2id.
  * Proof of ownership is the correct legacy recovery verifier.
+ * Stores canonical phrase-derived recovery_salt submitted by verified owner.
  */
 export async function migrateRecoveryVerifier(
   accountId: string,
   legacyRecoveryVerifierHex: string,
   newRecoveryVerifierHex: string,
-  arbitraryRecoverySaltAttempt?: string
+  recoverySaltHex: string
 ): Promise<{ success: boolean; recoveryKdfVersion: number }> {
   if (!accountId || typeof accountId !== 'string' || !RFC4122_UUID_REGEX.test(accountId)) {
     throw new Error('MIGRATION_FAILED');
   }
-  if (!legacyRecoveryVerifierHex || typeof legacyRecoveryVerifierHex !== 'string') {
+  if (!legacyRecoveryVerifierHex || typeof legacyRecoveryVerifierHex !== 'string' || !HEX64_REGEX.test(legacyRecoveryVerifierHex)) {
     throw new Error('MIGRATION_FAILED');
   }
   if (!newRecoveryVerifierHex || !HEX64_REGEX.test(newRecoveryVerifierHex)) {
+    throw new Error('MIGRATION_FAILED');
+  }
+  if (!recoverySaltHex || typeof recoverySaltHex !== 'string' || !HEX64_REGEX.test(recoverySaltHex)) {
     throw new Error('MIGRATION_FAILED');
   }
 
@@ -476,10 +480,8 @@ export async function migrateRecoveryVerifier(
         account_id: accountId,
         legacy_recovery_verifier: legacyRecoveryVerifierHex.toLowerCase(),
         new_recovery_verifier: newRecoveryVerifierHex.toLowerCase(),
+        recovery_salt: recoverySaltHex.toLowerCase(),
       };
-      if (arbitraryRecoverySaltAttempt !== undefined && arbitraryRecoverySaltAttempt !== null) {
-        payload.recovery_salt = arbitraryRecoverySaltAttempt;
-      }
 
       const resp = await fetch(`${activeConfig.url}/functions/v1/migrate-recovery-verifier`, {
         method: 'POST',
@@ -530,20 +532,8 @@ export async function migrateRecoveryVerifier(
     throw new Error('MIGRATION_FAILED');
   }
 
-  // Reject arbitrary recovery salt if attempted
-  if (arbitraryRecoverySaltAttempt !== undefined && arbitraryRecoverySaltAttempt !== null) {
-    throw new Error('MIGRATION_FAILED');
-  }
-
-  // Canonical zero-knowledge deterministic salt derivation
-  const saltInput = new TextEncoder().encode(
-    `ghost-canonical-migrated-salt-v2.1.0:${accountId}:${legacyRecoveryVerifierHex.toLowerCase()}`
-  );
-  const derivedSalt = computeChunkHash(saltInput);
-  const derivedSaltHex = bytesToHex(derivedSalt);
-
   localEntry.recovery_verifier = newRecoveryVerifierHex.toLowerCase();
-  localEntry.recovery_salt = derivedSaltHex;
+  localEntry.recovery_salt = recoverySaltHex.toLowerCase();
   localEntry.recovery_kdf_version = 2;
   localEntry.updated_at = new Date().toISOString();
 

@@ -587,20 +587,19 @@
    * Dedicated migration endpoint call to upgrade legacy PBKDF2 verifier to Argon2id.
    * Zero-Knowledge Guarantee: Does NOT require an authenticated owner session.
    * The legacy PBKDF2 recovery verifier is the proof of ownership.
+   * Submits canonical phrase-derived recovery_salt to preserve cross-device recovery.
    */
   async function migrateRecoveryVerifier(accountId, legacyVerifierHex, newVerifierHex, recoverySaltHex) {
     if (!accountId || !RFC4122_UUID_REGEX.test(accountId)) {
       throw new Error('MIGRATION_FAILED');
     }
-    if (!legacyVerifierHex || typeof legacyVerifierHex !== 'string') {
+    if (!legacyVerifierHex || typeof legacyVerifierHex !== 'string' || !HEX64_REGEX.test(legacyVerifierHex)) {
       throw new Error('MIGRATION_FAILED');
     }
     if (!newVerifierHex || !HEX64_REGEX.test(newVerifierHex)) {
       throw new Error('MIGRATION_FAILED');
     }
-
-    // Rejects arbitrary client salt if passed invalidly
-    if (recoverySaltHex && (typeof recoverySaltHex !== 'string' || !HEX64_REGEX.test(recoverySaltHex))) {
+    if (!recoverySaltHex || typeof recoverySaltHex !== 'string' || !HEX64_REGEX.test(recoverySaltHex)) {
       throw new Error('MIGRATION_FAILED');
     }
 
@@ -609,12 +608,11 @@
       return { success: true, recoveryKdfVersion: 2, source: 'offline-local' };
     }
 
-    // Server derives canonical recovery_salt via zero-knowledge binding
-    // Client sends only account_id, legacy_recovery_verifier, and new_recovery_verifier
     const payload = {
       account_id: accountId,
       legacy_recovery_verifier: legacyVerifierHex.toLowerCase(),
-      new_recovery_verifier: newVerifierHex.toLowerCase()
+      new_recovery_verifier: newVerifierHex.toLowerCase(),
+      recovery_salt: recoverySaltHex.toLowerCase()
     };
 
     const resp = await fetch(`${config.url}/functions/v1/migrate-recovery-verifier`, {

@@ -165,6 +165,7 @@ Ghost-Tag v2.0.6 has undergone end-to-end security hardening, static analysis re
    - `Blocked: Supabase deployment requires SUPABASE_ACCESS_TOKEN and linked project ref. Supabase is NOT deployed.`
 4. **Legacy Web Recovery Migration Status**:
    - `Notice: Existing Web recovery records with recovery_kdf_version = 1 are recoverable only after successful migration using the original 12-word recovery phrase. Migration must be validated end-to-end before this claim is considered production-ready.`
+   - `Migration Salt Invariant: Migration requires submitting the canonical phrase-derived recovery_salt alongside the new Argon2id verifier. The legacy PBKDF2 verifier serves as proof of ownership, guaranteeing that later cross-device recovery derives the identical canonical salt.`
 5. **Physical Hardware NFC Validation Gate**:
    - `Blocked: Physical NFC validation requires a supported Android device, physical NTAG213/215/216 tags, and optionally an ACS ACR122U USB reader for Ghost Bridge testing.`
    - `Decoupling Guarantee: Physical Ghost tags remain offline-decryptable using the master passphrase and are completely unaffected by Supabase recovery changes.`

@@ -27,7 +27,7 @@ Ghost-Tag v2.1.0 achieves complete cross-platform cryptographic alignment across
 
 ## Migration & Backward Compatibility
 
-- **Legacy Web Recovery Migration**: Existing Web recovery records with recovery_kdf_version = 1 are recoverable only after successful migration using the original 12-word recovery phrase. Migration must be validated end-to-end before this claim is considered production-ready. Web previously derived recovery verifiers using PBKDF2 (100,000 rounds). Legacy web vaults (`recovery_kdf_version = 1`) can be upgraded to Argon2id via `migrate-recovery-verifier` from their 12-word recovery phrase on any device with zero secret leakage.
+- **Legacy Web Recovery Migration**: Existing Web recovery records with recovery_kdf_version = 1 are recoverable only after successful migration using the original 12-word recovery phrase. Migration must be validated end-to-end before this claim is considered production-ready. Web previously derived recovery verifiers using PBKDF2 (100,000 rounds). The migration flow submits the canonical phrase-derived recovery_salt alongside the Argon2id verifier with legacy PBKDF2 proof of ownership, preventing cross-device recovery failures after migration.
 - **Physical NFC Tags Unaffected**: All physical NFC tags written on Web or Android remain 100% decryptable because tag encryption uses the master passphrase and DEK with AES-256-GCM, which does not depend on the Supabase recovery verifier.
 
 ## Security & Privacy Invariants
@@ -39,7 +39,7 @@ Ghost-Tag v2.1.0 achieves complete cross-platform cryptographic alignment across
 
 ## Verification
 
-- **Full Verification Suite**: 15 passed / 15 test suites (255 passed / 255 tests).
+- **Full Verification Suite**: 15 passed / 15 test suites (256 passed / 256 tests).
 - **TypeScript Strict Typecheck**: 0 errors (`npx tsc --noEmit`).
 - **Web Build**: Clean production build via Vite (`npm run build`).
 - **Lint**: Zero errors (`npm run lint`).

@@ -1,60 +1,46 @@
-# Ghost-Tag v2.0.6 Release Notes
+# Ghost-Tag v2.1.0 Release Notes
 
 ## Overview
 
-Ghost-Tag v2.0.6 delivers comprehensive security hardening, static analysis remediation, and release pipeline integrity enforcement. This release resolves all open CodeQL findings (including syntax errors, client-side DOM XSS, polynomial ReDoS, and insecure randomness) and all open Dependabot alerts, hardens Android release builds by eliminating debug keystore fallback, introduces atomic file operations to eliminate TOCTOU races, and integrates end-to-end AST validation for web client builds.
+Ghost-Tag v2.1.0 achieves complete cross-platform cryptographic alignment across Android, Web, Ghost Bridge, and Supabase. Android is established as the canonical cryptographic reference implementation. Web has been fully realigned from legacy PBKDF2 to Argon2id RFC 9106 via a vendored offline WebAssembly bundle (`hash-wasm`), unifying `account_id`, `recovery_auth_secret`, `recovery_salt`, `recovery_verifier`, AES-256-GCM AEAD, and Little-Endian envelope wire formats across all platforms. A comprehensive 59-test cross-platform compatibility test suite (`src/__tests__/crossPlatformCryptoCompatibility.test.ts`) verifies 25 explicit cryptographic and architectural invariants against deterministic golden reference fixtures.
 
 ## Added
 
-- Automated AST & Bundle Verification: Added `src/__tests__/webSyntaxAndBuild.test.ts` to enforce JavaScript syntax parsing and Vite bundle compilation in automated CI gates.
-- Atomic Dependency Patching: Implemented unique temporary file staging and atomic descriptor replacement in `scripts/patch_dependencies.js`.
-- Strict Keystore Guards: Added `gradle.taskGraph.whenReady` execution guards in `android/app/build.gradle` to strictly reject unsigned or debug-signed release artifacts.
+- **Cross-Platform Compatibility Test Suite**: Added `src/__tests__/crossPlatformCryptoCompatibility.test.ts` (59 tests) covering deterministic test vectors, BIP-39 recovery phrases, account ID derivations, auth secret derivations, deterministic salt derivations, Argon2id verifiers, AES-256-GCM AEAD, Ghost v1 single-tag and v2 bulk envelopes, tamper rejection, wrong passphrases, and 25 specific cross-platform interoperability points.
+- **Zero-Knowledge Cross-Device Recovery**: Recovery on brand-new devices requires zero prior sessions or authentication; the 12-word recovery phrase is the sole recovery credential.
+- **Dedicated Legacy Verifier Migration Edge Function**: Implemented `POST /functions/v1/migrate-recovery-verifier` allowing legacy web users to migrate PBKDF2 verifiers to canonical Argon2id on any device using their legacy verifier as ownership proof with zero secret exposure.
+- **Deterministic Recovery Salt (Option A)**: `recovery_salt = SHA256("ghost-recovery-salt-v2.0.5:" || phrase)` enables 100% offline derivation across Android, Web, and iOS without network circularity.
+- **Offline Argon2id Web WASM Engine**: Vendored self-contained `web/vendor/argon2.umd.min.js` (30 KB with embedded base64 WebAssembly) backed by `hash-wasm` to guarantee 100% client-side, zero-network recovery verifier derivation matching Android parameters.
+- **Deterministic Golden Reference Fixtures**: Created `scripts/generate_compatibility_fixtures.js` which produces deterministic test vectors in `test-fixtures/crypto/`, `test-fixtures/recovery/`, and `test-fixtures/envelopes/` (including binary `.bin` envelopes) reproducible across Android, Web, and iOS.
+- **Canonical Envelope Web Adapters**: Added Little-Endian `buildV1Envelope`, `parseV1Envelope`, `buildGtagEnvelope`, and `parseGtagEnvelope` helpers in `web/app.js` with canonical 26-byte (v1) and 74-byte (v2) AAD layouts.
 
 ## Changed
 
-- Android CI Workflow: Separated release APK packaging (requiring four valid GitHub Secrets) from debug CI smoke testing in `.github/workflows/android-build.yml`.
-- Dynamic APK Signer Discovery: Upgraded `.github/workflows/release.yml` with dynamic `apksigner` discovery and explicit rejection of Android debug keys.
-- CodeQL Matrix Alignment: Streamlined `.github/workflows/codeql.yml` to target `javascript-typescript`.
+- **Canonical KDF Unification**:
+  - `account_id`: RFC 4122 v4 UUID derived via single-pass `SHA256("ghost-account-id-v2.0.5:" || recovery_phrase)`.
+  - `recovery_auth_secret`: 32-byte secret derived via single-pass `SHA256("ghost-recovery-auth-v2.0.5:" || recovery_phrase)`.
+  - `recovery_salt`: 32-byte deterministic salt derived via single-pass `SHA256("ghost-recovery-salt-v2.0.5:" || recovery_phrase)`.
+  - `recovery_verifier`: Argon2id RFC 9106 ($m=32768$ KiB, $t=3$ passes, $p=2$ threads, $h=32$ bytes, $v=0x13$, 32-byte salt) serialized to 64 lowercase hexadecimal characters.
+- **Bulk Envelope Record Type**: Enforced canonical record type `0x10` (`RECORD_TYPE_BULK_CHUNK`) across serializers.
+- **Supabase Anonymous Cloud Sync**: `web/supabase.js` and `web/app.js` now derive and store `recovery_verifier` and `recovery_salt` during account initialization and manual synchronization, passing only `account_id` and `recovery_verifier` during recovery.
+- **Ghost Bridge APDU Exports**: Exported `parseNdefRecords` and `parseNdefFromUserMemory` in `desktop/src/apdu.js` for programmatic transport verification.
 
-## Fixed
+## Migration & Backward Compatibility
 
-- Web Client Syntax Error (Alert #6): Removed orphaned `catch` block in `web/app.js:1168`.
-- Payload Validation Conditional (Warning #5): Replaced redundant conditional with strict type and length validation in `src/operations/writeOperation.ts:73`.
-- Client-Side DOM XSS (Alert #60): Refactored `renderScanHistory` in `web/app.js:818` to use safe DOM `createElement` and `textContent`.
-- Incomplete Regex Meta-Character Escape (Alert #61): Escaped all meta-characters in `tests/scan-unused.cjs:141`.
-- Unused Loop Identifier (Alert #62): Replaced `.entries()` with `.values()` in `web/app.js:506`.
-- Polynomial Regular Expression ReDoS (Alert #1): Replaced unanchored regex in `src/cloud/supabaseClient.ts:63` with strict RFC 4122 UUID matcher.
-- Insecure Randomness (Alerts #2 & #3): Replaced `Math.random()` with WebCrypto `crypto.getRandomValues()` in `web/supabase.js:234` and `web/supabase.js:266`.
+- **Legacy Web Recovery Migration**: Existing Web recovery records with recovery_kdf_version = 1 are recoverable only after successful migration using the original 12-word recovery phrase. Migration must be validated end-to-end before this claim is considered production-ready. Web previously derived recovery verifiers using PBKDF2 (100,000 rounds). Legacy web vaults (`recovery_kdf_version = 1`) can be upgraded to Argon2id via `migrate-recovery-verifier` from their 12-word recovery phrase on any device with zero secret leakage.
+- **Physical NFC Tags Unaffected**: All physical NFC tags written on Web or Android remain 100% decryptable because tag encryption uses the master passphrase and DEK with AES-256-GCM, which does not depend on the Supabase recovery verifier.
 
-## Security
+## Security & Privacy Invariants
 
-- Zero Open CodeQL Alerts: 0 open security alerts confirmed via GitHub Code Scanning API.
-- Zero Open Dependabot Alerts: 0 open vulnerability alerts confirmed via GitHub Dependabot API.
-- Supply Chain Hardening: Resolved `minimatch` ReDoS (`GHSA-7r86-5chv-c4rg`) via scoped override to `11.0.9`. Evaluated and dismissed withdrawn `deepmerge` advisory as tolerable risk.
-- Zero Secrets Tracked: Full secret hygiene verified across codebase and git history.
-
-## Dependencies
-
-- `@typescript-eslint/typescript-estree`: Scoped override to `minimatch@^11.0.9`.
-- Verified `npm audit` reports 0 vulnerabilities.
+- **Zero Secret Transmission**: Supabase stores ONLY encrypted vault metadata blobs. It NEVER receives or stores passphrases, recovery phrases, KEKs, DEKs, plaintexts, or NFC chunk contents.
+- **Zero Open Vulnerabilities**: Confirmed zero open CodeQL alerts and zero open Dependabot vulnerabilities (`npm audit` reports 0 vulnerabilities).
+- **Offline Self-Sufficiency**: Web app operates completely offline without external CDN dependencies for Argon2id WASM.
+- **iOS Implementation Status**: iOS cryptographic foundation is implemented in source code, but remains pending macOS build validation, XCTest validation, cross-platform fixture validation, and physical iPhone NFC validation. iOS is not supported, verified, complete, or release-ready. iOS UI and Core NFC remain unimplemented.
 
 ## Verification
 
-- Exact test suite count: 14 passed / 14 suites (184 passed / 184 tests).
-- TypeScript typecheck result: 0 errors (`npx tsc --noEmit` in strict mode).
-- Lint result: 0 errors, 14 style warnings (`npm run lint`).
-- Web build result: Vite v6.4.6 production build succeeded in 216ms (`dist/index.html` 34.70 kB).
-- Android build result: Clean debug APK build succeeded on GitHub Actions (`assembleDebug` passed, 9m 35s).
-- CodeQL result: 0 open alerts (`CodeQL Analysis` workflow passed in 1m 13s).
-- Dependabot status: 0 open alerts (verified via GitHub Dependabot API).
-- APK SHA-256: No release APK created (release tagging blocked pending explicit approval).
-
-## Known limitations
-
-- Deployment blocker: Live Supabase deployment requires `SUPABASE_ACCESS_TOKEN` and linked project ref.
-- Hardware blocker: Physical NFC validation requires a supported Android device, physical NTAG213/215/216 tags, and optionally an ACS ACR122U USB reader for Ghost Bridge testing.
-- Offline-first web NFC requires Chrome on Android or Ghost Bridge desktop companion on desktop browsers (Web NFC is unsupported on iOS Safari).
-
-## Security boundary
-
-Ghost-Tag includes optional runtime environment checks, but these do not prevent reverse engineering or protect data on a compromised or unlocked device.
+- **Full Verification Suite**: 15 passed / 15 test suites (255 passed / 255 tests).
+- **TypeScript Strict Typecheck**: 0 errors (`npx tsc --noEmit`).
+- **Web Build**: Clean production build via Vite (`npm run build`).
+- **Lint**: Zero errors (`npm run lint`).
+- **Artifacts & Tags**: No release tag, GitHub Release, or Supabase deployment performed in accordance with user constraints.

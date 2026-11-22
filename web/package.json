@@ -1,13 +1,15 @@
 {
   "name": "ghost-tag-web",
-  "version": "2.0.6",
+  "version": "2.1.0",
   "description": "Minimal, dark, client-side encrypted NFC storage web application for Ghost-Tag",
   "private": true,
-  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
+  },
+  "dependencies": {
+    "hash-wasm": "^4.13.0"
   },
   "devDependencies": {
     "vite": "^6.4.6"

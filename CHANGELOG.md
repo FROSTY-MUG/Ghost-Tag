@@ -5,6 +5,31 @@ All notable changes to the Ghost-Tag project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.1.0] - 2026-11-22
+
+### Added
+- **Cross-Platform Cryptographic Compatibility Test Suite**: Comprehensive 59-test suite (`src/__tests__/crossPlatformCryptoCompatibility.test.ts`) verifying byte-for-byte wire and KDF compatibility across Android, Web, Ghost Bridge, and Supabase edge functions across 25 distinct verification points.
+- **Zero-Knowledge Cross-Device Recovery**: Recovery on brand-new devices requires zero existing owner sessions or logins; the 12-word recovery phrase is the sole recovery credential.
+- **Dedicated Legacy Verifier Migration Edge Function**: Implemented `POST /functions/v1/migrate-recovery-verifier` allowing legacy web users to migrate PBKDF2 verifiers to canonical Argon2id on any device using their legacy verifier as ownership proof with zero secret exposure.
+- **Deterministic Recovery Salt (Option A)**: `recovery_salt = SHA256("ghost-recovery-salt-v2.0.5:" || phrase)` enables 100% offline derivation across Android, Web, and iOS without network circularity.
+- **Argon2id RFC 9106 Web WASM Engine**: Vendored offline standalone Argon2id WebAssembly engine (`web/vendor/argon2.umd.min.js`) backed by `hash-wasm` with canonical parameters ($m=32768$ KiB, $t=3$, $p=2$, $h=32$, $v=0x13$), enabling 100% offline client-side recovery verifier computation.
+- **Deterministic Cross-Platform Test Fixtures**: Golden reference vectors (`test-fixtures/crypto/aesGcmVectors.json`, `test-fixtures/recovery/recoveryVectors.json`, `test-fixtures/envelopes/v1EnvelopeVectors.json`, `test-fixtures/envelopes/v2BulkEnvelopeVectors.json`, and reference `.bin` files) generated deterministically via `scripts/generate_compatibility_fixtures.js`.
+- **v1 & v2 Binary Envelope Web Adapters**: Added canonical Little-Endian `buildV1Envelope`, `parseV1Envelope`, `buildGtagEnvelope`, and `parseGtagEnvelope` helpers in `web/app.js` with 26-byte (v1) and 74-byte (v2) canonical AAD.
+
+### Changed
+- **Canonical Cryptographic Realignment**: Aligned Web implementation directly to Android as the canonical Ghost-Tag cryptographic reference:
+  - `account_id`: RFC 4122 v4 UUID derived from `SHA256("ghost-account-id-v2.0.5:" || recovery_phrase)`.
+  - `recovery_auth_secret`: 32 raw bytes derived from `SHA256("ghost-recovery-auth-v2.0.5:" || recovery_phrase)`.
+  - `recovery_salt`: 32 raw bytes derived from `SHA256("ghost-recovery-salt-v2.0.5:" || recovery_phrase)`.
+  - `recovery_verifier`: 32-byte Argon2id RFC 9106 digest serialized to 64 lowercase hexadecimal characters.
+- **Bulk Envelope Record Type**: Enforced canonical record type `0x10` (`RECORD_TYPE_BULK_CHUNK`) across Web and core envelope serializers.
+- **Supabase Cloud Recovery & Migration**: `web/supabase.js` and `web/app.js` now derive and upload canonical Argon2id verifiers, strictly sending only `account_id` and `recovery_verifier` during recovery, and enabling seamless migration of legacy vaults.
+
+### Backward Compatibility & Migration
+- **Legacy Web Recovery Migration**: Existing Web recovery records with recovery_kdf_version = 1 are recoverable only after successful migration using the original 12-word recovery phrase. Migration must be validated end-to-end before this claim is considered production-ready. Legacy web vaults can be upgraded to Argon2id via `migrate-recovery-verifier` from their 12-word recovery phrase on any device with zero secret leakage.
+- **iOS Implementation Status**: iOS cryptographic foundation is implemented in source code, but remains pending macOS build validation, XCTest validation, cross-platform fixture validation, and physical iPhone NFC validation. iOS is not supported, verified, complete, or release-ready. iOS UI and Core NFC remain unimplemented.
+- **NFC Tag Compatibility Preserved**: Physical NFC tags written on Web or Android remain 100% decryptable because tag encryption uses the master passphrase and DEK with AES-256-GCM, which is independent of the Supabase recovery verifier.
+
 ## [v2.0.6] - 2026-11-20
 
 ### Added

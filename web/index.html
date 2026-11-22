@@ -227,6 +227,31 @@
       </div>
     </section>
 
+    <!-- VIEW 7C: LEGACY RECOVERY MIGRATION PROMPT -->
+    <section id="view-migrate-recovery" class="view-section">
+      <h2 class="section-heading">UPGRADE RECOVERY VERIFIER</h2>
+      <p class="subheading" style="color: #4ade80; margin-bottom: 14px;">Cloud Vault Compatibility Upgrade Required</p>
+
+      <div class="card" style="margin-bottom: 24px; padding: 20px; line-height: 1.6; border: 1px solid rgba(74, 222, 128, 0.3);">
+        <p style="margin: 0 0 10px 0; color: #fff; font-size: 15px;">
+          This vault's cloud recovery verifier is using the legacy PBKDF2 profile.
+        </p>
+        <p style="margin: 0 0 10px 0; color: #aaa; font-size: 13px;">
+          Upgrading to canonical Argon2id (RFC 9106) aligns your vault with Ghost-Tag Android and iOS, allowing seamless cross-platform recovery.
+        </p>
+        <p style="margin: 0; color: #888; font-size: 12px;">
+          Your recovery phrase and encrypted data remain unchanged. Only the cryptographic verifier is upgraded.
+        </p>
+      </div>
+
+      <div id="migrationError" class="alert-box alert-error" style="display: none; margin-bottom: 15px;"></div>
+
+      <div class="btn-group">
+        <button class="btn btn-ghost" id="btnDismissMigration">Skip for Now</button>
+        <button class="btn btn-primary" id="btnConfirmMigration">Upgrade Recovery Verifier</button>
+      </div>
+    </section>
+
     <!-- VIEW 8: MAIN APP (Clean [ Encrypt ] [ Decrypt ]) -->
     <section id="view-app" class="view-section">
       <div style="text-align: center; padding: 24px 0 16px;">
@@ -646,7 +671,7 @@
 
     <!-- Minimal Technical Footer (Section 3.5: All four footer links open /technical) -->
     <footer class="app-footer">
-      <div>GHOST-TAG v2.0.5</div>
+      <div>GHOST-TAG v2.1.0</div>
       <div class="footer-nav">
         <a class="footer-link" href="technical.html#technical">Technical</a> ·
         <a class="footer-link" href="technical.html#security">Security</a> ·
@@ -657,8 +682,9 @@
 
   </div>
 
-  <!-- BIP-39 Wordlist, Supabase Sync Client & Application Engine -->
+  <!-- BIP-39 Wordlist, Argon2id WASM Engine, Supabase Sync Client & Application Engine -->
   <script src="wordlist.js"></script>
+  <script src="vendor/argon2.umd.min.js"></script>
   <script src="supabase.js"></script>
   <script src="app.js"></script>
 </body>

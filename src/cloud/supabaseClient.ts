@@ -147,6 +147,19 @@ export async function deriveRecoveryAuthSecret(words: string[]): Promise<Uint8Ar
 }
 
 /**
+ * Derives a deterministic 256-bit recovery salt from the recovery phrase (Option A).
+ * recovery_salt = SHA256("ghost-recovery-salt-v2.0.5:" || cleanPhrase)
+ * Eliminates cross-device salt distribution circularity.
+ */
+export function deriveRecoverySalt(words: string[] | string): Uint8Array {
+  const wordsArr = Array.isArray(words) ? words : words.trim().split(/\s+/);
+  const cleanPhrase = wordsArr.map((w: string) => w.trim().toLowerCase()).join(' ');
+  const enc = new TextEncoder();
+  const input = enc.encode(`ghost-recovery-salt-v2.0.5:${cleanPhrase}`);
+  return computeChunkHash(input);
+}
+
+/**
  * Computes the 256-bit recovery_verifier stored in Supabase using Argon2id RFC 9106.
  * recovery_verifier = Argon2id(recovery_auth_secret, recovery_salt, parameters)
  */
@@ -338,11 +351,12 @@ export async function downloadEncryptedVaultMetadata(
  * Enforces rate limiting, constant-time verification, and generic errors.
  */
 const RFC4122_UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const HEX64_REGEX = /^[0-9a-fA-F]{64}$/;
 
 export async function recoverVaultWithVerifier(
   accountId: string,
   recoveryVerifierHex: string,
-  newOwnerUserId: string
+  newOwnerUserId?: string
 ): Promise<EncryptedVaultRecord> {
   // 1. Strict RFC 4122 UUID format validation
   if (!accountId || typeof accountId !== 'string' || !RFC4122_UUID_REGEX.test(accountId)) {
@@ -419,8 +433,10 @@ export async function recoverVaultWithVerifier(
     throw new Error('RECOVERY_FAILED');
   }
 
-  // Verification succeeded: reassign owner_user_id and mark success (retaining attempt history)
-  localEntry.owner_user_id = newOwnerUserId;
+  // Verification succeeded: reassign owner_user_id if provided and mark success
+  if (newOwnerUserId) {
+    localEntry.owner_user_id = newOwnerUserId;
+  }
   localEntry.updated_at = new Date().toISOString();
   if (rateRecord) {
     rateRecord.successfulAttempts = (rateRecord.successfulAttempts || 0) + 1;
@@ -431,6 +447,109 @@ export async function recoverVaultWithVerifier(
     encryptedBlob: localEntry.encrypted_vault_blob,
     vaultVersion: localEntry.vault_version,
     source: 'offline-local',
+  };
+}
+
+/**
+ * Executes migration of a legacy PBKDF2 recovery verifier to Argon2id.
+ * Proof of ownership is the correct legacy recovery verifier.
+ */
+export async function migrateRecoveryVerifier(
+  accountId: string,
+  legacyRecoveryVerifierHex: string,
+  newRecoveryVerifierHex: string,
+  arbitraryRecoverySaltAttempt?: string
+): Promise<{ success: boolean; recoveryKdfVersion: number }> {
+  if (!accountId || typeof accountId !== 'string' || !RFC4122_UUID_REGEX.test(accountId)) {
+    throw new Error('MIGRATION_FAILED');
+  }
+  if (!legacyRecoveryVerifierHex || typeof legacyRecoveryVerifierHex !== 'string') {
+    throw new Error('MIGRATION_FAILED');
+  }
+  if (!newRecoveryVerifierHex || !HEX64_REGEX.test(newRecoveryVerifierHex)) {
+    throw new Error('MIGRATION_FAILED');
+  }
+
+  if (activeConfig.isConfigured) {
+    try {
+      const payload: Record<string, any> = {
+        account_id: accountId,
+        legacy_recovery_verifier: legacyRecoveryVerifierHex.toLowerCase(),
+        new_recovery_verifier: newRecoveryVerifierHex.toLowerCase(),
+      };
+      if (arbitraryRecoverySaltAttempt !== undefined && arbitraryRecoverySaltAttempt !== null) {
+        payload.recovery_salt = arbitraryRecoverySaltAttempt;
+      }
+
+      const resp = await fetch(`${activeConfig.url}/functions/v1/migrate-recovery-verifier`, {
+        method: 'POST',
+        headers: {
+          apikey: activeConfig.anonKey,
+          Authorization: `Bearer ${activeConfig.anonKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!resp.ok) {
+        throw new Error('MIGRATION_FAILED');
+      }
+
+      const data = await resp.json();
+      return {
+        success: true,
+        recoveryKdfVersion: data.recovery_kdf_version ?? 2,
+      };
+    } catch (e) {
+      if ((e as Error).message === 'MIGRATION_FAILED') {
+        throw e;
+      }
+    }
+  }
+
+  // Local/in-memory migration check
+  const localEntry = inMemoryVaultSyncStore.get(accountId);
+  const candidateBytes = hexToBytes(legacyRecoveryVerifierHex);
+  const dummyBuffer = new Uint8Array(candidateBytes.length || 32);
+
+  if (!localEntry) {
+    timingSafeEqual(candidateBytes, dummyBuffer);
+    throw new Error('MIGRATION_FAILED');
+  }
+
+  // Strictly require recovery_kdf_version === 1
+  if (localEntry.recovery_kdf_version !== 1) {
+    timingSafeEqual(candidateBytes, dummyBuffer);
+    throw new Error('MIGRATION_FAILED');
+  }
+
+  const storedBytes = hexToBytes(localEntry.recovery_verifier);
+  const isMatch = timingSafeEqual(candidateBytes, storedBytes);
+
+  if (!isMatch) {
+    throw new Error('MIGRATION_FAILED');
+  }
+
+  // Reject arbitrary recovery salt if attempted
+  if (arbitraryRecoverySaltAttempt !== undefined && arbitraryRecoverySaltAttempt !== null) {
+    throw new Error('MIGRATION_FAILED');
+  }
+
+  // Canonical zero-knowledge deterministic salt derivation
+  const saltInput = new TextEncoder().encode(
+    `ghost-canonical-migrated-salt-v2.1.0:${accountId}:${legacyRecoveryVerifierHex.toLowerCase()}`
+  );
+  const derivedSalt = computeChunkHash(saltInput);
+  const derivedSaltHex = bytesToHex(derivedSalt);
+
+  localEntry.recovery_verifier = newRecoveryVerifierHex.toLowerCase();
+  localEntry.recovery_salt = derivedSaltHex;
+  localEntry.recovery_kdf_version = 2;
+  localEntry.updated_at = new Date().toISOString();
+
+  return {
+    success: true,
+    recoveryKdfVersion: 2,
   };
 }
 

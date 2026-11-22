@@ -1,0 +1,17 @@
+{
+  "description": "NIST SP 800-38D AES-256-GCM deterministic test vectors",
+  "cipher": "aes-256-gcm",
+  "vectors": [
+    {
+      "id": "aes-gcm-vec-1",
+      "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "nonce_hex": "a0a1a2a3a4a5a6a7a8a9aaab",
+      "plaintext_ascii": "Ghost-Tag cross-platform cryptographic test vector payload 2026",
+      "plaintext_hex": "47686f73742d5461672063726f73732d706c6174666f726d2063727970746f67726170686963207465737420766563746f72207061796c6f61642032303236",
+      "aad_ascii": "GTAG-AAD-METADATA-BINDING-PROOF",
+      "aad_hex": "475441472d4141442d4d455441444154412d42494e44494e472d50524f4f46",
+      "ciphertext_hex": "a170135e31e656de0545e4a16809b3f300c03864f4d83001bc6d54ff0fdf1a66a0173797c64173493aef70e87f1fe08d2869663803a97611203a2b6c9442b3",
+      "tag_hex": "1514e01e32bb2cddb5bde063ef864036"
+    }
+  ]
+}

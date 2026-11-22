@@ -1,18 +1,25 @@
 # Ghost-Tag Project Status
 
-**Version**: 2.0.6  
-**Last Updated**: 2026-11-20  
+**Version**: 2.1.0  
+**Last Updated**: 2026-11-22  
 **Branch**: main  
-**Status**: Release Candidate — Security Hardened & Quality Verified
+**Status**: Release Candidate — Cross-Platform Cryptographic Alignment (Android, Web, Ghost Bridge, iOS)
 
 ---
 
 ## Release Checklist
 
-### Security & Quality Gates
+### Cross-Platform Cryptographic Alignment & Quality Gates
 
 | Item | Status | Verification Detail |
 |------|--------|---------------------|
+| Cross-Platform Compatibility Test Suite | ✅ Passed | 59 tests in `src/__tests__/crossPlatformCryptoCompatibility.test.ts` covering 30 verification points |
+| Web Argon2id RFC 9106 Engine | ✅ Implemented | Vendored standalone WASM `web/vendor/argon2.umd.min.js` via `hash-wasm` ($m=32768$ KiB, $t=3$, $p=2$, $h=32$, $v=0x13$) |
+| Canonical KDF Parameter Unification | ✅ Aligned | Android, Web, and Supabase use identical single-pass domain separation and Argon2id parameters |
+| Wire Format & Envelope Layout | ✅ Aligned | Canonical `RECORD_TYPE_BULK_CHUNK` (`0x10`), Little-Endian integers, 26B/74B canonical AAD |
+| Golden Reference Fixtures | ✅ Generated | `scripts/generate_compatibility_fixtures.js` outputs deterministic JSON/bin vectors |
+| Full Test Suite Integrity | ✅ Passed | 15/15 test suites passed (255/255 tests passing) |
+| TypeScript Strict Check | ✅ Passed | 0 errors via `npx tsc --noEmit` |
 | CodeQL Alert #1 (polynomial ReDoS) | ✅ Fixed | Strict RFC 4122 UUID validation in `src/cloud/supabaseClient.ts:63` |
 | CodeQL Alert #2 (insecure random) | ✅ Fixed | WebCrypto CSPRNG `crypto.getRandomValues` in `web/supabase.js:234` |
 | CodeQL Alert #3 (insecure random) | ✅ Fixed | WebCrypto CSPRNG `crypto.getRandomValues` in `web/supabase.js:266` |
@@ -100,7 +107,10 @@
 | Clean Dependency Installation | `npm ci` & `npm --prefix web ci` | Passed (0 errors) |
 | ESLint Code Quality Gate | `npm run lint` | Passed (0 errors) |
 | Strict TypeScript Compilation | `npm run typecheck` | Passed (0 errors) |
-| Automated Jest Test Suite | `npm test` (14 suites, 183 tests) | Passed (100%) |
+| Automated Jest Test Suite | `npm test` (15 suites, 255 tests) | Passed (100%) |
+| iOS Cryptographic Foundation | Native Swift + Clibargon2 (`ios/`) | Implemented in Source (Pending macOS build & XCTest) |
+| Web Legacy Recovery Migration Flow | `web/app.js`, `web/index.html` | Completed (Explicit User Consent) |
+| Cross-Platform Reference Fixtures | `test-fixtures/` (JSON & `.bin`) | Verified & Embedded in iOS |
 | Dependency Vulnerability Audit | `npm audit --audit-level=moderate` | Passed (0 vulnerabilities) |
 | Web Production Bundle Build | `npm --prefix web run build` | Passed (Vite dist bundle) |
 | Unused Declaration Scan | `node tests/scan-unused.cjs` | Passed (0 unused items) |
@@ -108,13 +118,17 @@
 
 ---
 
-## Explicit Operational Blockers
+## Explicit Operational Blockers & Status Disclosures
 
 The following items are strictly bounded and cannot proceed without external credentials or physical devices:
 
 1. **Supabase Cloud Live Deployment**:
-   > **Blocked: Supabase deployment requires SUPABASE_ACCESS_TOKEN and linked project ref.**
-2. **Physical NFC Hardware Validation**:
-   > **Blocked: Physical NFC validation requires a supported Android device, physical NTAG213/215/216 tags, and optionally an ACS ACR122U USB reader for Ghost Bridge testing.**
-3. **Official GitHub Release / Tagging Policy**:
-   > Per release policy, release tags and official GitHub Releases are published strictly under maintainer approval.
+   > **Blocked: Supabase deployment requires SUPABASE_ACCESS_TOKEN and linked project ref. Supabase is NOT deployed.**
+2. **iOS Platform Status & Validation**:
+   > **Blocked: iOS cryptographic foundation is implemented in source code, but remains pending macOS build validation, XCTest validation, cross-platform fixture validation, and physical iPhone NFC validation. iOS is not supported, verified, complete, or release-ready. iOS UI and Core NFC are not implemented.**
+3. **Web Legacy Recovery Migration Status**:
+   > **Notice: Existing Web recovery records with recovery_kdf_version = 1 are recoverable only after successful migration using the original 12-word recovery phrase. Migration must be validated end-to-end before this claim is considered production-ready.**
+4. **Physical NFC Hardware Validation**:
+   > **Blocked: Physical NFC validation requires a supported Android device, physical NTAG213/215/216 tags, and optionally an ACS ACR122U USB reader for Ghost Bridge testing. Physical Ghost tags remain offline-decryptable and are unaffected by Supabase recovery changes.**
+5. **Official GitHub Release / Tagging Policy**:
+   > Per release policy, release tags and official GitHub Releases are published strictly under maintainer approval. No release tag or GitHub Release is created.

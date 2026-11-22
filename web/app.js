@@ -77,8 +77,8 @@
     recoveredEntries: [], // [{ type, name, size, mime, data: Uint8Array, content }]
 
     // Hardware & Environment
-    isWebNfcSupported: ('NDEFReader' in window),
-    isiOS: /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream
+    isWebNfcSupported: typeof window !== 'undefined' && ('NDEFReader' in window),
+    isiOS: typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent) && !(typeof window !== 'undefined' && window.MSStream)
   };
 
   // --- Cryptographic Helpers & Conversion Utilities ---
@@ -233,8 +233,10 @@
   }
 
   // --- Canonical Binary Envelope: "GTAG" (Little-Endian) ---
+  const RECORD_TYPE_BULK_CHUNK = 0x10; // Canonical Ghost v2 bulk chunk record type
+
   function buildGtagEnvelope({
-    recordType = 0x02,
+    recordType = RECORD_TYPE_BULK_CHUNK,
     vaultIdBytes,
     fileIdBytes,
     keyIdBytes,
@@ -254,7 +256,7 @@
 
     buffer.set(MAGIC_BYTES, 0); // "GTAG"
     buffer[4] = FORMAT_VERSION; // 0x02
-    buffer[5] = recordType; // 0x02 Bulk Chunk
+    buffer[5] = recordType; // 0x10 Bulk Chunk
     buffer.set(vaultIdBytes, 6);
     buffer.set(fileIdBytes, 22);
     buffer.set(keyIdBytes, 38);
@@ -283,7 +285,13 @@
       }
     }
     const version = buffer[4];
+    if (version !== 0x02) {
+      throw new Error(`Unsupported envelope version: expected 0x02, received 0x${version.toString(16)}`);
+    }
     const recordType = buffer[5];
+    if (recordType !== 0x10 && recordType !== 0x02) {
+      throw new Error(`Unsupported record type: expected 0x10 (BULK_CHUNK), received 0x${recordType.toString(16)}`);
+    }
     const vaultId = buffer.slice(6, 22);
     const fileId = buffer.slice(22, 38);
     const keyId = buffer.slice(38, 54);
@@ -321,6 +329,76 @@
       ciphertext,
       tag,
       aad
+    };
+  }
+
+  function buildV1Envelope({ keyIdBytes, iv, ciphertext, tag, purpose = 0x01 }) {
+    const aad = new Uint8Array(26);
+    aad.set(MAGIC_BYTES, 0);
+    aad[4] = 0x01; // v1
+    aad[5] = purpose;
+    aad.set(keyIdBytes, 6);
+    const view = new DataView(aad.buffer, aad.byteOffset, aad.byteLength);
+    view.setUint32(22, ciphertext.length, true);
+
+    const buffer = new Uint8Array(54 + ciphertext.length);
+    buffer.set(MAGIC_BYTES, 0);
+    buffer[4] = 0x01;
+    buffer[5] = purpose;
+    buffer.set(keyIdBytes, 6);
+    buffer.set(iv, 22);
+    const vView = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    vView.setUint32(34, ciphertext.length, true);
+    buffer.set(ciphertext, 38);
+    buffer.set(tag, 38 + ciphertext.length);
+
+    return { envelope: buffer, aad };
+  }
+
+  function parseV1Envelope(buffer) {
+    if (!buffer || buffer.length < 54) {
+      throw new Error('Data is smaller than minimum v1 envelope overhead (54B).');
+    }
+    for (let i = 0; i < 4; i++) {
+      if (buffer[i] !== MAGIC_BYTES[i]) throw new Error('Invalid magic bytes');
+    }
+    const version = buffer[4];
+    if (version !== 0x01) throw new Error('Unsupported envelope version: expected 0x01');
+    const purpose = buffer[5];
+    const keyId = buffer.slice(6, 22);
+    const nonce = buffer.slice(22, 34);
+    const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    const ctLen = view.getUint32(34, true);
+    if (buffer.length !== 54 + ctLen) {
+      throw new Error('Envelope length mismatch');
+    }
+    const ciphertext = buffer.slice(38, 38 + ctLen);
+    const tag = buffer.slice(38 + ctLen, 54 + ctLen);
+    const aad = new Uint8Array(26);
+    aad.set(MAGIC_BYTES, 0);
+    aad[4] = 0x01;
+    aad[5] = purpose;
+    aad.set(keyId, 6);
+    const aadView = new DataView(aad.buffer, aad.byteOffset, aad.byteLength);
+    aadView.setUint32(22, ctLen, true);
+
+    return { version, purpose, keyId, nonce, ciphertext, tag, aad };
+  }
+
+  if (typeof window !== 'undefined') {
+    window.GhostEnvelope = {
+      buildGtagEnvelope,
+      parseGtagEnvelope,
+      buildV1Envelope,
+      parseV1Envelope,
+    };
+  }
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+      buildGtagEnvelope,
+      parseGtagEnvelope,
+      buildV1Envelope,
+      parseV1Envelope,
     };
   }
 
@@ -787,6 +865,26 @@
     renderScanHistoryUI();
   }
 
+  function logAuditEvent({ action }) {
+    try {
+      const allowedActions = new Set(['recovery_verifier_migrated', 'vault_unlocked', 'vault_locked']);
+      const safeAction = allowedActions.has(action) ? action : 'audit_event';
+      const record = {
+        id: 'aud_' + Date.now() + '_' + generateSecureRandomHex(4),
+        timestamp: new Date().toISOString(),
+        action: safeAction
+      };
+      if (typeof localStorage !== 'undefined') {
+        const events = JSON.parse(localStorage.getItem('ghost_audit_events') || '[]');
+        events.unshift(record);
+        if (events.length > 50) events.pop();
+        localStorage.setItem('ghost_audit_events', JSON.stringify(events));
+      }
+    } catch (_) {
+      // Ignore logging failure; zero sensitive fields logged
+    }
+  }
+
   function maskUid(uid) {
     if (!uid || typeof uid !== 'string') return '04:***:F6';
     const parts = uid.split(':');
@@ -892,7 +990,7 @@
     // Header visibility: visible once account exists and outside setup views
     const header = document.getElementById('mainHeader');
     if (header) {
-      const isAccountView = ['view-welcome', 'view-create-passphrase', 'view-recovery-phrase', 'view-confirm-phrase', 'view-restore-account', 'view-landing'].includes(viewId);
+      const isAccountView = ['view-welcome', 'view-create-passphrase', 'view-recovery-phrase', 'view-confirm-phrase', 'view-restore-account', 'view-landing', 'view-confirm-restore-ownership', 'view-migrate-recovery'].includes(viewId);
       header.style.display = (!isAccountView && state.account) ? 'flex' : 'none';
     }
   }
@@ -1078,6 +1176,12 @@
         const rawDek = crypto.getRandomValues(new Uint8Array(32));
         const wrappedDek = await encryptAesGcm(kek, rawDek, new Uint8Array([0x56, 0x4B])); // "VK"
 
+        // Canonical Argon2id recovery credentials for cross-platform Supabase recovery
+        const authSecretBytes = await window.GhostSupabase.deriveRecoveryAuthSecret(state.pendingRecoveryWords);
+        const recoverySalt = await window.GhostSupabase.deriveRecoverySalt(state.pendingRecoveryWords);
+        const recoveryVerifierHex = await window.GhostSupabase.computeRecoveryVerifier(authSecretBytes, recoverySalt);
+        const recoverySaltHex = bytesToHex(recoverySalt);
+
         const accountData = { accountId: accountId, createdAt: Date.now() };
         const vaultData = {
           vaultVersion: FORMAT_VERSION,
@@ -1086,6 +1190,8 @@
           wrappedDekHex: bytesToHex(wrappedDek.ciphertext),
           dekIvHex: bytesToHex(wrappedDek.iv),
           dekTagHex: bytesToHex(wrappedDek.tag),
+          recoverySaltHex: recoverySaltHex,
+          recoveryVerifierHex: recoveryVerifierHex,
           updatedAt: Date.now()
         };
 
@@ -1097,7 +1203,10 @@
         state.isUnlocked = true;
 
         const metadataBlob = btoa(JSON.stringify(vaultData));
-        await window.GhostSupabase.uploadEncryptedVault(accountId, metadataBlob, FORMAT_VERSION);
+        await window.GhostSupabase.uploadEncryptedVault(accountId, metadataBlob, FORMAT_VERSION, {
+          recoveryVerifierHex: recoveryVerifierHex,
+          recoverySaltHex: recoverySaltHex
+        });
 
         state.pendingPassphrase = null;
         state.pendingRecoveryWords = null;
@@ -1159,8 +1268,16 @@
       if (btn) btn.classList.add('btn-loading');
 
       try {
-        const accountId = await window.GhostSupabase.deriveAccountId(words);
-        const remoteVault = await window.GhostSupabase.downloadEncryptedVault(accountId);
+        let accountId = await window.GhostSupabase.deriveAccountId(words);
+        let remoteVault = await window.GhostSupabase.downloadEncryptedVault(accountId);
+        if (!remoteVault) {
+          const legacyAccountId = await window.GhostSupabase.deriveLegacyAccountId(words);
+          const legacyVault = await window.GhostSupabase.downloadEncryptedVault(legacyAccountId);
+          if (legacyVault) {
+            accountId = legacyAccountId;
+            remoteVault = legacyVault;
+          }
+        }
 
         showPassphraseModal('Enter your master passphrase to unlock and restore the vault metadata:', async (passphrase) => {
           try {
@@ -1192,7 +1309,16 @@
 
             updateHeaderAccountStatus();
             renderVaultEntries();
-            showView('view-app');
+
+            if (remoteVault && remoteVault.needsMigration) {
+              state.pendingMigration = {
+                accountId,
+                words
+              };
+              showView('view-migrate-recovery');
+            } else {
+              showView('view-app');
+            }
           } catch (err) {
             alert('Failed to restore vault with provided passphrase: ' + err.message);
           }
@@ -1202,6 +1328,47 @@
       } finally {
         if (btn) btn.classList.remove('btn-loading');
       }
+    });
+
+    // Migration handlers for legacy web recovery verifiers
+    document.getElementById('btnConfirmMigration')?.addEventListener('click', async () => {
+      const pm = state.pendingMigration;
+      if (!pm) {
+        showView('view-app');
+        return;
+      }
+      const btn = document.getElementById('btnConfirmMigration');
+      const errEl = document.getElementById('migrationError');
+      if (errEl) errEl.style.display = 'none';
+      if (btn) btn.classList.add('btn-loading');
+
+      try {
+        const res = await window.GhostSupabase.upgradeRecoveryVerifier(pm.accountId, pm.words);
+        if (state.vault) {
+          state.vault.recoveryVerifierHex = res.recoveryVerifierHex;
+          state.vault.recoverySaltHex = res.recoverySaltHex;
+          state.vault.recoveryKdfVersion = 2;
+          localStorage.setItem(STORAGE_KEY_VAULT, JSON.stringify(state.vault));
+        }
+        logAuditEvent({ action: 'recovery_verifier_migrated' });
+        state.pendingMigration = null;
+        alert('Recovery verifier successfully upgraded to canonical Argon2id (RFC 9106).');
+        showView('view-app');
+      } catch (err) {
+        if (errEl) {
+          errEl.textContent = 'Upgrade failed: ' + err.message;
+          errEl.style.display = 'block';
+        } else {
+          alert('Upgrade failed: ' + err.message);
+        }
+      } finally {
+        if (btn) btn.classList.remove('btn-loading');
+      }
+    });
+
+    document.getElementById('btnDismissMigration')?.addEventListener('click', () => {
+      state.pendingMigration = null;
+      showView('view-app');
     });
 
     document.getElementById('btnSubmitRestoreAccount')?.addEventListener('click', handleRestoreAccount);
@@ -1683,7 +1850,10 @@
     const banner = document.getElementById('cloudSyncUnavailableBanner');
     try {
       const metadataBlob = btoa(JSON.stringify(state.vault));
-      await window.GhostSupabase.uploadEncryptedVault(state.account.accountId, metadataBlob, FORMAT_VERSION);
+      await window.GhostSupabase.uploadEncryptedVault(state.account.accountId, metadataBlob, FORMAT_VERSION, {
+        recoveryVerifierHex: state.vault.recoveryVerifierHex,
+        recoverySaltHex: state.vault.recoverySaltHex
+      });
       if (banner) banner.style.display = 'none';
       alert('Vault metadata synchronized with Supabase.');
     } catch (err) {
@@ -2081,74 +2251,80 @@
     }
   }
 
-  window.addEventListener('hashchange', handleHashRoute);
-
-  // Global Exports for In-App Button Handlers
-  window.GhostApp = {
-    state,
-    showView,
-    init,
-    removeEntry: (idx) => {
-      state.entries.splice(idx, 1);
-      renderEntriesList();
-    },
-    viewEntry: (idx) => {
-      const e = state.recoveredEntries[idx];
-      if (!e) return;
-      state.activeViewingIndex = idx;
-      const titleEl = document.getElementById('viewEntryModalTitle');
-      const metaEl = document.getElementById('viewEntryModalMeta');
-      const bodyEl = document.getElementById('viewEntryModalBody');
-
-      if (titleEl) titleEl.textContent = `ENTRY: ${e.name}`;
-      if (metaEl) metaEl.textContent = `Type: ${e.type} | Size: ${formatBytes(e.size)} | MIME: ${e.mime}`;
-
-      if (bodyEl) {
-        if (state.activeObjectUrl) {
-          URL.revokeObjectURL(state.activeObjectUrl);
-          state.activeObjectUrl = null;
-        }
-        bodyEl.innerHTML = '';
-        if (e.type === 'Text' || e.type === 'URL') {
-          bodyEl.textContent = e.content || new TextDecoder().decode(e.data);
-        } else if (e.type === 'Photo' && e.data) {
-          const blob = new Blob([e.data], { type: e.mime || 'image/jpeg' });
-          const imgUrl = URL.createObjectURL(blob);
-          bodyEl.innerHTML = `<img src="${imgUrl}" style="max-width:100%; height:auto; border-radius:4px;" alt="${e.name}">`;
-          // Retain the object URL for the lifetime of the view modal; it is
-          // revoked when the same modal is opened again or closed.
-          state.activeObjectUrl = imgUrl;
-        } else {
-          bodyEl.textContent = `[Binary Payload: ${formatBytes(e.size)} verified]\nUse Download to save this file locally.`;
-        }
-      }
-      showModal('modalViewEntry');
-    },
-    downloadEntry: (idx) => {
-      const e = state.recoveredEntries[idx];
-      if (!e) return;
-      const blob = new Blob([e.data || new TextEncoder().encode(e.content || '')], { type: e.mime || 'application/octet-stream' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = e.name || 'ghost-recovered-file';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 2000);
-    },
-    promptDeleteEntry: (name, idx) => {
-      state.pendingDeleteIndex = idx;
-      const targetLabel = document.getElementById('deleteEntryTargetName');
-      if (targetLabel) targetLabel.textContent = `Entry: ${name}`;
-      showModal('modalDeleteEntry');
-    },
-    deleteHistoryItem: (id) => {
-      const logs = getScanHistoryLogs().filter(l => l.id !== id);
-      localStorage.setItem(STORAGE_KEY_SCAN_HISTORY_RECORDS, JSON.stringify(logs));
-      renderScanHistoryUI();
+  if (typeof window !== 'undefined') {
+    if (typeof window.addEventListener === 'function') {
+      window.addEventListener('hashchange', handleHashRoute);
     }
-  };
 
-  document.addEventListener('DOMContentLoaded', init);
+    // Global Exports for In-App Button Handlers
+    window.GhostApp = {
+      state,
+      showView,
+      init,
+      removeEntry: (idx) => {
+        state.entries.splice(idx, 1);
+        renderEntriesList();
+      },
+      viewEntry: (idx) => {
+        const e = state.recoveredEntries[idx];
+        if (!e) return;
+        state.activeViewingIndex = idx;
+        const titleEl = document.getElementById('viewEntryModalTitle');
+        const metaEl = document.getElementById('viewEntryModalMeta');
+        const bodyEl = document.getElementById('viewEntryModalBody');
+
+        if (titleEl) titleEl.textContent = `ENTRY: ${e.name}`;
+        if (metaEl) metaEl.textContent = `Type: ${e.type} | Size: ${formatBytes(e.size)} | MIME: ${e.mime}`;
+
+        if (bodyEl) {
+          if (state.activeObjectUrl) {
+            URL.revokeObjectURL(state.activeObjectUrl);
+            state.activeObjectUrl = null;
+          }
+          bodyEl.innerHTML = '';
+          if (e.type === 'Text' || e.type === 'URL') {
+            bodyEl.textContent = e.content || new TextDecoder().decode(e.data);
+          } else if (e.type === 'Photo' && e.data) {
+            const blob = new Blob([e.data], { type: e.mime || 'image/jpeg' });
+            const imgUrl = URL.createObjectURL(blob);
+            bodyEl.innerHTML = `<img src="${imgUrl}" style="max-width:100%; height:auto; border-radius:4px;" alt="${e.name}">`;
+            // Retain the object URL for the lifetime of the view modal; it is
+            // revoked when the same modal is opened again or closed.
+            state.activeObjectUrl = imgUrl;
+          } else {
+            bodyEl.textContent = `[Binary Payload: ${formatBytes(e.size)} verified]\nUse Download to save this file locally.`;
+          }
+        }
+        showModal('modalViewEntry');
+      },
+      downloadEntry: (idx) => {
+        const e = state.recoveredEntries[idx];
+        if (!e) return;
+        const blob = new Blob([e.data || new TextEncoder().encode(e.content || '')], { type: e.mime || 'application/octet-stream' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = e.name || 'ghost-recovered-file';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+      },
+      promptDeleteEntry: (name, idx) => {
+        state.pendingDeleteIndex = idx;
+        const targetLabel = document.getElementById('deleteEntryTargetName');
+        if (targetLabel) targetLabel.textContent = `Entry: ${name}`;
+        showModal('modalDeleteEntry');
+      },
+      deleteHistoryItem: (id) => {
+        const logs = getScanHistoryLogs().filter(l => l.id !== id);
+        localStorage.setItem(STORAGE_KEY_SCAN_HISTORY_RECORDS, JSON.stringify(logs));
+        renderScanHistoryUI();
+      }
+    };
+  }
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('DOMContentLoaded', init);
+  }
 })();

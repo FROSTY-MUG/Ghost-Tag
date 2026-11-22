@@ -1,0 +1,63 @@
+{
+  "description": "Cross-platform recovery test vectors for Ghost-Tag",
+  "version": "2.1.0",
+  "algorithm_account_id": "SHA-256(ghost-account-id-v2.0.5:<phrase>) formatted as RFC 4122 v4 UUID",
+  "algorithm_auth_secret": "SHA-256(ghost-recovery-auth-v2.0.5:<phrase>)",
+  "algorithm_salt": "SHA-256(ghost-recovery-salt-v2.0.5:<phrase>)",
+  "algorithm_verifier": "Argon2id(secretHex, salt, m=32768, t=3, p=2, len=32)",
+  "kdf_parameters": {
+    "algorithm": "Argon2id",
+    "version": "0x13",
+    "memoryCostKiB": 32768,
+    "timeCostPasses": 3,
+    "parallelism": 2,
+    "outputLengthBytes": 32,
+    "saltLengthBytes": 32
+  },
+  "vectors": [
+    {
+      "id": "vector-1",
+      "words": [
+        "abandon",
+        "ability",
+        "able",
+        "about",
+        "above",
+        "absent",
+        "absorb",
+        "abstract",
+        "absurd",
+        "abuse",
+        "access",
+        "accident"
+      ],
+      "phrase": "abandon ability able about above absent absorb abstract absurd abuse access accident",
+      "account_id": "668aca74-6dd2-4e35-a38b-9c9123997810",
+      "recovery_auth_secret_hex": "9a5d0f52960e57f4290fc5e9b1d5c8eaca1b285426de9f734dc26a0b30ced8ae",
+      "recovery_salt_hex": "060656113647890fb7d6f3bac58c27f4fae865697c52cd4499f8dfee5e2ad925",
+      "recovery_verifier_hex": "5e75bac7805c6a6ebe4df15130f3ddc7f66a6f3530e5198bc8d6852b25859b5f"
+    },
+    {
+      "id": "vector-2",
+      "words": [
+        "legal",
+        "winner",
+        "thank",
+        "year",
+        "wave",
+        "sausage",
+        "worth",
+        "useful",
+        "legal",
+        "winner",
+        "thank",
+        "yellow"
+      ],
+      "phrase": "legal winner thank year wave sausage worth useful legal winner thank yellow",
+      "account_id": "d2164e03-224d-46e3-8ec3-067afc613b2b",
+      "recovery_auth_secret_hex": "10a0b80900e39774286038b0d36630080982617ec6e19033c193068a512247eb",
+      "recovery_salt_hex": "6b697c461d58c98b05d566d9829653d6286e32871a889dc9e6a71c92d98f8202",
+      "recovery_verifier_hex": "5b8759e7fb41cb5b05418cf531a31880a29791749d6bfd09209edd86199293da"
+    }
+  ]
+}

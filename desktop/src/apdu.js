@@ -273,6 +273,8 @@ module.exports = {
   transmitApdu,
   getCardUid,
   readTagNdef,
+  parseNdefRecords,
+  parseNdefFromUserMemory,
   writeTagNdefAndVerify,
   buildMimeNdefMessage
 };

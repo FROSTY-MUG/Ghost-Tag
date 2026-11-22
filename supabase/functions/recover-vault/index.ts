@@ -1,4 +1,4 @@
-// Ghost-Tag v2.0.5 - Hardened Vault Recovery Edge Function
+// Ghost-Tag v2.1.0 - Zero-Knowledge Vault Recovery Edge Function
 // Deno TypeScript environment for Supabase Edge Functions
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -6,17 +6,16 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.8";
 import { timingSafeEqual } from "node:crypto";
 
 // Layered Rate Limiting Constants (15-minute sliding window)
-// High per-account threshold prevents denial-of-service lockouts against legitimate owners
 const MAX_FAILED_PER_ACCOUNT = 25;
 const MAX_FAILED_PER_USER = 20;
 const MAX_FAILED_PER_IP = 100;
-const GLOBAL_ALERT_THRESHOLD = 500; // Alert-only monitoring threshold (non-blocking)
+const GLOBAL_ALERT_THRESHOLD = 500;
 
-// Strict RFC 4122 Variant 1 UUID validation regex (no hex64 fallback)
+// Strict RFC 4122 Variant 1 UUID validation regex
 const RFC4122_UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HEX64_REGEX = /^[0-9a-fA-F]{64}$/;
 
-// Restricted CORS whitelist: Only production GitHub Pages and trusted local development
+// Restricted CORS whitelist
 const ALLOWED_ORIGINS = new Set([
   "https://frosty-mug.github.io",
   "http://localhost:8080",
@@ -47,10 +46,6 @@ function hexToBytes(hex: string): Uint8Array {
   return bytes;
 }
 
-/**
- * Extracts client IP using Cloudflare/Supabase platform-provided headers.
- * Relies primarily on cf-connecting-ip which cannot be forged by clients.
- */
 function getClientIp(req: Request): string {
   const cfIp = req.headers.get("cf-connecting-ip");
   if (cfIp) return cfIp.trim();
@@ -78,7 +73,6 @@ async function hashIp(clientIp: string, salt: string): Promise<string> {
 serve(async (req: Request) => {
   const origin = req.headers.get("Origin");
 
-  // Reject unauthorized origins with HTTP 403
   if (origin && !ALLOWED_ORIGINS.has(origin)) {
     return new Response(JSON.stringify({ error: "RECOVERY_FAILED" }), {
       status: 403,
@@ -98,7 +92,6 @@ serve(async (req: Request) => {
   };
 
   try {
-    // 1. Fail closed if IP_HASH_SALT environment secret is missing
     const ipSalt = Deno.env.get("IP_HASH_SALT");
     if (!ipSalt) {
       return new Response(
@@ -109,15 +102,6 @@ serve(async (req: Request) => {
 
     const clientIp = getClientIp(req);
     const clientIpHash = await hashIp(clientIp, ipSalt);
-
-    // 2. Require valid Supabase user JWT
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return new Response(
-        JSON.stringify({ error: "RECOVERY_FAILED" }),
-        { status: 401, headers: responseHeaders }
-      );
-    }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -130,21 +114,29 @@ serve(async (req: Request) => {
       );
     }
 
-    const authClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: { user }, error: authError } = await authClient.auth.getUser();
-
-    if (authError || !user) {
-      return new Response(
-        JSON.stringify({ error: "RECOVERY_FAILED" }),
-        { status: 401, headers: responseHeaders }
-      );
+    // Zero-Knowledge Recovery: Does NOT require an authenticated owner session.
+    // The recovery phrase itself is the recovery credential.
+    // Optional authenticated user resolution (e.g. from anonymous signup or existing user session)
+    let authenticatedUserId: string | null = null;
+    const authHeader = req.headers.get("Authorization");
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.replace("Bearer ", "").trim();
+      if (token && token !== supabaseAnonKey) {
+        try {
+          const authClient = createClient(supabaseUrl, supabaseAnonKey, {
+            global: { headers: { Authorization: authHeader } },
+          });
+          const { data: { user } } = await authClient.auth.getUser();
+          if (user?.id) {
+            authenticatedUserId = user.id;
+          }
+        } catch {
+          // Continue recovery without user ID
+        }
+      }
     }
 
-    const authenticatedUserId = user.id;
-
-    // 3. Parse and strictly validate input types and RFC 4122 UUID format
+    // Parse and strictly validate input types
     let body: any;
     try {
       body = await req.json();
@@ -169,8 +161,7 @@ serve(async (req: Request) => {
 
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
 
-    // 4. Atomic PostgreSQL Transactional Rate-Limit Check
-    // Evaluates failed attempts only (success = false). Does not count successful recoveries.
+    // Atomic PostgreSQL Transactional Rate-Limit Check
     const { data: rateCheckRows, error: rateRpcError } = await adminClient.rpc(
       "check_and_record_recovery_attempt",
       {
@@ -196,7 +187,7 @@ serve(async (req: Request) => {
 
     const currentAttemptId = rateResult ? rateResult.attempt_id : null;
 
-    // 5. Global Monitoring Check (Alert-Only, Non-Blocking to Prevent Denial of Service)
+    // Global Non-Blocking Monitoring Check
     const windowStart = new Date(Date.now() - 15 * 60 * 1000).toISOString();
     const { count: globalFailures } = await adminClient
       .from("ghost_recovery_attempts")
@@ -208,7 +199,7 @@ serve(async (req: Request) => {
       console.warn(`[GHOST_MONITOR_ALERT] Global recovery failures exceeded threshold: ${globalFailures}`);
     }
 
-    // 6. Look up target vault
+    // Look up target vault row
     const { data: vault, error: fetchError } = await adminClient
       .from("ghost_vaults")
       .select("account_id, owner_user_id, recovery_verifier, recovery_salt, recovery_kdf_version, encrypted_vault_blob, vault_version")
@@ -216,10 +207,10 @@ serve(async (req: Request) => {
       .maybeSingle();
 
     const candidateVerifierBytes = hexToBytes(recovery_verifier);
-    const dummyVerifierBytes = new Uint8Array(32); // Constant 32-byte dummy
+    const dummyVerifierBytes = new Uint8Array(32);
 
     if (fetchError || !vault) {
-      // Execute maintained constant-time comparison to prevent timing account enumeration
+      // Maintained constant-time comparison to prevent account enumeration
       timingSafeEqual(Buffer.from(candidateVerifierBytes), Buffer.from(dummyVerifierBytes));
 
       return new Response(
@@ -228,7 +219,7 @@ serve(async (req: Request) => {
       );
     }
 
-    // 7. Maintained Constant-Time Comparison via node:crypto
+    // Constant-Time Comparison
     const storedVerifierBytes = typeof vault.recovery_verifier === "string"
       ? (vault.recovery_verifier.startsWith("\\x")
           ? hexToBytes(vault.recovery_verifier.slice(2))
@@ -252,16 +243,7 @@ serve(async (req: Request) => {
       );
     }
 
-    // 8. Verification Succeeded: Reassign owner_user_id and mark attempt success = true
-    // Do not delete attempt history; mark the atomically recorded attempt as success = true
-    await adminClient
-      .from("ghost_vaults")
-      .update({
-        owner_user_id: authenticatedUserId,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("account_id", account_id);
-
+    // Verification Succeeded: Mark attempt success = true
     if (currentAttemptId) {
       await adminClient
         .from("ghost_recovery_attempts")
@@ -269,7 +251,18 @@ serve(async (req: Request) => {
         .eq("id", currentAttemptId);
     }
 
-    // 9. Explicitly encode bytea encrypted_vault_blob to base64
+    // Reassign owner_user_id only if an authenticated user session was provided
+    if (authenticatedUserId && authenticatedUserId !== vault.owner_user_id) {
+      await adminClient
+        .from("ghost_vaults")
+        .update({
+          owner_user_id: authenticatedUserId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("account_id", account_id);
+    }
+
+    // Encode bytea encrypted_vault_blob to base64
     let encryptedBlobBase64 = "";
     if (typeof vault.encrypted_vault_blob === "string") {
       if (vault.encrypted_vault_blob.startsWith("\\x")) {

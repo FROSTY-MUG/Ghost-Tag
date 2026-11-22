@@ -1,0 +1,35 @@
+{
+  "description": "Ghost-Tag Bulk Chunk v2 Envelope Specification",
+  "overhead_bytes": 134,
+  "mime": "application/vnd.ghost.bulk",
+  "aad_bytes": 74,
+  "fields": {
+    "magic": "GTAG (0x47, 0x54, 0x41, 0x47)",
+    "format_version": 2,
+    "record_type": 16,
+    "vault_id_length": 16,
+    "file_id_length": 16,
+    "key_id_length": 16,
+    "chunk_hash_length": 32,
+    "nonce_length": 12,
+    "tag_length": 16
+  },
+  "vector": {
+    "vault_id_hex": "11111111222222223333333344444444",
+    "file_id_hex": "55555555666666667777777788888888",
+    "key_id_hex": "99999999aaaaaaaa00000000bbbbbbbb",
+    "global_chunk_index": 0,
+    "total_vault_chunks": 3,
+    "file_chunk_index": 0,
+    "total_file_chunks": 3,
+    "plaintext_utf8": "Bulk file chunk slice payload 001 for multi-tag recovery verification",
+    "ciphertext_length": 69,
+    "ciphertext_hex": "423d4b0c571eff32fdf99eca47c283763f1f8a5c59c26fdb53af246b535d4f868db6f1c800fb2876a4393d348da502a9ff00bc15a4a8d260a4534ba28b81527e6c58e25287",
+    "chunk_hash_hex": "fcbfe9fb458babc5adf4adc1ae4540554240467619dc610c5aff1f16276e1663",
+    "nonce_hex": "c0c1c2c3c4c5c6c7c8c9cacb",
+    "tag_hex": "4df7eb7673f06a4c6c1082985686196e",
+    "aad_hex": "475441470210111111112222222233333333444444445555555566666666777777778888888899999999aaaaaaaa00000000bbbbbbbb0000000003000000000000000300000045000000",
+    "serialized_envelope_hex": "475441470210111111112222222233333333444444445555555566666666777777778888888899999999aaaaaaaa00000000bbbbbbbb0000000003000000000000000300000045000000fcbfe9fb458babc5adf4adc1ae4540554240467619dc610c5aff1f16276e1663c0c1c2c3c4c5c6c7c8c9cacb423d4b0c571eff32fdf99eca47c283763f1f8a5c59c26fdb53af246b535d4f868db6f1c800fb2876a4393d348da502a9ff00bc15a4a8d260a4534ba28b81527e6c58e252874df7eb7673f06a4c6c1082985686196e",
+    "total_envelope_bytes": 203
+  }
+}

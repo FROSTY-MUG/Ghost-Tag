@@ -1,0 +1,5 @@
+module Clibargon2 [system] {
+    header "argon2.h"
+    header "blake2.h"
+    export *
+}

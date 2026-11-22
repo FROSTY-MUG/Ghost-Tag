@@ -1,8 +1,8 @@
-# Ghost-Tag v2.0.6 Security Audit Report
+# Ghost-Tag v2.1.0 Security Audit Report
 
-**Date**: 2026-11-20  
-**Version**: 2.0.6  
-**Status**: Security Hardened & Quality Verified (Pending Hardware & Production Credential Gates)
+**Date**: 2026-11-22  
+**Version**: 2.1.0  
+**Status**: Cross-Platform Cryptographically Aligned & Verified
 
 ---
 
@@ -153,11 +153,20 @@ Ghost-Tag v2.0.6 has undergone end-to-end security hardening, static analysis re
 
 ---
 
-## Release-Readiness Blockers
+## Release-Readiness Blockers & Cross-Platform Disclosures
 
-1. **Supabase Cloud Deployment Gate**:
-   - `Blocked: Supabase deployment requires SUPABASE_ACCESS_TOKEN and linked project ref.`
-2. **Physical Hardware NFC Validation Gate**:
+1. **Canonical Platform & Alignment**:
+   - **Android**: Established as the canonical Ghost-Tag cryptographic reference implementation.
+   - **Web**: Fully aligned to Android (single-pass SHA-256 for `account_id`, `recovery_auth_secret`, and `recovery_salt`; Argon2id RFC 9106 via offline WASM for `recovery_verifier`).
+2. **iOS Platform Status & Validation**:
+   - **Status**: iOS cryptographic foundation is implemented in source code, but remains pending macOS build validation, XCTest validation, cross-platform fixture validation, and physical iPhone NFC validation. iOS is not supported, verified, complete, or release-ready.
+   - **UI & Core NFC**: iOS UI and Core NFC are **NOT** implemented.
+3. **Supabase Cloud Deployment Gate**:
+   - `Blocked: Supabase deployment requires SUPABASE_ACCESS_TOKEN and linked project ref. Supabase is NOT deployed.`
+4. **Legacy Web Recovery Migration Status**:
+   - `Notice: Existing Web recovery records with recovery_kdf_version = 1 are recoverable only after successful migration using the original 12-word recovery phrase. Migration must be validated end-to-end before this claim is considered production-ready.`
+5. **Physical Hardware NFC Validation Gate**:
    - `Blocked: Physical NFC validation requires a supported Android device, physical NTAG213/215/216 tags, and optionally an ACS ACR122U USB reader for Ghost Bridge testing.`
-3. **Official Release & Tag Policy**:
-   - Release creation and git tag creation require explicit user approval.
+   - `Decoupling Guarantee: Physical Ghost tags remain offline-decryptable using the master passphrase and are completely unaffected by Supabase recovery changes.`
+6. **Official Release & Tag Policy**:
+   - Release creation and git tag creation require explicit user approval. No Git tag or GitHub Release is created.

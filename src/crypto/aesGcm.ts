@@ -94,7 +94,8 @@ export function encrypt(
   const plainBuf = toBuffer(plaintext);
   const part1 = cipher.update(plainBuf);
   const part2 = cipher.final();
-  const ctBuffer = QuickCrypto.Buffer.concat([part1, part2]);
+  // Skip the concat when the final update produced no bytes (common for short inputs)
+  const ctBuffer = part2.length > 0 ? QuickCrypto.Buffer.concat([part1, part2]) : part1;
   const tagBuffer = cipher.getAuthTag();
 
   const ciphertext = new Uint8Array(ctBuffer.length);
@@ -173,7 +174,8 @@ export function decrypt(
     const ctBuf = toBuffer(ciphertext);
     const part1 = decipher.update(ctBuf);
     const part2 = decipher.final();
-    const ptBuffer = QuickCrypto.Buffer.concat([part1, part2]);
+    // Skip the concat when the final update produced no bytes (common for short inputs)
+    const ptBuffer = part2.length > 0 ? QuickCrypto.Buffer.concat([part1, part2]) : part1;
 
     const plaintext = new Uint8Array(ptBuffer.length);
     plaintext.set(ptBuffer);

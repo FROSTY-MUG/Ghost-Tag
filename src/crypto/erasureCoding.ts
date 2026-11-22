@@ -279,19 +279,26 @@ export function encodeErasureChunks(
   }
 
   // Compute the M recovery chunks: R[i] = sum(G[K + i][j] * D[j])
+  //
+  // Optimization: iterate the Cauchy row coefficients outer and the chunk
+  // bytes inner, XOR-ing into the recovery chunk — this avoids re-reading
+  // paddedData[j] and re-evaluating gRow[j] per byte, and skips zero
+  // coefficients entirely.
   for (let i = 0; i < recoveryChunksM; i++) {
     const recoveryChunk = new Uint8Array(maxLen);
     const gRow = g[k + i];
-    for (let byteIdx = 0; byteIdx < maxLen; byteIdx++) {
-      let acc = 0;
-      for (let j = 0; j < k; j++) {
-        const coef = gRow[j];
-        const val = paddedData[j][byteIdx];
-        if (coef !== 0 && val !== 0) {
-          acc ^= gfMul(coef, val);
+    for (let j = 0; j < k; j++) {
+      const coef = gRow[j];
+      if (coef === 0) {
+        continue;
+      }
+      const dataChunk = paddedData[j];
+      for (let byteIdx = 0; byteIdx < maxLen; byteIdx++) {
+        const val = dataChunk[byteIdx];
+        if (val !== 0) {
+          recoveryChunk[byteIdx] ^= gfMul(coef, val);
         }
       }
-      recoveryChunk[byteIdx] = acc;
     }
     allChunks[k + i] = recoveryChunk;
   }
@@ -328,7 +335,7 @@ export function decodeErasureChunks(
   availableChunks: AvailableChunk[],
   k: number,
   m: number,
-  originalLengths?: number[]
+  originalLengths?: readonly number[]
 ): Uint8Array[] {
   if (availableChunks.length < k) {
     throw new GhostTagError({
@@ -359,6 +366,13 @@ export function decodeErasureChunks(
     });
   }
 
+  // O(1) chunk lookup index: chunkIndex -> AvailableChunk.
+  // Replaces the previous per-lookup O(K) linear scan of uniqueChunks.
+  const chunkByIndex = new Map<number, AvailableChunk>();
+  for (const c of uniqueChunks) {
+    chunkByIndex.set(c.chunkIndex, c);
+  }
+
   // Fast path: if all first K data chunks are already present (systematic chunks 0..K-1)
   let allSystematicPresent = true;
   for (let i = 0; i < k; i++) {
@@ -371,7 +385,7 @@ export function decodeErasureChunks(
   if (allSystematicPresent) {
     const result: Uint8Array[] = new Array(k);
     for (let i = 0; i < k; i++) {
-      const chunk = uniqueChunks.find((c) => c.chunkIndex === i)!.data;
+      const chunk = chunkByIndex.get(i)!.data;
       if (originalLengths && originalLengths[i] !== undefined) {
         result[i] = chunk.subarray(0, originalLengths[i]);
       } else {

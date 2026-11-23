@@ -241,13 +241,16 @@ flowchart TD
 
 | Feature / Capability | Android APK (Primary) | Web Companion (Chrome Android) | Desktop Ghost Bridge | iOS Foundation |
 | :--- | :---: | :---: | :---: | :---: |
-| **NDEF Reading** | Yes (Native) | Yes (Web NFC) | Yes (ACR122U / PN532) | Foundation Code Only |
-| **NDEF Writing** | Yes (Native) | Yes (Web NFC) | Yes (ACR122U / PN532) | Foundation Code Only |
+| **NDEF Reading** | Yes (Native)* | Yes (Web NFC)* | Yes (ACR122U / PN532)* | CoreNFC Code Only* |
+| **NDEF Writing** | Yes (Native)* | Yes (Web NFC)* | Yes (ACR122U / PN532)* | No (Strictly Read-Only) |
 | **AES-256-GCM Encryption** | Yes (256-bit) | Yes (WebCrypto) | Yes (Node.js Crypto) | Yes (CryptoKit) |
 | **BIP-39 12-Word Recovery** | Yes (Canonical) | Yes (Canonical) | Yes (Canonical) | Yes (Canonical) |
 | **Single-Tag Vault (v1)** | Yes (54B Overhead) | Yes (54B Overhead) | Yes (54B Overhead) | Model Implemented |
 | **Bulk Multi-Tag Vault (v2)**| Yes (134B Overhead) | Yes (134B Overhead) | Yes (134B Overhead) | Model Implemented |
 | **Scanned Chunk Cache** | Volatile RAM Only | Volatile RAM Only | Volatile RAM Only | N/A |
+
+> \* **Hardware Status Disclosure**: Transceivers and protocols are implemented in source code and verified via unit tests; real physical device execution remains pending attached hardware. iOS is strictly read-only (tag writing is not implemented). Supabase cloud sync is undeployed. PR #24 and PR #25 remain unmerged.
+
 | **Stop & Pause Controls** | Yes | Yes | Yes | N/A |
 | **Opt-in Cloud Metadata** | Optional | Optional | Optional | Client Implemented |
 

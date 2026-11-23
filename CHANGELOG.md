@@ -5,7 +5,10 @@ All notable changes to the Ghost-Tag project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [v2.1.0] - 2026-11-22
+## [v2.1.0] - Unreleased (Staging)
+
+> **Notice**: Ghost-Tag v2.1.0 is currently in local staging. PR #24 and PR #25 remain unmerged pending explicit approval. No Git tag has been cut and no GitHub Release has been published. Real physical hardware validation (Android NFC, iOS CoreNFC, Ghost Bridge ACR122U/PN532) and live Supabase deployment are pending.
+
 
 ### Added
 - **Cross-Platform Cryptographic Compatibility Test Suite**: Comprehensive 59-test suite (`src/__tests__/crossPlatformCryptoCompatibility.test.ts`) verifying byte-for-byte wire and KDF compatibility across Android, Web, Ghost Bridge, and Supabase edge functions across 25 distinct verification points.

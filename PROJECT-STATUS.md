@@ -1,10 +1,11 @@
 # Ghost-Tag Project Status
 
-**Version**: 2.1.0  
+**Version**: 2.1.0 (Unreleased / Staging)  
 **Last Updated**: 2026-11-23  
 **Branch**: main  
-**Status**: Release Candidate — Cross-Platform Cryptographic Alignment (Android, Web, Ghost Bridge, iOS)  
+**Status**: Local Staging — PR #24 & PR #25 Unmerged; Hardware Validation & Supabase Deployment Pending  
 **Authoritative Reference**: [docs/CANONICAL-SPECIFICATION.md](docs/CANONICAL-SPECIFICATION.md)
+
 
 ---
 

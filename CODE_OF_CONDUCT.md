@@ -43,11 +43,12 @@ This Code of Conduct applies within all community spaces (GitHub issues, pull re
 
 ## Enforcement Guidelines & Reporting
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the project maintainer:
-* **Contact**: Aryan Arora
-* **Email**: [aryanarora26110@gmail.com](mailto:aryanarora26110@gmail.com)
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported privately to the project maintainers:
+* **Reporting Channel**: [GitHub Security Advisories](https://github.com/FROSTY-MUG/Ghost-Tag/security/advisories/new)
+* **Lead Maintainer**: Aryan Arora (GitHub: [@FROSTY-MUG](https://github.com/FROSTY-MUG))
 
 All complaints will be reviewed and investigated promptly and fairly. All community leaders are obligated to respect the privacy and security of the reporter of any incident.
+
 
 ### Enforcement Escalation:
 1. **Correction**: A private, written warning providing clarity around the nature of the violation.

@@ -1,8 +1,17 @@
-# Ghost-Tag v2.1.0 Release Notes
+# Ghost-Tag v2.1.0 (Unreleased / Staging Draft)
+
+> [!WARNING]
+> **UNRELEASED STAGING STATUS**:
+> - Ghost-Tag v2.1.0 has **NOT** been tagged or published to GitHub Releases.
+> - **PR #24** and **PR #25** remain strictly unmerged pending explicit maintainer approval.
+> - **Supabase**: Schemas and Edge Functions are verified locally; not deployed to live production.
+> - **Hardware**: Real-device physical validation on Android NFC, iOS CoreNFC, Ghost Bridge ACR122U, and PN532 is pending.
+> - **iOS Scope**: Strictly Read-Only; tag writing is not implemented.
 
 > [!NOTE]
 > **CANONICAL SPECIFICATION REFERENCE**  
 > For the authoritative wire layouts, cryptographic parameters, envelope definitions, and cross-platform derivation standards, refer to [CANONICAL-SPECIFICATION.md](docs/CANONICAL-SPECIFICATION.md).
+
 
 ## Overview
 

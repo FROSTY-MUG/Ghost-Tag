@@ -4,62 +4,82 @@ Thank you for your interest in improving Ghost-Tag. We welcome code contribution
 
 ---
 
-## 1. Primary Contact & Suggestions
+## 1. Governance & Project Communication
 
-For suggestions, design feedback, or questions before starting significant refactors, please contact:
-- **Lead Maintainer**: Aryan Arora
-- **Email**: [aryanarora26110@gmail.com](mailto:aryanarora26110@gmail.com)
+For questions, architectural discussion, or coordinated vulnerability disclosures:
+- **Lead Maintainer**: Aryan Arora (GitHub: [@FROSTY-MUG](https://github.com/FROSTY-MUG))
 - **Repository**: [https://github.com/FROSTY-MUG/Ghost-Tag](https://github.com/FROSTY-MUG/Ghost-Tag)
+- **Security Disclosures**: Report privately via [GitHub Security Advisories](https://github.com/FROSTY-MUG/Ghost-Tag/security/advisories/new).
 
 ---
 
-## 2. Fork and Pull Request Workflow
+## 2. Fork, Development, and Build Workflow
 
-1. **Fork the Repository**:
-   Click the "Fork" button on [GitHub](https://github.com/FROSTY-MUG/Ghost-Tag) to create a copy in your personal account.
-2. **Clone your Fork**:
-   ```bash
-   git clone https://github.com/<your-username>/Ghost-Tag.git
-   cd Ghost-Tag
-   npm install
-   ```
-3. **Create a Feature Branch**:
-   ```bash
-   git checkout -b feature/your-improvement-name
-   ```
-4. **Develop and Verify**:
-   - Ensure all changes strictly maintain the **Zero-Secrets Policy** (never log, persist, or leak passphrases, KEKs, unwrapped DEKs, or plaintext).
-   - Add automated Jest unit tests under `src/__tests__/`.
-   - Verify all tests pass: `npm test`.
-   - Verify TypeScript type compliance: `npx tsc --noEmit`.
-5. **Commit and Push**:
-   ```bash
-   git commit -m "feat: describe your enhancement"
-   git push origin feature/your-improvement-name
-   ```
-6. **Open a Pull Request**:
-   Submit your pull request against the `main` branch of `FROSTY-MUG/Ghost-Tag` detailing your changes.
+### 2.1 Clone and Install Dependencies
+```bash
+git clone https://github.com/<your-username>/Ghost-Tag.git
+cd Ghost-Tag
+
+# Install root dependencies
+npm install
+
+# Install web companion dependencies
+npm --prefix web install
+
+# Install desktop Ghost Bridge dependencies
+npm --prefix desktop install
+```
+
+### 2.2 Verification & Testing Commands
+Every contribution must pass the full local verification suite before opening a pull request:
+
+```bash
+# 1. Strict TypeScript check
+npm run typecheck
+
+# 2. ESLint code quality gate
+npm run lint
+
+# 3. Core Jest test suite
+npm test
+
+# 4. Desktop Ghost Bridge APDU tests
+npx jest desktop/test/bridge.test.js
+
+# 5. PN532 serial transport protocol tests
+npx jest desktop/test/pn532_serial.test.js
+
+# 6. Web production bundle build
+npm --prefix web run build
+
+# 7. Android release build (when Android SDK / NDK configured)
+cd android && ./gradlew :app:assembleRelease
+```
 
 ---
 
-## 3. Strict Prohibitions & Acceptable Use
+## 3. Strict Prohibitions & Contribution Invariants
 
 > [!CAUTION]
-> **DO NOT USE THIS SOFTWARE OR CODEBASE FOR ILLEGAL PURPOSES.**
+> **MANDATORY SECURITY INVARIANTS**
 
-Ghost-Tag is explicitly engineered as a **defensive personal confidentiality vault**, not an offensive exploitation toolkit.
-The following activities and contributions are strictly rejected:
-- Features intended to emulate or duplicate third-party access control badges without authorization.
-- Bypassing access control restrictions on proprietary or unauthorized NFC cards.
-- Any functionality that degrades the cryptographic authentication guarantees or silently truncates encrypted payloads.
-- Cloud telemetry, remote tracking, or third-party analytic trackers.
+1. **Zero-Secrets Policy**:
+   - Never commit `.env` files, credentials, private keys, API keys, passwords, 12-word recovery phrases, or keystores.
+   - Passphrases, KEKs, and DEKs must never be logged or persisted in plaintext.
+2. **No Generated Binaries or Artifacts**:
+   - Never commit generated `.apk`, `.ipa`, `build/`, `dist/`, `node_modules/`, or temporary test dumps to Git.
+3. **No Synthetic Hardware Evidence**:
+   - Never fabricate, mock, or simulate NFC card-present events, logcat traces, or hardware compatibility claims. A hardware capability is only claimed when validated with authentic physical devices.
+4. **Defensive Use Only**:
+   - Ghost-Tag is explicitly engineered as a **defensive personal confidentiality vault**, not an offensive exploitation toolkit. Features intended for unauthorized card cloning or access bypass are strictly rejected.
 
 ---
 
 ## 4. Coding Standards
 
-- **Language**: TypeScript in strict mode.
+- **Language**: TypeScript in strict mode (`tsconfig.json`).
 - **Crypto**: Use validated primitives from `react-native-quick-crypto` and `react-native-argon2`. Never roll custom cipher modes.
 - **Byte Ordering**: Explicit Little-Endian encoding across all multi-byte envelope fields.
-- **Constant Time**: Use constant-time comparisons for all cryptographic hashes, authentication tags, and MAC tags.
-- **Memory Hygiene**: Use `zeroize()` on volatile Uint8Array buffers immediately after cryptographic use.
+- **Constant Time**: Use `crypto.timingSafeEqual` / `timingSafeEqual()` for all cryptographic comparisons.
+- **Memory Hygiene**: Use `secureWipeBuffer()` on volatile Uint8Array buffers immediately after cryptographic use.
+

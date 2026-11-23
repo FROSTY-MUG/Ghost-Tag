@@ -1,6 +1,6 @@
 # Ghost-Tag Project Status
 
-**Version**: 2.1.0 (Unreleased / Staging)  
+**Version**: 2.1.0 (Ghost-Tag v2.1.0 is an unreleased local staging version.)  
 **Last Updated**: 2026-11-23  
 **Branch**: main  
 **Status**: Local Staging — PR #24 & PR #25 Unmerged; Hardware Validation & Supabase Deployment Pending  
@@ -127,9 +127,9 @@
 The following items are strictly bounded and cannot proceed without external credentials or physical devices:
 
 1. **Supabase Cloud Live Deployment**:
-   > **Blocked: Supabase deployment requires SUPABASE_ACCESS_TOKEN and linked project ref. Supabase is NOT deployed.**
+   > **Blocked: Supabase Cloud: Undeployed. Schema and atomic migration RPC are implemented and covered by local tests, but have not been deployed to a live Supabase project or validated against a live database.**
 2. **iOS Platform Status & Validation**:
-   > **Blocked: iOS cryptographic foundation is implemented in source code, but remains pending macOS build validation, XCTest validation, cross-platform fixture validation, and physical iPhone NFC validation. iOS is not supported, verified, complete, or release-ready. iOS UI and Core NFC are not implemented.**
+   > **Blocked: Ghost-Tag on iOS does not currently implement NFC tag writing. Its CoreNFC integration is read-only. iOS tag-writing support, if added in the future, would require separate implementation, entitlement review, compatibility testing, and physical-device validation. The cryptographic foundation is implemented in source code, but remains pending macOS build validation, XCTest validation, cross-platform fixture validation, and physical iPhone NFC validation.**
 3. **Android Platform Status & Validation**:
    > **Pending Physical Hardware Execution: Android NFC is implemented in source code and unit tested, but remains pending real-device NFC validation on physical Android hardware.**
 4. **Ghost Bridge PC/SC (ACR122U) Status**:

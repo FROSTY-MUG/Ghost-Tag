@@ -9,8 +9,9 @@ Ghost-Tag iOS is designed to provide read-only NFC scanning and zero-knowledge v
 
 > [!IMPORTANT]
 > **Staging & Development Status**:
+> - **Release Status**: Ghost-Tag v2.1.0 is an unreleased local staging version.
 > - **PR #25**: Remains unmerged on branch `pr-25` pending explicit maintainer approval.
-> - **Read-Only Scope**: iOS support is **strictly Read-Only**. Tag writing is completely unimplemented on iOS.
+> - **Read-Only Scope**: Ghost-Tag on iOS does not currently implement NFC tag writing. Its CoreNFC integration is read-only. iOS tag-writing support, if added in the future, would require separate implementation, entitlement review, compatibility testing, and physical-device validation.
 > - **Cryptographic Foundation**: BIP-39 recovery mnemonic, Argon2id KEK derivation (via `Clibargon2`), AES-256-GCM decryption, and canonical envelope parsing (v1 54B and v2 134B) are implemented in native Swift.
 > - **Hardware Validation**: Real CoreNFC scanning remains **unverified on physical hardware** pending access to a macOS compilation host and an attached physical iPhone.
 

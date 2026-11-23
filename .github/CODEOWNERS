@@ -27,3 +27,16 @@
 # Web Terminal, Static Documentation & Release Distribution
 /web/                     @FROSTY-MUG
 /docs/                    @FROSTY-MUG
+
+# Desktop Hardware Bridge (PC/SC & PN532 Serial Transports)
+/desktop/                 @FROSTY-MUG
+
+# iOS Swift Core & Foundation
+/ios/                     @FROSTY-MUG
+
+# Supabase Relays & Database Migrations
+/supabase/                @FROSTY-MUG
+
+# Deterministic Test Fixtures
+/test-fixtures/           @FROSTY-MUG
+

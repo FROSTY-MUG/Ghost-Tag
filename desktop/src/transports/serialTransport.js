@@ -9,10 +9,8 @@
 const EventEmitter = require('events');
 const crypto = require('crypto');
 const {
-  readTagCapability,
   parseNdefFromUserMemory,
-  buildMimeNdefMessage,
-  calculateTagCapacity
+  buildMimeNdefMessage
 } = require('../apdu');
 
 class Pn532SerialTransport extends EventEmitter {

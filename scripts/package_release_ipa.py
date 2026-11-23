@@ -13,6 +13,7 @@ Usage:
 """
 
 import os
+import sys
 import shutil
 import subprocess
 import hashlib
@@ -31,11 +32,13 @@ XCODEPROJECT_PATH = os.path.join(IOS_DIR, 'GhostTag.xcodeproj')
 
 
 def _xcodebuild():
+    if sys.platform != 'darwin':
+        print('Error: Ghost-Tag iOS .ipa packaging requires macOS with Xcode and CocoaPods.')
+        sys.exit(1)
     path = shutil.which('xcodebuild')
     if path is None:
-        raise FileNotFoundError(
-            'xcodebuild not found. Ghost-Tag iOS packaging requires macOS + Xcode.'
-        )
+        print('Error: xcodebuild not found. Ghost-Tag iOS packaging requires macOS + Xcode.')
+        sys.exit(1)
     return path
 
 

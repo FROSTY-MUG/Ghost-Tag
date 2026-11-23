@@ -57,3 +57,11 @@ The output APK will be generated at:
 | Android NFC Adapter (NDEF Reader / Writer)            |
 +-------------------------------------------------------+
 ```
+
+---
+
+## 4. Hardware Validation Status
+
+> [!IMPORTANT]
+> **Pending Physical Hardware Execution**: The Android release build pipeline compiles cleanly with verified v2/v3 signatures. However, physical device launch and NFC read/write testing on real physical Android hardware remain pending physical device connection. No claim of physical hardware validation is made without real-device test logs.
+

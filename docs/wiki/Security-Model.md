@@ -11,9 +11,12 @@ Ghost-Tag is architected around a strict zero-knowledge, zero-leakage threat mod
 | **Symmetric Cipher** | AES-256-GCM | Encrypts chunks and wrapped DEKs with AEAD authentication |
 | **Nonce Generation** | 96-bit (12 bytes) CSPRNG | Unique nonce per chunk; strictly never reused |
 | **Integrity Digest** | SHA-256 (32 bytes) | Verifies ciphertext chunks and full reassembled files |
-| **Key Derivation (Native)** | Argon2id (RFC 9106) | Memory-hard password hashing (64MB memory, 3 iterations) |
-| **Key Derivation (Web)** | PBKDF2-HMAC-SHA256 | 600,000 iterations for cross-platform browser support |
+| **Recovery Verifier (Canonical)** | Argon2id RFC 9106 ($m=32768$ KiB, $t=3$, $p=2$) | Memory-hard zero-knowledge recovery credential across Android, Web, and iOS (`recovery_kdf_version = 2`) |
+| **Recovery Verifier (Legacy Web)** | PBKDF2-HMAC-SHA256 (10,000 iterations) | Historical recovery verifier (`recovery_kdf_version = 1`), migratable to Argon2id |
+| **Local Passphrase KEK (Native)** | Argon2id RFC 9106 ($m=65536$ KiB, $t=3$, $p=4$) | Local storage key wrapping on Android native |
+| **Local Passphrase KEK (Web)** | PBKDF2-HMAC-SHA256 (100,000 iterations) | Local WebCrypto storage key wrapping on Web Companion |
 | **Seed Phrase Standard** | BIP-39 English | 128-bit entropy mapped to 12 words with 4-bit checksum |
+
 
 ---
 

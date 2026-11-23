@@ -21,6 +21,10 @@ import {
 export class JournalManager {
   private writeJournals: Map<string, WriteJournal> = new Map();
   private scanJournals: Map<string, ScanJournal> = new Map();
+  /** Lazily built per-session membership sets for O(1) duplicate checks. */
+  private readonly writeUidIndexes = new Map<string, Set<string>>();
+  private readonly scanUidIndexes = new Map<string, Set<string>>();
+  private readonly scanChunkIndexes = new Map<string, Set<number>>();
 
   /**
    * Initializes a new write session journal.
@@ -48,6 +52,8 @@ export class JournalManager {
       updatedAt: Date.now(),
     };
 
+    // New session journal: drop any stale membership indexes for this session
+    this.writeUidIndexes.delete(sessionId);
     this.writeJournals.set(sessionId, journal);
     return journal;
   }
@@ -72,7 +78,14 @@ export class JournalManager {
     }
 
     const normUid = tagUidHex.toLowerCase();
-    if (journal.writtenTagUids.includes(normUid)) {
+
+    // O(1) duplicate check via lazily built per-session index set
+    let writtenSet = this.writeUidIndexes.get(sessionId);
+    if (!writtenSet) {
+      writtenSet = new Set(journal.writtenTagUids);
+      this.writeUidIndexes.set(sessionId, writtenSet);
+    }
+    if (writtenSet.has(normUid)) {
       throw new GhostTagError({
         code: GhostTagErrorCode.CHUNK_ALREADY_WRITTEN,
         userMessage: `Tag ${normUid} has already received a chunk in this write session`,
@@ -80,6 +93,7 @@ export class JournalManager {
         severity: ErrorSeverity.WARNING,
       });
     }
+    writtenSet.add(normUid);
 
     const completed = [...journal.completedChunkIndices, globalChunkIndex];
     const writtenUids = [...journal.writtenTagUids, normUid];
@@ -95,6 +109,7 @@ export class JournalManager {
     };
 
     this.writeJournals.set(sessionId, updated);
+    this.writeUidIndexes.set(sessionId, writtenSet);
     return updated;
   }
 
@@ -124,6 +139,9 @@ export class JournalManager {
       expiresAt: now + CHUNK_CACHE_TTL_MS,
     };
 
+    // New session journal: drop any stale membership indexes for this session
+    this.scanUidIndexes.delete(sessionId);
+    this.scanChunkIndexes.delete(sessionId);
     this.scanJournals.set(sessionId, journal);
     return journal;
   }
@@ -147,18 +165,39 @@ export class JournalManager {
     }
 
     const normUid = tagUidHex.toLowerCase();
-    const collected = journal.collectedChunkIndices.includes(globalChunkIndex)
+
+    // O(1) membership checks via lazily built per-session index sets
+    let chunkSet = this.scanChunkIndexes.get(sessionId);
+    if (!chunkSet) {
+      chunkSet = new Set(journal.collectedChunkIndices);
+      this.scanChunkIndexes.set(sessionId, chunkSet);
+    }
+    let tagUidSet = this.scanUidIndexes.get(sessionId);
+    if (!tagUidSet) {
+      tagUidSet = new Set(journal.scannedTagUids);
+      this.scanUidIndexes.set(sessionId, tagUidSet);
+    }
+
+    const alreadyCollected = chunkSet.has(globalChunkIndex);
+    if (!alreadyCollected) {
+      chunkSet.add(globalChunkIndex);
+    }
+    const collected = alreadyCollected
       ? journal.collectedChunkIndices
       : [...journal.collectedChunkIndices, globalChunkIndex].sort((a, b) => a - b);
 
-    const tagUids = journal.scannedTagUids.includes(normUid)
+    const alreadyScanned = tagUidSet.has(normUid);
+    if (!alreadyScanned) {
+      tagUidSet.add(normUid);
+    }
+    const scannedTagUids = alreadyScanned
       ? journal.scannedTagUids
       : [...journal.scannedTagUids, normUid];
 
     const updated: ScanJournal = {
       ...journal,
       collectedChunkIndices: collected,
-      scannedTagUids: tagUids,
+      scannedTagUids: scannedTagUids,
     };
 
     this.scanJournals.set(sessionId, updated);

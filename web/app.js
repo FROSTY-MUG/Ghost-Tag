@@ -37,13 +37,20 @@
   const MIME_BULK = 'application/vnd.ghost.bulk';
   const MAGIC_BYTES = new Uint8Array([0x47, 0x54, 0x41, 0x47]); // "GTAG"
   const FORMAT_VERSION = 0x02;
+  const HEX_DIGITS = '0123456789abcdef';
 
   function generateSecureRandomHex(bytesCount = 8) {
     const gCrypto = typeof window !== 'undefined' ? window.crypto : (typeof globalThis !== 'undefined' ? globalThis.crypto : null);
     if (gCrypto && typeof gCrypto.getRandomValues === 'function') {
       const bytes = new Uint8Array(bytesCount);
       gCrypto.getRandomValues(bytes);
-      return Array.from(bytes).map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+      // Fast table-based hex encoding (avoids per-byte Array.from + padStart)
+      let hex = '';
+      for (let i = 0; i < bytesCount; i++) {
+        const b = bytes[i];
+        hex += HEX_DIGITS[b >> 4] + HEX_DIGITS[b & 0xf];
+      }
+      return hex;
     }
     throw new Error('CSPRNG unavailable.');
   }
@@ -93,7 +100,24 @@
 
   function bytesToHex(bytes) {
     if (!bytes) return '';
-    return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    // Fast table-based hex encoding
+    let hex = '';
+    for (let i = 0; i < bytes.length; i++) {
+      const b = bytes[i];
+      hex += HEX_DIGITS[b >> 4] + HEX_DIGITS[b & 0xf];
+    }
+    return hex;
+  }
+
+  // Lazily built BIP-39 word -> index map; reused across phrase verification calls
+  let cachedWordIndexMap = null;
+  function getWordIndexMap() {
+    if (!cachedWordIndexMap) {
+      const m = new Map();
+      window.BIP39_WORDS.forEach((w, i) => m.set(w, i));
+      cachedWordIndexMap = m;
+    }
+    return cachedWordIndexMap;
   }
 
   function bytesToBase64(bytes) {
@@ -209,8 +233,7 @@
     if (!Array.isArray(words) || words.length !== 12) return false;
     if (!window.BIP39_WORDS) return false;
 
-    const wordMap = new Map();
-    window.BIP39_WORDS.forEach((w, i) => wordMap.set(w, i));
+    const wordMap = getWordIndexMap();
 
     let totalBits = '';
     for (const w of words) {

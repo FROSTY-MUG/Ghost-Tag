@@ -1,5 +1,5 @@
 /**
- * Ghost-Tag - Encrypted NFC Vault for Android
+ * Ghost-Tag - Encrypted NFC Vault for Android & iOS
  *
  * @format
  */

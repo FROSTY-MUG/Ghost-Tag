@@ -13,6 +13,7 @@
  *   magic marker prior to releasing envelope buffers to cryptographic decoders.
  */
 
+import { Platform } from 'react-native';
 import NfcManager from 'react-native-nfc-manager';
 import { NfcTag, tagInfo } from './tagInfo';
 import { NdefMessage, GhostTagRecord, extractGhostTagPayload } from './ndefBuilder';
@@ -99,8 +100,13 @@ export class TagReader {
     }
 
     try {
-      // Validate tag hardware compatibility
-      if (!tagInfo.isTagSupported(tag)) {
+      // Validate tag hardware compatibility.
+      //
+      // iOS: CoreNFC discovery events carry only the NDEF message (no SAK/ATQA/maxSize
+      // telemetry), so TagInfo cannot classify the tag — accept any CoreNFC-discovered
+      // tag (iOS only surfaces NDEF-capable Type 2 tags) and rely on Ghost envelope
+      // validation in readNdefMessage/findGhostTagRecord below.
+      if (!tagInfo.isTagSupported(tag) && Platform.OS !== 'ios') {
         return {
           success: false,
           error: createTagUnsupportedError('Detected tag technology is not a supported Type 2 tag.'),

@@ -239,17 +239,19 @@ flowchart TD
 
 ## 7. Cross-Platform Compatibility Matrix
 
-| Feature / Capability | Android APK (Primary) | Web Companion (Chrome Android) | Desktop Ghost Bridge | iOS Foundation |
+| Feature / Capability | Android APK (Primary) | Web Companion (Chrome Android) | Desktop Ghost Bridge | iOS Native (Read-Only) |
 | :--- | :---: | :---: | :---: | :---: |
-| **NDEF Reading** | Yes (Native) | Yes (Web NFC) | Yes (ACR122U / PN532) | Foundation Code Only |
-| **NDEF Writing** | Yes (Native) | Yes (Web NFC) | Yes (ACR122U / PN532) | Foundation Code Only |
-| **AES-256-GCM Encryption** | Yes (256-bit) | Yes (WebCrypto) | Yes (Node.js Crypto) | Yes (CryptoKit) |
-| **BIP-39 12-Word Recovery** | Yes (Canonical) | Yes (Canonical) | Yes (Canonical) | Yes (Canonical) |
-| **Single-Tag Vault (v1)** | Yes (54B Overhead) | Yes (54B Overhead) | Yes (54B Overhead) | Model Implemented |
-| **Bulk Multi-Tag Vault (v2)**| Yes (134B Overhead) | Yes (134B Overhead) | Yes (134B Overhead) | Model Implemented |
-| **Scanned Chunk Cache** | Volatile RAM Only | Volatile RAM Only | Volatile RAM Only | N/A |
-| **Stop & Pause Controls** | Yes | Yes | Yes | N/A |
-| **Opt-in Cloud Metadata** | Optional | Optional | Optional | Client Implemented |
+| **NDEF Reading** | Yes (Native) | Yes (Web NFC) | Yes (ACR122U / PN532) | Yes (CoreNFC - Read Only) |
+| **NDEF Writing** | Yes (Native) | Yes (Web NFC) | Yes (ACR122U / PN532) | No (Read-Only on iOS) |
+| **AES-256-GCM Encryption** | Yes (256-bit) | Yes (WebCrypto) | Yes (Node.js Crypto) | Yes (CryptoKit / QuickCrypto) |
+| **BIP-39 12-Word Recovery** | Yes (Canonical) | Yes (Canonical) | Yes (Canonical) | Yes (Canonical Argon2id) |
+| **Single-Tag Vault (v1)** | Yes (54B Overhead) | Yes (54B Overhead) | Yes (54B Overhead) | Yes (Read & Decrypt) |
+| **Bulk Multi-Tag Vault (v2)**| Yes (134B Overhead) | Yes (134B Overhead) | Yes (134B Overhead) | Yes (Read & Decrypt) |
+| **Scanned Chunk Cache** | Volatile RAM Only | Volatile RAM Only | Volatile RAM Only | Volatile RAM Only |
+| **Stop & Pause Controls** | Yes | Yes | Yes | Yes |
+| **Opt-in Cloud Metadata** | Optional | Optional | Optional | Optional |
+
+> **iOS Status Notice**: iOS CoreNFC scanning and decryption routines are implemented in source code, but remain pending macOS Xcode build verification, XCTest verification, and physical iPhone NFC validation. Tag writing is not supported on iOS (read-only). iOS is not supported, verified, complete, or release-ready.
 
 ---
 

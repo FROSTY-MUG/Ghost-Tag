@@ -17,7 +17,7 @@ Planned developments and upcoming milestones for Ghost-Tag.
 ---
 
 ## 2. Version 2.1 (Upcoming)
-- **Native iOS Client**: Full native iOS app using Apple's CoreNFC framework to bring full reading and writing capabilities to iPhones.
+- **Native iOS Client (Ghost-Tag.ipa)**: Ghost-Tag for iPhone via the existing Xcode project — CoreNFC scanning and decryption of Ghost tags (read-only; writes are Android/web-bridge focused). `scripts/package_release_ipa.py` builds the .ipa directly.
 - **Reed-Solomon Parity Redundancy**: Automatic generation of erasure recovery chunks (e.g. 8 data tags + 2 parity tags) so a vault can be reconstructed even if 2 physical tags are lost or destroyed.
 - **Hardware Security Key Integration**: Option to require a FIDO2 / WebAuthn hardware key (e.g. YubiKey) to unlock local master passphrases.
 

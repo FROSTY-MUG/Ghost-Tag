@@ -9,7 +9,7 @@ const assert = require('assert');
 const EventEmitter = require('events');
 const crypto = require('crypto');
 const { Pn532SerialTransport } = require('../src/transports/serialTransport');
-const { buildMimeNdefMessage, parseNdefFromUserMemory, calculateTagCapacity } = require('../src/apdu');
+const { buildMimeNdefMessage } = require('../src/apdu');
 
 // --- Deterministic Mock Serial Port ---
 class MockSerialPort extends EventEmitter {

@@ -62,7 +62,6 @@ import {
   RECORD_TYPE_BULK_CHUNK,
   BULK_ENVELOPE_FIXED_OVERHEAD,
   BULK_AAD_LENGTH,
-  BulkChunkEnvelope,
 } from '../contracts/bulkEnvelope';
 import { KdfParameters } from '../contracts/keyHierarchy';
 

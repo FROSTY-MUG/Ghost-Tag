@@ -194,9 +194,21 @@ describe('Phase 3 Vault Subsystem', () => {
 
       // Invalid phrase checks
       expect(await recoveryManager.verifyRecoveryPhrase('invalid words')).toBe(false);
+      const invalidDictWords = [...words];
+      invalidDictWords[0] = 'notawordxyz';
+      expect(await recoveryManager.verifyRecoveryPhrase(invalidDictWords.join(' '))).toBe(false);
+
       const corruptedWords = [...words];
-      corruptedWords[0] = corruptedWords[0] === 'abandon' ? 'ability' : 'abandon';
-      expect(await recoveryManager.verifyRecoveryPhrase(corruptedWords.join(' '))).toBe(false);
+      corruptedWords[corruptedWords.length - 1] =
+        corruptedWords[corruptedWords.length - 1] === 'abandon' ? 'ability' : 'abandon';
+      let corruptedResult = await recoveryManager.verifyRecoveryPhrase(corruptedWords.join(' '));
+      if (corruptedResult) {
+        // Handle rare 1/256 random checksum collision on single word replacement
+        corruptedWords[corruptedWords.length - 1] =
+          corruptedWords[corruptedWords.length - 1] === 'zoo' ? 'zone' : 'zoo';
+        corruptedResult = await recoveryManager.verifyRecoveryPhrase(corruptedWords.join(' '));
+      }
+      expect(corruptedResult).toBe(false);
 
       // Create a DEK to protect
       const dek1 = await dekManager.createDEK(kek);

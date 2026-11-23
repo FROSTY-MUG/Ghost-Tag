@@ -17,18 +17,20 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 [![Platform: Android](https://img.shields.io/badge/Platform-Android%20(API%2026%2B)-black.svg)](https://developer.android.com)
 [![Web Client: Live](https://img.shields.io/badge/Web%20Client-GitHub%20Pages-blue.svg)](https://frosty-mug.github.io/Ghost-Tag/)
-[![Crypto: AES--256--GCM](https://img.shields.io/badge/Crypto-AES--256--GCM%20%2B%20PBKDF2-blueviolet.svg)](./docs/security.md)
-[![Tests: 184 Passing](https://img.shields.io/badge/Tests-184%20Passing%20(100%25)-brightgreen.svg)](./docs/testing.md)
+[![Crypto: AES--256--GCM](https://img.shields.io/badge/Crypto-AES--256--GCM%20%2B%20Argon2id-blueviolet.svg)](./docs/CANONICAL-SPECIFICATION.md)
+[![Tests: 258 Passing](https://img.shields.io/badge/Tests-258%20Passing%20(100%25)-brightgreen.svg)](./docs/testing.md)
 [![TypeScript: Strict](https://img.shields.io/badge/TypeScript-0%20Errors-blue.svg)](./tsconfig.json)
-[![Release: v2.0.6](https://img.shields.io/badge/Release-v2.0.6-crimson.svg)](https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.6)
+[![Milestone: v2.1.0](https://img.shields.io/badge/Milestone-v2.1.0-orange.svg)](https://github.com/FROSTY-MUG/Ghost-Tag)
+[![Latest Release: v2.0.6](https://img.shields.io/badge/Latest%20Release-v2.0.6-crimson.svg)](https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.6)
 
 ---
 
-### Quick Links
-- **[Launch Web Client](https://frosty-mug.github.io/Ghost-Tag/)** — Minimal client-side encrypted NFC app on GitHub Pages.
+### Authoritative Documentation & Quick Links
+- **[Canonical Technical Specification](./docs/CANONICAL-SPECIFICATION.md)** — **Single authoritative specification** for envelopes, AAD, KDF derivations, recovery verifier, and wire formats.
+- **[Launch Web Companion](https://frosty-mug.github.io/Ghost-Tag/)** — Client-side encrypted NFC app deployed on GitHub Pages.
 - **[Download Android APK (v2.0.6)](https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.6)** — Primary native client (`Ghost-Tag-v2.0.6.apk`, SHA-256 verified).
-- **[NDEF Envelope Specification](./docs/nfc-format.md)** — Canonical binary envelope layout.
-- **[Security Architecture](./docs/security.md)** — Zero-secrets policy and cryptographic threat boundaries.
+- **[Security Policy & Boundaries](./SECURITY.md)** — Vulnerability reporting SLA, zero-secrets policy, and explicit threat model boundaries.
+- **[Cross-Platform Cryptographic Audit](./docs/security-audit.md)** — In-depth verification report across Android, Web, Desktop Ghost Bridge, and iOS.
 
 ---
 
@@ -48,30 +50,33 @@ Ghost-Tag provides **data confidentiality and cryptographic tamper-evidence** fo
 - **Not a Proxmark3 or Flipper Zero replacement**: Ghost-Tag does not clone chips, perform raw RF sniffing, or bypass proprietary chip auth.
 - **Not a centralized cloud vault or key escrow**: Ghost-Tag is local-first and offline-by-default. All cryptographic operations and NFC read/write workflows execute strictly on the client without remote dependencies. An optional, zero-knowledge Supabase cloud sync mode exists purely for encrypted vault metadata backup—it never receives or stores passphrases, recovery phrases, encryption keys, or NFC data.
 - **Not an anti-cloning token**: If an attacker copies an NFC tag byte-for-byte, they duplicate the ciphertext; they still cannot decrypt it without the key hierarchy.
+- **Hardware Support Notice**: Desktop USB reader (ACR122U) and PN532 serial drivers are implemented in source; hardware testing is actively ongoing.
 
 ---
 
 ## 2. System Architecture
 
-Ghost-Tag operates across two decoupled clients sharing a unified binary envelope and key recovery format:
+Ghost-Tag operates across client interfaces sharing a unified binary envelope and key recovery format:
 
 ```mermaid
 flowchart TD
     subgraph Clients["Ghost-Tag Client Interfaces"]
         AndroidApp["Android Native APK<br/>(Primary Full Client, API 26+)"]
-        WebApp["Web Client<br/>(GitHub Pages, Chrome Android)"]
+        WebApp["Web Client Companion<br/>(GitHub Pages, Chrome Android)"]
+        GhostBridge["Desktop Ghost Bridge<br/>(Node.js Daemon, ACR122U / PN532)"]
+        iOSCore["iOS Cryptographic Core<br/>(Swift + Clibargon2 Foundation)"]
     end
 
     subgraph SecurityCore["Cryptographic Security Engine"]
-        KDF["PBKDF2 / Argon2id KDF<br/>(100k Iterations / 64MB RAM)"]
+        KDF["Argon2id RFC 9106 / PBKDF2<br/>(Canonical Cross-Platform KDF)"]
         AES["AES-256-GCM Cipher<br/>(12-Byte IV, 16-Byte Tag)"]
-        AAD["Additional Authenticated Data<br/>(26-Byte Header Binding)"]
+        AAD["Deterministic AAD Binding<br/>(26B Single / 74B Bulk)"]
         BIP39Engine["BIP-39 12-Word Engine<br/>(128-Bit Entropy + 4-Bit Checksum)"]
     end
 
     subgraph HardwareTransceiver["NFC Transceiver Layer"]
-        SingleTag["Single-Tag Envelope<br/>(application/vnd.ghost.secure)"]
-        BulkTag["Bulk File Vault Chunks<br/>(application/vnd.ghost.bulk)"]
+        SingleTag["Single-Tag Envelope (v1)<br/>(application/vnd.ghost.secure)"]
+        BulkTag["Bulk File Vault Chunks (v2)<br/>(application/vnd.ghost.bulk)"]
     end
 
     subgraph PhysicalChips["Target Physical Media"]
@@ -82,6 +87,8 @@ flowchart TD
 
     AndroidApp --> KDF
     WebApp --> KDF
+    GhostBridge --> KDF
+    iOSCore --> KDF
     KDF --> AES
     AES --> AAD
     BIP39Engine -.-> KDF
@@ -108,8 +115,8 @@ flowchart TD
     end
 
     subgraph KDFDerivation["Memory-Hard KDF"]
-        Salt["CSPRNG Salt (32 Bytes)"]
-        Salt --> DerivationEngine["PBKDF2-SHA256 (Web, 100k iters)<br/>Argon2id (Android, 64MB, t=3)"]
+        Salt["CSPRNG Salt (16/32 Bytes)"]
+        Salt --> DerivationEngine["Argon2id RFC 9106 (Native Android / iOS / Web Recovery)<br/>PBKDF2-SHA256 (Web local KEK, 100k iters)"]
         Passphrase --> DerivationEngine
         RecoveryPhrase -.-> DerivationEngine
     end
@@ -123,7 +130,7 @@ flowchart TD
 
     subgraph LocalStorage["Encrypted Local State (MMKV / localStorage)"]
         WrappedDEK["Wrapped DEK Ciphertext"]
-        SaltStorage["Vault Salt (32B)"]
+        SaltStorage["Vault Salt (16/32B)"]
         IVStorage["DEK IV (12B) + Tag (16B)"]
     end
 
@@ -141,8 +148,8 @@ Every NFC write transaction executes cryptographic encapsulation followed by imm
 flowchart TD
     StartWrite["Select Data (Text or File)"] --> CheckSize{"Payload Fits<br/>Tag Writable Space?"}
     CheckSize -- No --> AlertBulk["Prompt: Use Bulk File Vault"]
-    CheckSize -- Yes --> GenEnvelope["Construct 54-Byte Header<br/>Magic (GHTG) + Version (0x02) + KeyID"]
-    GenEnvelope --> EncryptPayload["AES-256-GCM Encrypt<br/>(12B Nonce, 16B Tag, AAD Bound)"]
+    CheckSize -- Yes --> GenEnvelope["Construct 54-Byte Header<br/>Magic (GTAG) + Version (0x01) + KeyID"]
+    GenEnvelope --> EncryptPayload["AES-256-GCM Encrypt<br/>(12B Nonce, 16B Tag, 26B AAD Bound)"]
     EncryptPayload --> WriteNDEF["Write NDEF MIME Record<br/>(application/vnd.ghost.secure)"]
     WriteNDEF --> ReadBack["Immediate Read-Back from Tag Chip"]
     ReadBack --> VerifyTag{"Compare Decrypted<br/>vs Original Data?"}
@@ -154,13 +161,14 @@ flowchart TD
 
 ## 5. Bulk File Vault & Multi-Tag Reconstruction
 
-Large files (images, PDFs, ZIPs, videos) are split across multiple NFC chips. Tags can be scanned in any order during recovery:
+Arbitrary files (images, PDFs, ZIPs, videos) are split across multiple NFC chips. Tags can be scanned in any order during recovery:
 
 ```mermaid
 flowchart LR
-    subgraph FileSlice["File Chunking & Encryption"]
-        LargeFile["Large File / Multi-Files"] --> SplitChunks["Split into N Payload Chunks"]
-        SplitChunks --> EncryptChunks["Encrypt Each Chunk (AES-256-GCM)<br/>with Sequence & Vault Identifiers"]
+    subgraph FileSlice["File Chunking & Erasure Coding"]
+        LargeFile["Arbitrary Binary File"] --> EncryptWhole["AES-256-GCM Encrypt File"]
+        EncryptWhole --> SplitChunks["Split into K Data Chunks"]
+        SplitChunks --> CauchyRS["Cauchy Reed-Solomon GF(2^8)<br/>Generate M Recovery Chunks"]
     end
 
     subgraph PhysicalTags["Arbitrary Order NFC Tags"]
@@ -174,14 +182,14 @@ flowchart LR
         ScanLoop["Scan Tags in Any Order"]
         VolatileSession["Volatile In-Memory Session<br/>(Zero Persistent Disk Cache)"]
         DecryptAction["Tap Decrypt Now"]
-        Reassemble["Order Chunks by Index & Reassemble"]
+        Reassemble["Invert Cauchy Matrix & Reassemble"]
         RecoveredFile["Recovered Original Files"]
     end
 
-    EncryptChunks --> Tag3
-    EncryptChunks --> Tag1
-    EncryptChunks --> TagN
-    EncryptChunks --> Tag2
+    CauchyRS --> Tag3
+    CauchyRS --> Tag1
+    CauchyRS --> TagN
+    CauchyRS --> Tag2
 
     Tag3 --> ScanLoop
     Tag1 --> ScanLoop
@@ -198,7 +206,7 @@ flowchart LR
 
 ## 6. Cross-Platform Recovery Workflow
 
-Vaults initialized on Android can be seamlessly recovered on the Web Client (and vice versa) using the 12-word mnemonic:
+Vaults initialized on Android can be seamlessly recovered on the Web Companion (and vice versa) using the 12-word mnemonic:
 
 ```mermaid
 flowchart TD
@@ -210,14 +218,15 @@ flowchart TD
     end
 
     subgraph ExportImport["Mnemonic Transfer"]
-        UserPhrase["User Records 12 Words on Physical Paper"]
+        UserPhrase["User Records 12 Words on Physical Paper or Steel"]
     end
 
-    subgraph RecoverDevice["Device B (e.g. GitHub Pages Web Client)"]
+    subgraph RecoverDevice["Device B (e.g. GitHub Pages Web Companion)"]
         ImportAction["Select 'I Have a Recovery Phrase'"] --> InputWords["Enter 12 Words"]
         InputWords --> VerifyChecksum{"Validate 11-Bit Indices<br/>& 4-Bit Checksum"}
-        VerifyChecksum -- Valid --> ReconstructKEK["Reconstruct Vault Master Keys"]
-        ReconstructKEK --> SetLocalPass["Set Device Passphrase"]
+        VerifyChecksum -- Valid --> DeriveVerifier["Derive Argon2id recovery_verifier<br/>(m=32768, t=3, p=2)"]
+        DeriveVerifier --> RestoreCloud["Fetch Encrypted Metadata from Supabase"]
+        RestoreCloud --> SetLocalPass["Set Local Device Passphrase"]
         SetLocalPass --> VaultActiveB["Vault Successfully Restored"]
         VerifyChecksum -- Invalid --> ShowErr["Show: Recovery phrase is invalid."]
     end
@@ -230,68 +239,43 @@ flowchart TD
 
 ## 7. Cross-Platform Compatibility Matrix
 
-```mermaid
-flowchart LR
-    subgraph AndroidNative["Android APK (Native)"]
-        FullNFC["Raw NDEF Read / Write<br/>Mifare Ultralight Commands<br/>Background Dispatch"]
-    end
-
-    subgraph WebChromeAndroid["Web Client (Chrome on Android)"]
-        WebNFC["Web NFC API<br/>NDEF Read / Write<br/>HTTPS Context Required"]
-    end
-
-    subgraph WebDesktop["Web Client (Desktop Browsers)"]
-        GhostBridge["Ghost Bridge Daemon<br/>(127.0.0.1:41789, ACR122U USB)"]
-    end
-
-    subgraph AppleiOS["Apple iOS (Safari / Web)"]
-        NoWebNFC["Web NFC Not Supported by iOS<br/>(Use Android Native APK)"]
-    end
-
-    AndroidNative <-->|Shared Format| WebChromeAndroid
-    WebChromeAndroid <-->|Shared Format| WebDesktop
-```
-
-### Detailed Capability Matrix:
-
-| Feature / Capability | Android APK (v2.0.6) | Web Client (Chrome Android) | Web Client (iOS Web) | Web Client (Desktop) |
+| Feature / Capability | Android APK (Primary) | Web Companion (Chrome Android) | Desktop Ghost Bridge | iOS Foundation |
 | :--- | :---: | :---: | :---: | :---: |
-| **NDEF Record Reading** | Yes (Native) | Yes (Web NFC) | No (OS Limitation) | Yes (via Ghost Bridge) |
-| **NDEF Record Writing** | Yes (Native) | Yes (Web NFC) | No (OS Limitation) | Yes (via Ghost Bridge) |
-| **AES-256-GCM Encryption** | Yes (256-bit) | Yes (WebCrypto) | Yes (WebCrypto) | Yes (WebCrypto) |
-| **BIP-39 12-Word Recovery** | Yes | Yes | Yes | Yes |
-| **Single-Tag Vault** | Yes | Yes | Read-only with native app | Yes (via Ghost Bridge) |
-| **Bulk Multi-Tag Vault** | Yes | Yes | Read-only with native app | Yes (via Ghost Bridge) |
-| **In-Memory Volatile Session** | Enforced (Zero Disk Cache) | Enforced (Zero Disk Cache) | Enforced (Zero Disk Cache) | Enforced (Zero Disk Cache) |
-| **Stop & Pause Controls** | Yes | Yes | Yes | Yes |
-| **Network Connectivity** | Offline-First (Optional Opt-In Sync) | Offline-First (Optional Opt-In Sync) | Offline-First (Optional Opt-In Sync) | Offline-First (Optional Opt-In Sync) |
+| **NDEF Reading** | Yes (Native) | Yes (Web NFC) | Yes (ACR122U / PN532) | Foundation Code Only |
+| **NDEF Writing** | Yes (Native) | Yes (Web NFC) | Yes (ACR122U / PN532) | Foundation Code Only |
+| **AES-256-GCM Encryption** | Yes (256-bit) | Yes (WebCrypto) | Yes (Node.js Crypto) | Yes (CryptoKit) |
+| **BIP-39 12-Word Recovery** | Yes (Canonical) | Yes (Canonical) | Yes (Canonical) | Yes (Canonical) |
+| **Single-Tag Vault (v1)** | Yes (54B Overhead) | Yes (54B Overhead) | Yes (54B Overhead) | Model Implemented |
+| **Bulk Multi-Tag Vault (v2)**| Yes (134B Overhead) | Yes (134B Overhead) | Yes (134B Overhead) | Model Implemented |
+| **Scanned Chunk Cache** | Volatile RAM Only | Volatile RAM Only | Volatile RAM Only | N/A |
+| **Stop & Pause Controls** | Yes | Yes | Yes | N/A |
+| **Opt-in Cloud Metadata** | Optional | Optional | Optional | Client Implemented |
 
 ---
 
-## 8. Physical NFC Tag Specifications
+## 8. Physical NFC Tag Capacity Invariants
 
-Ghost-Tag automatically detects tag geometry and computes usable Ghost storage:
-
-| IC Type | Total EEPROM | Usable NDEF Space | Header Overhead | Max Usable Ghost Storage |
-| :--- | :--- | :--- | :--- | :--- |
-| **NTAG213** | 180 Bytes | 144 Bytes | 54 Bytes | **90 Bytes** |
-| **NTAG215** | 540 Bytes | 504 Bytes | 54 Bytes | **450 Bytes** |
-| **NTAG216** | 924 Bytes | 888 Bytes | 54 Bytes | **834 Bytes** |
+| IC Type | Total EEPROM | Usable NDEF Space | v1 Overhead | v1 Max Payload | v2 Overhead | v2 Max Payload |
+| :--- | :--- | :--- | :---: | :---: | :---: | :---: |
+| **NTAG213** | 180 Bytes | 144 Bytes | 54 Bytes | **~90 Bytes** | 134 Bytes | **~10 Bytes** |
+| **NTAG215** | 540 Bytes | 504 Bytes | 54 Bytes | **~450 Bytes** | 134 Bytes | **~370 Bytes** |
+| **NTAG216** | 924 Bytes | 888 Bytes | 54 Bytes | **~834 Bytes** | 134 Bytes | **~754 Bytes** |
 
 ---
 
 ## 9. Verification & Quality Gates
 
-Ghost-Tag maintains 100% test passing rates across all cryptographic and hardware integration suites:
-
-> Ghost-Tag includes optional runtime environment checks, but these do not prevent reverse engineering or protect data on a compromised or unlocked device.
+Ghost-Tag maintains a 100% test passing rate across all cryptographic and integration suites:
 
 ```bash
-# Run unit & integration tests (169 passing)
+# Run unit & integration tests (258 passing tests on main)
 npm test
 
-# Static type verification (0 errors)
+# Static type verification (0 errors in strict mode)
 npx tsc --noEmit
+
+# Run automated security invariants audit
+python scripts/security_audit_agent.py
 ```
 
 ---
@@ -300,30 +284,27 @@ npx tsc --noEmit
 
 ```
 Ghost-Tag/
-├── android/               # Android APK native codebase (Gradle, NDK, JNI)
-│   ├── app/               # Native application module
-│   └── README.md          # Android build and architecture guide
-├── web/                   # Client-side web client (GitHub Pages)
-│   ├── index.html         # Minimal brutalist landing & vault UI
-│   ├── app.js             # Web NFC transceiver, cache, and crypto engine
-│   ├── styles.css         # Apple-inspired brutalist dark styling
-│   ├── wordlist.js        # BIP-39 2,048 English wordlist
-│   ├── assets/            # Subtle blurred visual assets
-│   ├── package.json       # Web client package descriptor
-│   └── README.md          # Web client documentation
+├── android/               # Android APK native codebase (Gradle, NDK C++, JNI)
+├── desktop/               # Desktop Ghost Bridge daemon (PC/SC, APDU, PN532 UART/I2C)
+├── ios/                   # iOS Swift core, Clibargon2 C library, and XCTest suite
+├── web/                   # Client-side web companion deployed to GitHub Pages
+├── supabase/              # Supabase migrations and zero-knowledge edge functions
+├── test-fixtures/         # Golden reference vectors (crypto, envelopes, recovery)
+├── src/                   # React Native & TypeScript cross-platform domain core
+│   ├── contracts/         # Canonical schemas, enums, errors, and hardware limits
+│   ├── crypto/            # AES-256-GCM, Argon2id, envelope codec, Cauchy RS
+│   ├── operations/        # Orchestrators for scan, write, bulk, and reconstruction
+│   ├── security/          # In-memory zeroization, anti-leak, and device integrity
+│   └── vault/             # Local vault managers, DEK rotation, and RAM chunk cache
 ├── docs/                  # Technical documentation suite
-│   ├── nfc-format.md      # Canonical NDEF binary envelope layout
-│   ├── security.md        # Cryptographic security & threat boundaries
-│   ├── recovery.md        # BIP-39 12-word recovery specification
-│   ├── testing.md         # Test verification & test vectors
-│   └── architecture.md    # System design documentation
-├── .github/               # GitHub issue templates, rulesets, and configs
-│   ├── ISSUE_TEMPLATE/    # Bug report, feature request, nfc-compat, docs
-│   └── FUNDING.yml        # Sponsorship configuration
-├── CHANGELOG.md           # Keep a Changelog compliant release history
+│   ├── CANONICAL-SPECIFICATION.md # Single authoritative source of truth
+│   ├── security-audit.md  # Comprehensive security audit report
+│   ├── recovery.md        # BIP-39 12-word recovery guide
+│   └── architecture.md    # Subsystem decomposition guide
+├── CHANGELOG.md           # Keep a Changelog compliant history
 ├── LICENSE                # MIT License
 ├── README.md              # Project thesis and technical specifications
-└── SECURITY.md            # Vulnerability reporting and security policy
+└── SECURITY.md            # Vulnerability disclosure policy and boundaries
 ```
 
 ---

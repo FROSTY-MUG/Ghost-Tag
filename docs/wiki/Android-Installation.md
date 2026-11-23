@@ -8,7 +8,7 @@ The Ghost-Tag Android APK is the primary full-featured client. It provides direc
 
 Always download official Ghost-Tag APK releases directly from the GitHub repository:
 - **Releases Page**: [https://github.com/FROSTY-MUG/Ghost-Tag/releases](https://github.com/FROSTY-MUG/Ghost-Tag/releases)
-- **Direct Asset**: `Ghost-Tag-v2.0.5.apk`
+- **Direct Asset**: `Ghost-Tag-v2.1.0.apk`
 
 ---
 
@@ -18,17 +18,17 @@ Before installing, verify the SHA-256 checksum of the downloaded file:
 
 ### Windows (PowerShell)
 ```powershell
-Get-FileHash -Algorithm SHA256 .\Ghost-Tag-v2.0.5.apk
+Get-FileHash -Algorithm SHA256 .\Ghost-Tag-v2.1.0.apk
 ```
 
 ### Linux / macOS
 ```bash
-sha256sum Ghost-Tag-v2.0.5.apk
+sha256sum Ghost-Tag-v2.1.0.apk
 ```
 
-### Expected Checksum for v2.0.5:
+### Expected Checksum for v2.1.0:
 ```text
-28a2e3d85ec803a733b62cdd5f55f1077d7b5a990a256b656262009d096e71ea
+27bb49ae1bba7a110022e3f0df8f220f8a58bbe878f658c511cc0508730e8a31
 ```
 
 ---

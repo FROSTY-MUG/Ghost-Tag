@@ -1,5 +1,9 @@
 # Ghost-Tag v2.1.0 Release Notes
 
+> [!NOTE]
+> **CANONICAL SPECIFICATION REFERENCE**  
+> For the authoritative wire layouts, cryptographic parameters, envelope definitions, and cross-platform derivation standards, refer to [CANONICAL-SPECIFICATION.md](docs/CANONICAL-SPECIFICATION.md).
+
 ## Overview
 
 Ghost-Tag v2.1.0 achieves complete cross-platform cryptographic alignment across Android, Web, Ghost Bridge, and Supabase. Android is established as the canonical cryptographic reference implementation. Web has been fully realigned from legacy PBKDF2 to Argon2id RFC 9106 via a vendored offline WebAssembly bundle (`hash-wasm`), unifying `account_id`, `recovery_auth_secret`, `recovery_salt`, `recovery_verifier`, AES-256-GCM AEAD, and Little-Endian envelope wire formats across all platforms. A comprehensive 59-test cross-platform compatibility test suite (`src/__tests__/crossPlatformCryptoCompatibility.test.ts`) verifies 25 explicit cryptographic and architectural invariants against deterministic golden reference fixtures.
@@ -35,11 +39,16 @@ Ghost-Tag v2.1.0 achieves complete cross-platform cryptographic alignment across
 - **Zero Secret Transmission**: Supabase stores ONLY encrypted vault metadata blobs. It NEVER receives or stores passphrases, recovery phrases, KEKs, DEKs, plaintexts, or NFC chunk contents.
 - **Zero Open Vulnerabilities**: Confirmed zero open CodeQL alerts and zero open Dependabot vulnerabilities (`npm audit` reports 0 vulnerabilities).
 - **Offline Self-Sufficiency**: Web app operates completely offline without external CDN dependencies for Argon2id WASM.
-- **iOS Implementation Status**: iOS cryptographic foundation is implemented in source code, but remains pending macOS build validation, XCTest validation, cross-platform fixture validation, and physical iPhone NFC validation. iOS is not supported, verified, complete, or release-ready. iOS UI and Core NFC remain unimplemented.
+- **Hardware Readiness & Platform Status Disclosures**:
+  - **PC/SC ACR122U**: Implemented in source code; pending real-reader hardware validation with physical ACR122U and physical NTAG tags.
+  - **PN532 Serial Transport**: Implemented in source code and covered by mocked protocol tests; pending real-device validation with physical ESP32, PN532 module, and physical NTAG tags.
+  - **iOS Subsystem**: Cryptographic foundation implemented in source code; pending macOS build, XCTest, and physical iPhone Core NFC validation. iOS UI and Core NFC are not implemented.
+  - **Android NFC Engine**: Implemented in source code and unit tested; pending real-device NFC validation on physical Android hardware.
+  - **Supabase Cloud Sync**: Schemas and Edge Functions verified locally; not deployed to live production.
 
 ## Verification
 
-- **Full Verification Suite**: 15 passed / 15 test suites (256 passed / 256 tests).
+- **Full Verification Suite**: 16 passed / 16 test suites (280 passed / 280 tests).
 - **TypeScript Strict Typecheck**: 0 errors (`npx tsc --noEmit`).
 - **Web Build**: Clean production build via Vite (`npm run build`).
 - **Lint**: Zero errors (`npm run lint`).

@@ -7,7 +7,7 @@
 
 const http = require('http');
 const { WebSocketServer } = require('ws');
-const { getCardUid, readTagNdef, writeTagNdefAndVerify } = require('./apdu');
+const { getCardUid, readTagCapability, readTagNdef, writeTagNdefAndVerify } = require('./apdu');
 
 const PORT = 41789;
 const HOST = '127.0.0.1';
@@ -67,7 +67,7 @@ class GhostBridgeServer {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           bridge: 'Ghost Bridge',
-          version: '2.0.5',
+          version: '2.1.0',
           status: 'ready',
           readers: readerNames,
           hasAcr122u,
@@ -95,7 +95,7 @@ class GhostBridgeServer {
       const readerNames = Array.from(this.connectedReaders.keys());
       ws.send(JSON.stringify({
         type: 'bridge_status',
-        version: '2.0.5',
+        version: '2.1.0',
         readers: readerNames,
         readerConnected: readerNames.length > 0,
         cardPresent: this.activeCard !== null,
@@ -118,7 +118,7 @@ class GhostBridgeServer {
       const readerNames = Array.from(this.connectedReaders.keys());
       ws.send(JSON.stringify({
         type: 'bridge_status',
-        version: '2.0.5',
+        version: '2.1.0',
         readers: readerNames,
         readerConnected: readerNames.length > 0,
         cardPresent: this.activeCard !== null,
@@ -251,6 +251,17 @@ class GhostBridgeServer {
               const uid = await getCardUid(reader);
               const atr = status.atr ? status.atr.toString('hex').toUpperCase() : 'Not available on this device';
               
+              // Read real tag capability from CC block 3
+              const capability = await readTagCapability(reader);
+              if (!capability.isType2) {
+                console.warn(`[Ghost Bridge] Unsupported tag detected on ${reader.name} (UID: ${uid})`);
+                this.broadcast({
+                  type: 'error',
+                  message: `Unsupported tag detected (UID: ${uid}). Ghost-Tag requires an NFC Forum Type 2 tag (NTAG213, NTAG215, or NTAG216).`
+                });
+                return;
+              }
+
               // Attempt reading existing NDEF
               let existingData = null;
               let rawBytes = [];
@@ -268,19 +279,22 @@ class GhostBridgeServer {
                 uid,
                 atr,
                 reader: reader.name,
-                technology: 'ISO 14443-3A / NTAG',
-                ndefStatus: 'Read/Write',
-                totalBytes: 504,
-                writableBytes: 496,
+                technology: `ISO 14443-3A / ${capability.model}`,
+                model: capability.model,
+                manufacturer: capability.manufacturer,
+                ndefStatus: capability.ndefStatus,
+                totalBytes: capability.totalBytes,
+                writableBytes: capability.writableBytes,
                 existingData,
                 rawBytes,
                 timestamp: Date.now()
               };
 
-              console.log(`[Ghost Bridge] Tag UID: ${uid}`);
+              console.log(`[Ghost Bridge] Tag detected: ${capability.model} (UID: ${uid}, ${capability.writableBytes}B writable)`);
               this.broadcast({
                 type: 'card_present',
-                tag: this.activeCard
+                tag: this.activeCard,
+                card: this.activeCard
               });
             } catch (cardErr) {
               console.error('[Ghost Bridge] Failed to read tag info:', cardErr);

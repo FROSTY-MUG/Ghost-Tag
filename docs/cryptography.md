@@ -1,5 +1,14 @@
 # Ghost-Tag Cryptographic Core Specification
 
+> [!NOTE]
+> **CANONICAL SPECIFICATION ALIGNMENT**  
+> For the authoritative wire layouts, cryptographic parameters, envelope definitions, and cross-platform derivation standards, refer to [CANONICAL-SPECIFICATION.md](file:///c:/Users/Aryan/Desktop/Projects/Ghost-Tag/docs/CANONICAL-SPECIFICATION.md).
+> 
+> Key Invariants:
+> - **Canonical Recovery**: 12-word BIP-39 English mnemonic across Android, Web, and iOS.
+> - **Bulk Envelope**: Exact 134-byte fixed overhead with MAGIC `GTAG` (0x47, 0x54, 0x41, 0x47), FORMAT_VERSION `0x02`, RECORD_TYPE `0x10`, 74-byte deterministic AAD (ending at byte 73), and a full **32-byte SHA-256 chunk hash** at bytes 74..105.
+> - **Chunk Cache**: Strictly in volatile RAM (`Map`) with 72-hour TTL timer; zero disk writes.
+
 Ghost-Tag employs authenticated symmetric encryption coupled with a memory-hard key derivation function to guarantee confidentiality, authenticity, and recoverability.
 
 ---
@@ -124,11 +133,9 @@ To ensure recoverability when a device is lost or replaced:
                      AES-256-GCM Recovery Wrapped DEKs
 ```
 
-- **Mnemonic Encoding**: 256 bits of CSPRNG entropy + 8-bit SHA-256 checksum = 264 bits $\rightarrow$ encoded into 24 BIP39 words.
+- **Mnemonic Encoding**: Canonical 12-word BIP-39 English mnemonic (128 bits entropy + 4 bits checksum = 132 bits). The underlying engine retains legacy support for 24-word offline envelopes (256 bits entropy + 8 bits checksum).
 - **Isolated Parameters**: Uses a dedicated 32-byte salt and independent Argon2id work factors distinct from the primary passphrase KDF.
 - **Recovery Envelope**: Stored locally or exported to allow recreating access to tag DEKs if the primary passphrase is lost.
-
----
 
 ---
 
@@ -143,7 +150,19 @@ $$\text{FullCiphertext} = \text{AES-256-GCM}_{\text{DEK}}(\text{IV} = \text{rand
 ### 6.2 Chunk Framing & 74-Byte AAD Binding:
 The encrypted binary stream is split into $K$ data chunks. Each chunk is framed into a 134-byte binary envelope (`application/vnd.ghost.bulk`) with **74 bytes of Additional Authenticated Data (AAD)**:
 
-$$\text{ChunkAAD} = \text{"GTBK"} \;||\; \text{VERSION (1B)} \;||\; \text{FLAGS (1B)} \;||\; \text{VAULT\_ID (16B)} \;||\; \text{FILE\_ID (16B)} \;||\; \text{GLOBAL\_INDEX (4B LE)} \;||\; \text{FILE\_CHUNK\_INDEX (4B LE)} \;||\; \text{TOTAL\_FILE\_CHUNKS (4B LE)} \;||\; \text{TOTAL\_VAULT\_CHUNKS (4B LE)} \;||\; \text{PAYLOAD\_LENGTH (4B LE)} \;||\; \text{CHUNK\_SHA256 (16B truncated)}$$
+$$\begin{aligned}
+\text{ChunkAAD} = &\ \text{MAGIC ("GTAG", 4B)} \mathbin{\Vert} \text{FORMAT\_VERSION (0x02, 1B)} \mathbin{\Vert} \text{RECORD\_TYPE (0x10, 1B)} \\
+&\mathbin{\Vert} \text{VAULT\_ID (16B)} \mathbin{\Vert} \text{FILE\_ID (16B)} \mathbin{\Vert} \text{KEY\_ID (16B)} \\
+&\mathbin{\Vert} \text{GLOBAL\_CHUNK\_INDEX (4B LE)} \mathbin{\Vert} \text{TOTAL\_VAULT\_CHUNKS (4B LE)} \\
+&\mathbin{\Vert} \text{FILE\_CHUNK\_INDEX (4B LE)} \mathbin{\Vert} \text{TOTAL\_FILE\_CHUNKS (4B LE)} \\
+&\mathbin{\Vert} \text{CHUNK\_CIPHERTEXT\_LENGTH (4B LE)}
+\end{aligned}$$
+
+Following the 74-byte AAD header, the envelope stores:
+- **`CHUNK_HASH` (32 Bytes)**: Full SHA-256 digest of the chunk ciphertext (bytes `74..105`), acting as an independent pre-authentication integrity gate.
+- **`NONCE` (12 Bytes)**: 96-bit AES-256-GCM IV (bytes `106..117`).
+- **`CHUNK_CIPHERTEXT` ($N$ Bytes)**: AES-256-GCM ciphertext (bytes `118..117+N`).
+- **`GCM_TAG` (16 Bytes)**: 128-bit authentication tag protecting the 74-byte AAD and ciphertext.
 
 Binding all 74 bytes of topological and identity metadata guarantees that an attacker cannot:
 1. Replay a chunk from Vault A into Vault B.

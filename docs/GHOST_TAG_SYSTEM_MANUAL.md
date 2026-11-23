@@ -1,5 +1,9 @@
 # Ghost-Tag v2.0.5 — Full Product Specification & System Manual
 
+> [!NOTE]
+> **DOCUMENT STATUS: HISTORICAL SPECIFICATION & SYSTEM MANUAL**  
+> This system manual defines the original v2.0.5 release architecture. For the active, canonical technical specification covering the current v2.1.0 codebase and cross-platform zero-knowledge recovery protocol, refer to [CANONICAL-SPECIFICATION.md](file:///c:/Users/Aryan/Desktop/Projects/Ghost-Tag/docs/CANONICAL-SPECIFICATION.md).
+
 ## Core Rule & Fallback Contract
 Ghost-Tag can be designed as a cross-platform encrypted NFC vault, but you must separate three things: the Android APK, the web app, and iOS. They can share the same encrypted NFC format, but they cannot all have the same NFC permissions or capabilities.
 

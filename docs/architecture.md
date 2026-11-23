@@ -1,5 +1,14 @@
 # Ghost-Tag System Architecture
 
+> [!NOTE]
+> **CANONICAL SPECIFICATION ALIGNMENT**  
+> For the authoritative wire layouts, cryptographic parameters, envelope definitions, and cross-platform derivation standards, refer to [CANONICAL-SPECIFICATION.md](file:///c:/Users/Aryan/Desktop/Projects/Ghost-Tag/docs/CANONICAL-SPECIFICATION.md).
+> 
+> Invariants:
+> - **Recovery**: Canonical 12-word BIP-39 mnemonic recovery phrases across Android, Web, and iOS.
+> - **Chunk Cache**: Strictly volatile in-memory storage (`Map` in RAM) with a 72-hour TTL expiration timer; zero disk or database persistence of chunks.
+> - **Bulk Envelope**: Exact 134-byte fixed overhead with 74-byte deterministic AAD and 32-byte SHA-256 chunk hash.
+
 Ghost-Tag is architectured around decoupled, single-responsibility subsystems communicating through strictly-typed contracts, reinforced by a native multi-language security core.
 
 ---
@@ -69,7 +78,7 @@ Defines authoritative schemas, error codes, and hardware invariants:
 - **`bulkVault.ts`**: Multi-file manifest, private tag mapping, chunk cache, and journal schemas.
 - **`errors.ts`**: Canonical error registry, severity tiers, and `GhostTagError` hierarchy.
 - **`keyHierarchy.ts`**: KEK, DEK, WrappedDEK, and device-tier calibrated KDF parameters.
-- **`recovery.ts`**: 24-word BIP39 mnemonic configurations and recovery envelope schemas.
+- **`recovery.ts`**: Canonical 12-word BIP-39 mnemonic configurations, legacy 24-word engine definitions, and recovery envelope schemas.
 - **`tags.ts`**: Supported Type 2 Tag hardware matrix, page memory layouts, and exclusion rules.
 - **`states.ts`**: Deterministic finite state machines for Scan, Write, Bulk, and Wipe operations.
 
@@ -114,10 +123,10 @@ Direct Linux kernel inspections compiled to ARM64/x86_64 machine code (`libghost
 - **`vaultManager.ts`**: Single-payload vault lifecycle coordinator (setup, open, lock, rotate).
 - **`bulkVaultManager.ts`**: Multi-file vault manager, private tag mappings, and file addition pipeline.
 - **`session.ts`**: Ephemeral in-memory KEK lifecycle with 5-minute auto-lock and background wiping.
-- **`chunkCache.ts`**: 72-hour temporary encrypted chunk cache with TTL countdown and auto-purge.
+- **`chunkCache.ts`**: 72-hour temporary in-memory volatile chunk cache (holds raw encrypted ciphertext in RAM with TTL countdown and auto-purge; zero disk writes).
 - **`journalManager.ts`**: Crash-resilient write and scan transaction journals.
 - **`dekManager.ts`**: Generates, stores, and rotates wrapped 256-bit Data Encryption Keys.
-- **`recoveryManager.ts`**: 24-word BIP39 mnemonic generation, derivation, and disaster recovery.
+- **`recoveryManager.ts`**: Canonical 12-word BIP-39 mnemonic generation, cross-platform derivation, disaster recovery, and legacy 24-word engine support.
 - **`manifest.ts`**: HMAC-SHA-256 tamper-evident integrity protection for vault metadata.
 - **`auditLog.ts`**: Rolling SHA-256 hash-chained append-only audit log.
 

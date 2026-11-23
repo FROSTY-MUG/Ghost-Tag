@@ -1,5 +1,14 @@
 # Ghost-Tag Bulk Scanning v2: Distributed NFC File-Vault
 
+> [!WARNING]
+> **DOCUMENT STATUS: HISTORICAL / SUPERSEDED**  
+> This specification document is retained for historical background. It has been formally superseded by the authoritative [CANONICAL-SPECIFICATION.md](file:///c:/Users/Aryan/Desktop/Projects/Ghost-Tag/docs/CANONICAL-SPECIFICATION.md).
+> 
+> Key Architectural Clarifications:
+> - **Chunk Cache**: Scanned chunks are cached strictly in volatile RAM (`Map`) with a 72-hour expiration timer; there is **zero disk or database persistence** of scanned chunks.
+> - **Bulk Envelope**: Uses the canonical 134-byte fixed overhead layout with full 32-byte SHA-256 chunk hash.
+> - **Recovery**: Uses canonical 12-word BIP-39 mnemonic recovery phrases across Android, Web, and iOS.
+
 ## 1. Product Thesis
 
 **Ghost-Tag Bulk Scanning v2** is an offline, encrypted, distributed NFC file-vault for Android. It allows users to store arbitrary files—such as high-resolution images, video recordings, PDF contracts, audio files, ZIP archives, or raw binary streams—partitioned across a collection of standard physical NFC Forum Type 2 tags (NTAG21x / MIFARE Ultralight family).

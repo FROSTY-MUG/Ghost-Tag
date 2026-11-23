@@ -1,5 +1,9 @@
 # Ghost-Tag Canonical Binary Envelope Specification
 
+> [!NOTE]
+> **DOCUMENT STATUS: HISTORICAL / SUPERSEDED IN PART**  
+> This document specifies the v1 (single-tag, 54-byte overhead) binary envelope layout. For the complete, authoritative specification covering both **v1 Single-Tag (54B overhead)** and **v2 Bulk Distributed (134B overhead with 32B SHA-256 chunk hash)**, consult the authoritative [CANONICAL-SPECIFICATION.md](file:///c:/Users/Aryan/Desktop/Projects/Ghost-Tag/docs/CANONICAL-SPECIFICATION.md).
+
 This document defines the binary layout of the Ghost-Tag ciphertext envelope stored on NFC tags.
 
 ---

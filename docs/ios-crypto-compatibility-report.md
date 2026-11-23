@@ -14,7 +14,15 @@ Android is established as the **canonical Ghost-Tag cryptographic reference impl
 - Argon2id RFC 9106 ($m=32768$ KiB, $t=3$, $p=2$, $h=32$, $v=0x13$, 32-byte salt) for `recovery_verifier` via an offline, self-contained WebAssembly bundle (`hash-wasm`).
 - Wire format alignment: Little-Endian multi-byte integers, canonical 26-byte AAD for v1 envelopes, 74-byte AAD for v2 bulk chunk envelopes, and record type `0x10` (`RECORD_TYPE_BULK_CHUNK`).
 
-A dedicated 59-test cross-platform compatibility test suite (`src/__tests__/crossPlatformCryptoCompatibility.test.ts`) verifies 30 explicit cryptographic and architectural invariants against deterministic golden reference fixtures. All 15 test suites and 256 unit tests in the project currently pass (`tsc --noEmit && jest`).
+A dedicated 59-test cross-platform compatibility test suite (`src/__tests__/crossPlatformCryptoCompatibility.test.ts`) verifies 30 explicit cryptographic and architectural invariants against deterministic golden reference fixtures. All 16 test suites and 280 unit tests in the project currently pass (`tsc --noEmit && jest`).
+
+> [!IMPORTANT]
+> **Component Validation Status Disclosures**:
+> - **PC/SC ACR122U**: Implemented in source code; pending real-reader hardware validation with physical ACR122U and physical NTAG tags.
+> - **PN532 Serial Transport**: Implemented in source code and covered by mocked protocol tests; pending real-device validation with physical ESP32, PN532 module, and physical NTAG tags.
+> - **iOS Subsystem**: Cryptographic foundation implemented in source code; pending macOS build, XCTest, and physical iPhone Core NFC validation. iOS UI and Core NFC are not implemented.
+> - **Android NFC Engine**: Implemented in source code and unit tested; pending real-device NFC validation on physical Android hardware.
+> - **Supabase Cloud Sync**: Schemas and Edge Functions verified locally; not deployed to live production.
 
 ---
 

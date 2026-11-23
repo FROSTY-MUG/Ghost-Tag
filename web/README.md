@@ -1,4 +1,4 @@
-# Ghost-Tag Web Client (v2.0.5)
+# Ghost-Tag Web Client (v2.1.0)
 
 Ghost-Tag Web is a minimal, dark, client-side encrypted NFC storage application deployed to GitHub Pages. It enables writing, scanning, and decrypting Ghost-Tag data directly within modern web browsers.
 

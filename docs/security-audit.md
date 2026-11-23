@@ -22,8 +22,11 @@ Ghost-Tag v2.0.6 has undergone end-to-end security hardening, static analysis re
 | Tag Operations Engine | `src/operations/*.ts` | Verified (Single/bulk write, state transitions, capacity guards) |
 | System Contracts | `src/contracts/*.ts` | Verified (Type invariants, error codes, state machines) |
 | Web Client Showcase | `web/app.js`, `web/supabase.js`, `web/crypto-simulator.js` | Verified (Syntax valid, AST verified, zero console errors, XSS mitigated) |
-| Desktop Hardware Bridge | `desktop/src/apdu.js` | Verified (Clean APDU encapsulation, zero dead code) |
-| Supabase Cloud Sync | `supabase/migrations/*`, `supabase/functions/recover-vault/*` | Verified (14 cryptographic and isolation invariants satisfied) |
+| Desktop Hardware Bridge | `desktop/src/apdu.js`, `desktop/src/server.js` | Source Implemented (ACR122U PC/SC pending real-reader validation) |
+| PN532 Serial Transport & Firmware | `desktop/src/transports/*`, `desktop/firmware/*` | Source Implemented (22 mocked tests passing; pending physical ESP32/PN532/NTAG validation) |
+| iOS Cryptographic Core | `ios/GhostTag/Core/Crypto/*` | Source Implemented (Pending macOS build, XCTest, and physical iPhone validation) |
+| Android NFC Engine | `android/*`, `src/nfc/*` | Source Implemented (Unit tested; pending real-device physical NFC validation) |
+| Supabase Cloud Sync | `supabase/migrations/*`, `supabase/functions/recover-vault/*` | Schema & Function Verified (NOT deployed to live project) |
 | CI/CD Pipeline & Tooling | `.github/workflows/*.yml`, `.github/dependabot.yml` | Hardened (No debug keystore fallback, apksigner verification, audit gates) |
 
 ---

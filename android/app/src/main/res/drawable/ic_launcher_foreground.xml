@@ -1,0 +1,28 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:translateX="18"
+        android:translateY="18"
+        android:scaleX="1.125"
+        android:scaleY="1.125">
+        <!-- Ghost Tag Silhouette -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M12,24 L24,10 L40,10 L52,24 L52,54 L44,46 L36,54 L28,46 L20,54 L12,46 Z" />
+        <!-- Left Eye Cutout -->
+        <path
+            android:fillColor="#000000"
+            android:pathData="M22,24 H28 V34 H22 Z" />
+        <!-- Right Eye Cutout -->
+        <path
+            android:fillColor="#000000"
+            android:pathData="M36,24 H42 V34 H36 Z" />
+        <!-- Restrained Blood-Red Cryptographic Accent -->
+        <path
+            android:fillColor="#DC2626"
+            android:pathData="M45,14 H50 V19 H45 Z" />
+    </group>
+</vector>

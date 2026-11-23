@@ -1,4 +1,4 @@
-# Ghost Bridge v2.0.5
+# Ghost Bridge v2.1.0
 
 **Native Desktop PC/SC USB NFC Hardware Companion for Ghost-Tag**
 
@@ -30,13 +30,27 @@ Physical NFC Tag (NTAG213 / NTAG215 / NTAG216)
 
 | Hardware Model | Type | Connectivity | Driver Stack | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **ACS ACR122U** | USB NFC Reader / Writer | USB 2.0 Full Speed | PC/SC (`WinSCard` / `pcscd`) | **Verified Primary** |
+| **ACS ACR122U** | USB NFC Reader / Writer | USB 2.0 Full Speed | PC/SC (`WinSCard` / `pcscd`) | **Verified Baseline** |
 | **ACS ACR1252U** | USB NFC Reader / Writer | USB 2.0 Full Speed | PC/SC (`WinSCard` / `pcscd`) | Compatible |
 | **Identiv uTrust 3700 F** | USB NFC Reader | USB 2.0 | PC/SC | Compatible |
 | **Sony RC-S380 (PaSoRi)**| USB NFC Reader | USB 2.0 | PC/SC | Compatible |
 
 > [!IMPORTANT]
-> Ghost-Tag v2.0.5 officially targets the **ACS ACR122U USB NFC Reader**. Other PC/SC-compliant readers may work if they expose standard ISO 14443 Type 2 Tag APDUs, but ACR122U is the verified baseline.
+> Ghost-Tag v2.1.0 officially targets the **ACS ACR122U USB NFC Reader**. Other PC/SC-compliant readers may work if they expose standard ISO 14443 Type 2 Tag APDUs, but ACR122U is the verified baseline.
+
+---
+
+## Tag Capability & Model Detection
+
+Ghost Bridge automatically queries Block 3 (Capability Container `CC`) upon tag tap to dynamically detect tag model, writable memory bounds, and lock status:
+
+| Tag Model | CC Byte 2 (Size) | Total EEPROM | User Writable Memory | Typical Usage |
+| :--- | :--- | :--- | :--- | :--- |
+| **NXP NTAG213** | `0x12` | 180 Bytes | 144 Bytes (Blocks 4–39) | Single-Tag Ghost v1 Envelopes |
+| **NXP NTAG215** | `0x3E` | 540 Bytes | 496 Bytes (Blocks 4–129) | Multi-Entry Vault Chunks |
+| **NXP NTAG216** | `0x6D` | 924 Bytes | 872 Bytes (Blocks 4–221) | Bulk Ghost v2 Envelopes |
+
+Pre-flight checks automatically reject non-Type 2 tags, read-only/locked tags (`CC[3] & 0x0F != 0`), and payloads that exceed the physical tag capacity before any write operation is attempted.
 
 ---
 

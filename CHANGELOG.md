@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Argon2id RFC 9106 Web WASM Engine**: Vendored offline standalone Argon2id WebAssembly engine (`web/vendor/argon2.umd.min.js`) backed by `hash-wasm` with canonical parameters ($m=32768$ KiB, $t=3$, $p=2$, $h=32$, $v=0x13$), enabling 100% offline client-side recovery verifier computation.
 - **Deterministic Cross-Platform Test Fixtures**: Golden reference vectors (`test-fixtures/crypto/aesGcmVectors.json`, `test-fixtures/recovery/recoveryVectors.json`, `test-fixtures/envelopes/v1EnvelopeVectors.json`, `test-fixtures/envelopes/v2BulkEnvelopeVectors.json`, and reference `.bin` files) generated deterministically via `scripts/generate_compatibility_fixtures.js`.
 - **v1 & v2 Binary Envelope Web Adapters**: Added canonical Little-Endian `buildV1Envelope`, `parseV1Envelope`, `buildGtagEnvelope`, and `parseGtagEnvelope` helpers in `web/app.js` with 26-byte (v1) and 74-byte (v2) canonical AAD.
+- **Ghost Bridge Tag Capacity Engine**: Added exact NDEF storage requirement and boundary calculation in `desktop/src/apdu.js` validating canonical NTAG213 (144B), NTAG215 (504B), and NTAG216 (888B) capacities, rejecting non-Type-2 and MIFARE Classic tags.
+- **PN532 Serial Transport & ESP32 SPI Firmware**: Implemented versioned serial transport adapter (`desktop/src/transports/serialTransport.js`) and dedicated ESP32 firmware (`desktop/firmware/esp32_pn532/`) with mandatory byte-for-byte read-back verification and zero secret exposure. Covered by 22 mocked protocol tests; pending real-device hardware validation.
 
 ### Changed
 - **Canonical Cryptographic Realignment**: Aligned Web implementation directly to Android as the canonical Ghost-Tag cryptographic reference:
@@ -28,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Backward Compatibility & Migration
 - **Legacy Web Recovery Migration**: Existing Web recovery records with recovery_kdf_version = 1 are recoverable only after successful migration using the original 12-word recovery phrase. Migration must be validated end-to-end before this claim is considered production-ready. The migration flow submits the canonical phrase-derived recovery_salt alongside the Argon2id verifier with legacy PBKDF2 proof of ownership, preventing cross-device recovery failures after migration. Legacy web vaults can be upgraded to Argon2id via `migrate-recovery-verifier` from their 12-word recovery phrase on any device with zero secret leakage.
 - **iOS Implementation Status**: iOS cryptographic foundation is implemented in source code, but remains pending macOS build validation, XCTest validation, cross-platform fixture validation, and physical iPhone NFC validation. iOS is not supported, verified, complete, or release-ready. iOS UI and Core NFC remain unimplemented.
+- **Hardware & Platform Status Disclosures**:
+  - **PC/SC ACR122U**: Implemented in source code; pending real-reader hardware validation with physical ACR122U and physical NTAG tags.
+  - **PN532 Serial Transport**: Implemented in source code and covered by mocked protocol tests; pending real-device validation with physical ESP32, PN532 module, and physical NTAG tags.
+  - **iOS Subsystem**: Cryptographic foundation implemented in source code; pending macOS build, XCTest, and physical iPhone Core NFC validation. iOS UI and Core NFC are not implemented.
+  - **Android NFC Engine**: Implemented in source code and unit tested; pending real-device NFC validation on physical Android hardware.
+  - **Supabase Cloud Sync**: Schemas and Edge Functions verified locally; not deployed to live production.
 - **NFC Tag Compatibility Preserved**: Physical NFC tags written on Web or Android remain 100% decryptable because tag encryption uses the master passphrase and DEK with AES-256-GCM, which is independent of the Supabase recovery verifier.
 
 ## [v2.0.6] - 2026-11-20

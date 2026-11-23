@@ -1,10 +1,12 @@
 {
-  "version": "2.0.6",
-  "tagName": "v2.0.6",
-  "releaseName": "Ghost-Tag v2.0.6",
-  "apkFilename": "Ghost-Tag-v2.0.6.apk",
-  "sha256": "28a2e3d85ec803a733b62cdd5f55f1077d7b5a990a256b656262009d096e71ea",
-  "publishedAt": "2026-11-20T12:00:00Z",
-  "releaseNotes": "Ghost-Tag v2.0.6: Complete security remediation of CodeQL and Dependabot findings, atomic file operations, hardened Android build pipeline, and zero open alerts.",
-  "downloadUrl": "https://github.com/FROSTY-MUG/Ghost-Tag/releases/download/v2.0.6/Ghost-Tag-v2.0.6.apk"
+  "version": "2.1.0",
+  "versionCode": 7,
+  "filename": "Ghost-Tag-v2.1.0.apk",
+  "sizeBytes": 96836324,
+  "sizeFormatted": "92.35 MB",
+  "sha256": "27bb49ae1bba7a110022e3f0df8f220f8a58bbe878f658c511cc0508730e8a31",
+  "buildType": "Release",
+  "compiler": "Android Gradle Plugin 9.4.1 / R8 / CMake",
+  "minSdk": 26,
+  "targetSdk": 34
 }

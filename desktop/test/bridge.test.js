@@ -6,7 +6,7 @@
 const assert = require('assert');
 const http = require('http');
 const { GhostBridgeServer, PORT, HOST } = require('../src/server');
-const { buildMimeNdefMessage, APDU } = require('../src/apdu');
+const { buildMimeNdefMessage, APDU, readTagCapability, calculateTagCapacity } = require('../src/apdu');
 
 function testApdu() {
   assert.deepStrictEqual(APDU.GET_UID, Buffer.from([0xFF, 0xCA, 0x00, 0x00, 0x00]));
@@ -24,6 +24,97 @@ function testNdefBuilder() {
   assert(ndefMsg.includes(testPayload));
 }
 
+async function testTagCapability() {
+  function makeMockReader(ccBytes) {
+    return {
+      transmit: (apdu, maxLen, protocol, cb) => {
+        if (apdu[3] === 3) {
+          const resp = Buffer.concat([Buffer.from(ccBytes), Buffer.from([0x90, 0x00])]);
+          return cb(null, resp);
+        }
+        cb(new Error('Unknown block'));
+      }
+    };
+  }
+
+  // NTAG213 (CC = E1 10 12 00)
+  const ntag213 = await readTagCapability(makeMockReader([0xE1, 0x10, 0x12, 0x00]));
+  assert.strictEqual(ntag213.isType2, true);
+  assert.strictEqual(ntag213.model, 'NXP NTAG213');
+  assert.strictEqual(ntag213.totalBytes, 180);
+  assert.strictEqual(ntag213.writableBytes, 144);
+  assert.strictEqual(ntag213.ndefStatus, 'Read/Write');
+
+  // NTAG215 (CC = E1 10 3E 00)
+  const ntag215 = await readTagCapability(makeMockReader([0xE1, 0x10, 0x3E, 0x00]));
+  assert.strictEqual(ntag215.isType2, true);
+  assert.strictEqual(ntag215.model, 'NXP NTAG215');
+  assert.strictEqual(ntag215.totalBytes, 540);
+  assert.strictEqual(ntag215.writableBytes, 504);
+  assert.strictEqual(ntag215.ndefStatus, 'Read/Write');
+
+  // NTAG216 (CC = E1 10 6D 00)
+  const ntag216 = await readTagCapability(makeMockReader([0xE1, 0x10, 0x6D, 0x00]));
+  assert.strictEqual(ntag216.isType2, true);
+  assert.strictEqual(ntag216.model, 'NXP NTAG216');
+  assert.strictEqual(ntag216.totalBytes, 924);
+  assert.strictEqual(ntag216.writableBytes, 888);
+  assert.strictEqual(ntag216.ndefStatus, 'Read/Write');
+
+  // Read-only tag (CC = E1 10 3E 0F)
+  const roTag = await readTagCapability(makeMockReader([0xE1, 0x10, 0x3E, 0x0F]));
+  assert.strictEqual(roTag.isType2, true);
+  assert.strictEqual(roTag.writableBytes, 0);
+  assert.strictEqual(roTag.ndefStatus, 'Read-Only');
+
+  // MIFARE Classic (Sector trailer at block 3, key bytes != 0xE1)
+  const mifareClassic = await readTagCapability(makeMockReader([0xFF, 0xFF, 0xFF, 0xFF]));
+  assert.strictEqual(mifareClassic.isType2, false);
+  assert.strictEqual(mifareClassic.ndefStatus, 'Unsupported Tag Format');
+
+  // Unsupported non-Type 2 tag (CC = 00 00 00 00)
+  const unsupported = await readTagCapability(makeMockReader([0x00, 0x00, 0x00, 0x00]));
+  assert.strictEqual(unsupported.isType2, false);
+  assert.strictEqual(unsupported.ndefStatus, 'Unsupported Tag Format');
+}
+
+function testCapacityCalculations() {
+  const MIME_V1 = 'application/vnd.ghost.secure';
+  const MIME_V2 = 'application/vnd.ghost.bulk';
+
+  // --- NTAG213 (144 bytes user memory) ---
+  const ntag213_v1 = calculateTagCapacity(144, MIME_V1);
+  assert.strictEqual(ntag213_v1.fits, true);
+  assert.strictEqual(ntag213_v1.maxEnvelopeSize, 110);
+  assert.strictEqual(ntag213_v1.maxCiphertextPayload, 56); // 110 - 54
+
+  const ntag213_v2 = calculateTagCapacity(144, MIME_V2);
+  assert.strictEqual(ntag213_v2.fits, false, 'v2 bulk envelope must NOT fit on NTAG213 (144 bytes)');
+  assert.strictEqual(ntag213_v2.maxCiphertextPayload, 0);
+
+  // --- NTAG215 (504 bytes user memory) ---
+  const ntag215_v1 = calculateTagCapacity(504, MIME_V1);
+  assert.strictEqual(ntag215_v1.fits, true);
+  assert.strictEqual(ntag215_v1.maxEnvelopeSize, 465);
+  assert.strictEqual(ntag215_v1.maxCiphertextPayload, 411); // 465 - 54
+
+  const ntag215_v2 = calculateTagCapacity(504, MIME_V2);
+  assert.strictEqual(ntag215_v2.fits, true);
+  assert.strictEqual(ntag215_v2.maxEnvelopeSize, 467);
+  assert.strictEqual(ntag215_v2.maxCiphertextPayload, 333); // 467 - 134
+
+  // --- NTAG216 (888 bytes user memory) ---
+  const ntag216_v1 = calculateTagCapacity(888, MIME_V1);
+  assert.strictEqual(ntag216_v1.fits, true);
+  assert.strictEqual(ntag216_v1.maxEnvelopeSize, 849);
+  assert.strictEqual(ntag216_v1.maxCiphertextPayload, 795); // 849 - 54
+
+  const ntag216_v2 = calculateTagCapacity(888, MIME_V2);
+  assert.strictEqual(ntag216_v2.fits, true);
+  assert.strictEqual(ntag216_v2.maxEnvelopeSize, 851);
+  assert.strictEqual(ntag216_v2.maxCiphertextPayload, 717); // 851 - 134
+}
+
 async function testHttpStatus() {
   const bridge = new GhostBridgeServer();
   bridge.initHttpServer();
@@ -38,7 +129,7 @@ async function testHttpStatus() {
             assert.strictEqual(res.statusCode, 200);
             const data = JSON.parse(body);
             assert.strictEqual(data.bridge, 'Ghost Bridge');
-            assert.strictEqual(data.version, '2.0.5');
+            assert.strictEqual(data.version, '2.1.0');
             assert.strictEqual(data.status, 'ready');
             assert(Array.isArray(data.readers));
             assert(Array.isArray(data.supportedReaders));
@@ -64,6 +155,14 @@ if (typeof describe === 'function') {
       testNdefBuilder();
     });
 
+    test('Real Tag Capability & Model Identification', async () => {
+      await testTagCapability();
+    });
+
+    test('Tag Capacity & Envelope Boundary Calculations', () => {
+      testCapacityCalculations();
+    });
+
     test('HTTP /status endpoint schema', async () => {
       await testHttpStatus();
     });
@@ -72,6 +171,8 @@ if (typeof describe === 'function') {
   (async () => {
     testApdu();
     testNdefBuilder();
+    await testTagCapability();
+    testCapacityCalculations();
     await testHttpStatus();
     console.log('[PASS] All Ghost Bridge standalone tests passed.');
   })().catch(err => {

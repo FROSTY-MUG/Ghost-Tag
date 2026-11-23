@@ -53,25 +53,18 @@ import {
   hexToBytes,
 } from '../crypto/keyWrap';
 import {
-  ENVELOPE_MAGIC_BYTES,
   ENVELOPE_FORMAT_VERSION_V1,
   EnvelopePurpose,
   GhostTagEnvelope,
 } from '../contracts/envelope';
 import {
-  BULK_ENVELOPE_MAGIC,
   BULK_FORMAT_VERSION_V2,
   RECORD_TYPE_BULK_CHUNK,
   BULK_ENVELOPE_FIXED_OVERHEAD,
   BULK_AAD_LENGTH,
   BulkChunkEnvelope,
 } from '../contracts/bulkEnvelope';
-import {
-  DeviceTier,
-  DEFAULT_KDF_PARAMETERS_BY_TIER,
-  KdfParameters,
-} from '../contracts/keyHierarchy';
-import { GhostTagErrorCode } from '../contracts/errors';
+import { KdfParameters } from '../contracts/keyHierarchy';
 
 // Paths to cross-platform reference fixtures
 const FIXTURES_DIR = path.resolve(__dirname, '../../test-fixtures');
@@ -295,8 +288,9 @@ describe('Ghost-Tag Cross-Platform Cryptographic Compatibility Suite', () => {
       const expectedCiphertext = hexToBytes(vec.ciphertext_hex);
       const expectedTag = hexToBytes(vec.tag_hex);
 
-      // Decrypt fixed vector directly
+      // Decrypt fixed vector directly and verify against expected plaintext
       const decrypted = decrypt(key, expectedCiphertext, nonce, expectedTag, aad);
+      expect(decrypted).toEqual(plaintext);
       expect(new TextDecoder().decode(decrypted)).toBe(vec.plaintext_ascii);
     });
 

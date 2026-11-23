@@ -1,5 +1,5 @@
 /**
- * Ghost-Tag v2.0.5 - Production Client-Side Web Application
+ * Ghost-Tag v2.1.0 - Production Client-Side Web Application
  *
  * Core Promise:
  * Encrypted NFC storage.
@@ -473,7 +473,7 @@
       actions.style.display = 'flex';
       actions.innerHTML = `
         <a href="https://github.com/FROSTY-MUG/Ghost-Tag/tree/main/desktop" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;">Download Ghost Bridge</a>
-        <a href="https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.5" target="_blank" class="btn btn-ghost btn-sm" style="text-decoration:none;">Use Android App</a>
+        <a href="https://github.com/FROSTY-MUG/Ghost-Tag/releases" target="_blank" class="btn btn-ghost btn-sm" style="text-decoration:none;">Use Android App</a>
       `;
     } else if (type === 'NO_NFC_TAG') {
       title.textContent = 'NO NFC TAG DETECTED';
@@ -483,7 +483,7 @@
       body.textContent = customText || 'Web NFC hardware is not detected on this device. Use an Android phone with Chrome or install the Ghost-Tag Android app.';
       actions.style.display = 'flex';
       actions.innerHTML = `
-        <a href="https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.5" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;">Download Android APK</a>
+        <a href="https://github.com/FROSTY-MUG/Ghost-Tag/releases" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;">Download Android APK</a>
       `;
     } else if (type === 'NFC_OFF') {
       title.textContent = 'NFC IS TURNED OFF';
@@ -554,13 +554,14 @@
                 showHardwareNotice('NO_USB_NFC_READER');
               }
             } else if (msg.type === 'card_present') {
+              const card = msg.card || msg.tag;
               this.cardPresent = true;
-              this.activeCard = msg.card;
+              this.activeCard = card;
               hideHardwareNotice();
               if (state.isEncryptScanning) {
-                handlePhysicalTagDetected(msg.card);
+                handlePhysicalTagDetected(card);
               } else if (state.isDecryptScanning) {
-                handlePhysicalTagDetectedDecrypt(msg.card);
+                handlePhysicalTagDetectedDecrypt(card);
               }
             } else if (msg.type === 'card_removed') {
               this.cardPresent = false;

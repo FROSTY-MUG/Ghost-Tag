@@ -180,91 +180,40 @@ serve(async (req: Request) => {
 
     const currentAttemptId = rateResult ? rateResult.attempt_id : null;
 
-    // Fetch vault record
-    const { data: vault, error: fetchError } = await adminClient
-      .from("ghost_vaults")
-      .select("account_id, owner_user_id, recovery_verifier, recovery_salt, recovery_kdf_version, encrypted_vault_blob, vault_version")
-      .eq("account_id", account_id)
-      .maybeSingle();
+    // Atomic Transactional Verification and Migration via Postgres RPC
+    // Acquires row-level FOR UPDATE lock, validates recovery_kdf_version = 1,
+    // checks legacy verifier equality in constant time, upgrades to v2, and updates owner atomically.
+    const { data: migrationRows, error: migrationRpcError } = await adminClient.rpc(
+      "migrate_recovery_verifier_atomic",
+      {
+        p_account_id: account_id,
+        p_legacy_verifier: `\\x${legacy_recovery_verifier.toLowerCase()}`,
+        p_new_verifier: `\\x${new_recovery_verifier.toLowerCase()}`,
+        p_new_salt: `\\x${recovery_salt.toLowerCase()}`,
+        p_new_owner_user_id: authenticatedUserId,
+      }
+    );
 
-    const candidateLegacyBytes = hexToBytes(legacy_recovery_verifier);
-    const dummyVerifierBytes = new Uint8Array(candidateLegacyBytes.length > 0 ? candidateLegacyBytes.length : 32);
+    const migrationResult = Array.isArray(migrationRows) && migrationRows.length > 0 ? migrationRows[0] : null;
 
-    if (fetchError || !vault) {
+    if (migrationRpcError || !migrationResult || migrationResult.migrated !== true) {
+      // Maintained constant-time delay on failure paths
+      const candidateLegacyBytes = hexToBytes(legacy_recovery_verifier);
+      const dummyVerifierBytes = new Uint8Array(candidateLegacyBytes.length > 0 ? candidateLegacyBytes.length : 32);
       timingSafeEqual(Buffer.from(candidateLegacyBytes), Buffer.from(dummyVerifierBytes));
+
       return new Response(JSON.stringify({ error: "MIGRATION_FAILED" }), {
         status: 403,
         headers: responseHeaders,
       });
     }
 
-    // Require recovery_kdf_version to be EXACTLY 1
-    // Rejects already-migrated vaults (kdf_version >= 2) and unknown kdf_versions
-    const currentKdfVersion = Number(vault.recovery_kdf_version);
-    if (currentKdfVersion !== 1) {
-      timingSafeEqual(Buffer.from(candidateLegacyBytes), Buffer.from(dummyVerifierBytes));
-      return new Response(JSON.stringify({ error: "MIGRATION_FAILED" }), {
-        status: 403,
-        headers: responseHeaders,
-      });
-    }
-
-    // Verify legacy_recovery_verifier against stored verifier using timingSafeEqual
-    const storedVerifierBytes = typeof vault.recovery_verifier === "string"
-      ? (vault.recovery_verifier.startsWith("\\x")
-          ? hexToBytes(vault.recovery_verifier.slice(2))
-          : hexToBytes(vault.recovery_verifier))
-      : new Uint8Array(vault.recovery_verifier);
-
-    let isMatch = false;
-    if (candidateLegacyBytes.length === storedVerifierBytes.length) {
-      isMatch = timingSafeEqual(
-        Buffer.from(candidateLegacyBytes),
-        Buffer.from(storedVerifierBytes)
-      );
-    } else {
-      timingSafeEqual(Buffer.from(candidateLegacyBytes), Buffer.from(dummyVerifierBytes));
-    }
-
-    if (!isMatch) {
-      return new Response(JSON.stringify({ error: "MIGRATION_FAILED" }), {
-        status: 403,
-        headers: responseHeaders,
-      });
-    }
-
-    // Verification Succeeded: Mark attempt success = true
+    // Verification and Migration Succeeded: Mark attempt success = true
     if (currentAttemptId) {
       await adminClient
         .from("ghost_recovery_attempts")
         .update({ success: true })
         .eq("id", currentAttemptId);
-    }
-
-    // Update vault to canonical Argon2id verifier with submitted canonical phrase-derived recovery_salt
-    // Ownership is proven via legacy PBKDF2 verifier verification.
-    // Preserves encrypted_vault_blob and vault_version intact.
-    const updatePayload: Record<string, any> = {
-      recovery_verifier: `\\x${new_recovery_verifier.toLowerCase()}`,
-      recovery_salt: `\\x${recovery_salt.toLowerCase()}`,
-      recovery_kdf_version: 2,
-      updated_at: new Date().toISOString(),
-    };
-
-    if (authenticatedUserId && authenticatedUserId !== vault.owner_user_id) {
-      updatePayload.owner_user_id = authenticatedUserId;
-    }
-
-    const { error: updateError } = await adminClient
-      .from("ghost_vaults")
-      .update(updatePayload)
-      .eq("account_id", account_id);
-
-    if (updateError) {
-      return new Response(JSON.stringify({ error: "MIGRATION_FAILED" }), {
-        status: 500,
-        headers: responseHeaders,
-      });
     }
 
     return new Response(

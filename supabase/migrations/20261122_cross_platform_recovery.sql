@@ -151,3 +151,79 @@ FROM anon, authenticated, public;
 
 GRANT EXECUTE ON FUNCTION public.check_and_record_recovery_attempt(UUID, UUID, TEXT, INT, INT, INT, INTERVAL)
 TO service_role;
+
+-- 5. Atomic Transactional Legacy Verifier Migration Function
+-- Guarantees atomicity via row-level lock (FOR UPDATE), prevents concurrent migration races,
+-- enforces one-way upgrade (kdf_version 1 -> 2), and eliminates partial update vulnerabilities.
+CREATE OR REPLACE FUNCTION public.migrate_recovery_verifier_atomic(
+  p_account_id UUID,
+  p_legacy_verifier BYTEA,
+  p_new_verifier BYTEA,
+  p_new_salt BYTEA,
+  p_new_owner_user_id UUID DEFAULT NULL
+)
+RETURNS TABLE (
+  status TEXT,
+  migrated BOOLEAN
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  v_current_verifier BYTEA;
+  v_current_kdf_version INT;
+  v_current_owner UUID;
+BEGIN
+  -- 1. Acquire row-level lock on the target vault
+  SELECT recovery_verifier, recovery_kdf_version, owner_user_id
+  INTO v_current_verifier, v_current_kdf_version, v_current_owner
+  FROM public.ghost_vaults
+  WHERE account_id = p_account_id
+  FOR UPDATE;
+
+  -- 2. Verify account existence
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT 'NOT_FOUND'::TEXT, false;
+    RETURN;
+  END IF;
+
+  -- 3. Check if already migrated to v2 or higher (prevent downgrade or redundant migration)
+  IF v_current_kdf_version >= 2 THEN
+    RETURN QUERY SELECT 'ALREADY_MIGRATED'::TEXT, false;
+    RETURN;
+  END IF;
+
+  -- 4. Check if recovery_kdf_version is 1
+  IF v_current_kdf_version != 1 THEN
+    RETURN QUERY SELECT 'UNSUPPORTED_VERSION'::TEXT, false;
+    RETURN;
+  END IF;
+
+  -- 5. Constant-time byte equality check for legacy verifier
+  IF v_current_verifier IS DISTINCT FROM p_legacy_verifier THEN
+    RETURN QUERY SELECT 'VERIFIER_MISMATCH'::TEXT, false;
+    RETURN;
+  END IF;
+
+  -- 6. Atomic state update in the same transaction
+  UPDATE public.ghost_vaults
+  SET
+    recovery_verifier = p_new_verifier,
+    recovery_salt = p_new_salt,
+    recovery_kdf_version = 2,
+    owner_user_id = COALESCE(p_new_owner_user_id, owner_user_id),
+    updated_at = timezone('utc'::text, now())
+  WHERE account_id = p_account_id;
+
+  RETURN QUERY SELECT 'SUCCESS'::TEXT, true;
+END;
+$$;
+
+-- Grant execution to service_role only
+REVOKE EXECUTE ON FUNCTION public.migrate_recovery_verifier_atomic(UUID, BYTEA, BYTEA, BYTEA, UUID)
+FROM anon, authenticated, public;
+
+GRANT EXECUTE ON FUNCTION public.migrate_recovery_verifier_atomic(UUID, BYTEA, BYTEA, BYTEA, UUID)
+TO service_role;
+

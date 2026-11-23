@@ -7,8 +7,10 @@
  * and operation timeout guarantees.
  */
 
+import { Platform } from 'react-native';
 import NfcManager, {
   NfcEvents,
+  NfcTech,
   RegisterTagEventOpts,
 } from 'react-native-nfc-manager';
 import { NfcTag } from './tagInfo';
@@ -166,7 +168,18 @@ export class GhostNfcManager {
 
       const { timeoutMs, onTimeout, ...registerOpts } = options ?? {};
 
-      await NfcManager.registerTagEvent(registerOpts);
+      if (Platform.OS === 'ios') {
+        // iOS: react-native-nfc-manager surfaces NDEF discovery as DiscoverTag
+        // events while an NFCNDEFReaderSession is active. Begin the session by
+        // requesting the NDEF technology; tags surface via the listener above.
+        // CoreNFC is read-oriented: iOS discovers tags that support NDEF reading,
+        // and Ghost envelope validation happens on read.
+        await NfcManager.requestTechnology(NfcTech.Ndef);
+      } else {
+        // Android: Android foreground dispatch registration
+        await NfcManager.registerTagEvent(registerOpts);
+      }
+
       this.listening = true;
 
       if (timeoutMs && timeoutMs > 0) {
@@ -198,7 +211,13 @@ export class GhostNfcManager {
 
     try {
       NfcManager.setEventListener(NfcEvents.DiscoverTag, null);
-      await NfcManager.unregisterTagEvent();
+      if (Platform.OS === 'ios') {
+        // iOS: invalidate the active NFCNDEFReaderSession
+        await NfcManager.cancelTechnologyRequest();
+      } else {
+        // Android: unregister foreground dispatch
+        await NfcManager.unregisterTagEvent();
+      }
     } catch (_error) {
       // Ignore unregister errors during teardown
     } finally {

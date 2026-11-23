@@ -22,3 +22,16 @@
 - Upgrade `web/` Vite (`8.x`) once `web/vite.config.ts` migrates cleanly to ESM `.mts`.
 
 See [`../../PROJECT-STATUS.md`](../../PROJECT-STATUS.md) and [`../../FAQ.md`](../../FAQ.md).
+
+## 2. Milestone: `iOS Beta` (Ghost-Tag.ipa, PR #25 — Rebased onto latest main)
+- Ghost-Tag for iPhone via the existing Xcode project (`ios/GhostTag.xcodeproj`) — CoreNFC scanning and decryption of Ghost tags (read-only; writes are Android/web-bridge focused).
+- `scripts/package_release_ipa.py` builds the .ipa directly via `xcodebuild` (Release, iphoneos) + recursive `.app` zipping into `Payload/GhostTag.app`; prints the path + SHA-256. Requires macOS + Xcode + CocoaPods.
+- Verified locally: `npx tsc --noEmit` and `npx jest` — 17 suites / 287 tests green.
+
+## 3. Milestone: `v2.2+` Toolchain Upgrades (Deferred)
+- **Reed-Solomon Parity Redundancy**: Automatic generation of erasure recovery chunks (e.g. 8 data tags + 2 parity tags) so a vault can be reconstructed even if 2 physical tags are lost or destroyed.
+- **Hardware Security Key Integration**: Option to require a FIDO2 / WebAuthn hardware key (e.g. YubiKey) to unlock local master passphrases.
+
+## 4. Future Explorations (Deferred)
+- **Type 4 Tag Support (DESFire EV3)**: High-security encrypted hardware handshakes for specialized enterprise deployments.
+- **Offline QR Code Vault Bridging**: Optical air-gapped backup exchange for devices without NFC hardware.

@@ -101,6 +101,30 @@ sequenceDiagram
 
 ---
 
+## 7. Cross-Platform Compatibility Matrix
+
+| Feature / Capability | Android APK (Primary) | Web Companion (Chrome Android) | Desktop Ghost Bridge | iOS Foundation | iOS Native (new) |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **NDEF Reading** | Yes (Native)* | Yes (Web NFC)* | Yes (ACR122U / PN532)* | CoreNFC Code Only* | Yes (CoreNFC) |
+| **NDEF Writing** | Yes (Native)* | Yes (Web NFC)* | Yes (ACR122U / PN532)* | No (Strictly Read-Only) | Read-only |
+| **AES-256-GCM Encryption** | Yes (256-bit) | Yes (WebCrypto) | Yes (Node.js Crypto) | Yes (CryptoKit) | Yes |
+| **BIP-39 12-Word Recovery** | Yes (Canonical) | Yes (Canonical) | Yes (Canonical) | Yes (Canonical) | Yes |
+| **Single-Tag Vault (v1)** | Yes (54B Overhead) | Yes (54B Overhead) | Yes (54B Overhead) | Model Implemented | Read-only (CoreNFC) |
+| **Bulk Multi-Tag Vault (v2)**| Yes (134B Overhead) | Yes (134B Overhead) | Yes (134B Overhead) | Model Implemented | Read-only (CoreNFC) |
+| **Scanned Chunk Cache** | Volatile RAM Only | Volatile RAM Only | Volatile RAM Only | N/A | N/A |
+
+> \* **Hardware & Cloud Status Disclosure**:
+> - **Release Status**: Ghost-Tag v2.1.0 is an unreleased local staging version.
+> - **iOS**: Ghost-Tag on iOS does not currently implement NFC tag writing. Its CoreNFC integration is read-only. iOS tag-writing support, if added in the future, would require separate implementation, entitlement review, compatibility testing, and physical-device validation.
+> - **Supabase Cloud**: Supabase Cloud: Undeployed. Schema and atomic migration RPC are implemented and covered by local tests, but have not been deployed to a live Supabase project or validated against a live database.
+> - **Hardware Validation**: Android NFC, iOS CoreNFC, Ghost Bridge ACR122U, and PN532 transceivers are implemented in source code and verified via unit tests; real-device physical execution remains unverified pending attached hardware.
+> - **Pull Requests**: PR #24 (perf optimizations, merged) and PR #25 (iOS support) — see [`docs/wiki/Roadmap.md`](docs/wiki/Roadmap.md).
+
+| **Stop & Pause Controls** | Yes | Yes | Yes | N/A | Yes |
+| **Opt-in Cloud Metadata** | Optional | Optional | Optional | Client Implemented | Client Implemented |
+
+---
+
 ## Binary Envelope Formats & NTAG21x Capacities
 
 All envelopes begin with 4-byte ASCII magic `"GTAG"` (`0x47, 0x54, 0x41, 0x47`) and Little-Endian integers:

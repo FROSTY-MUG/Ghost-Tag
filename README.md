@@ -23,6 +23,9 @@
 [![Milestone: v2.1.0](https://img.shields.io/badge/Milestone-v2.1.0-orange.svg)](https://github.com/FROSTY-MUG/Ghost-Tag)
 [![Latest Release: v2.0.6](https://img.shields.io/badge/Latest%20Release-v2.0.6-crimson.svg)](https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.6)
 
+> [!IMPORTANT]
+> **Release Status**: Ghost-Tag v2.1.0 is an unreleased local staging version.
+
 ---
 
 ### Authoritative Documentation & Quick Links
@@ -249,7 +252,12 @@ flowchart TD
 | **Bulk Multi-Tag Vault (v2)**| Yes (134B Overhead) | Yes (134B Overhead) | Yes (134B Overhead) | Model Implemented |
 | **Scanned Chunk Cache** | Volatile RAM Only | Volatile RAM Only | Volatile RAM Only | N/A |
 
-> \* **Hardware Status Disclosure**: Transceivers and protocols are implemented in source code and verified via unit tests; real physical device execution remains pending attached hardware. iOS is strictly read-only (tag writing is not implemented). Supabase cloud sync is undeployed. PR #24 and PR #25 remain unmerged.
+> \* **Hardware & Cloud Status Disclosure**:
+> - **Release Status**: Ghost-Tag v2.1.0 is an unreleased local staging version.
+> - **iOS**: Ghost-Tag on iOS does not currently implement NFC tag writing. Its CoreNFC integration is read-only. iOS tag-writing support, if added in the future, would require separate implementation, entitlement review, compatibility testing, and physical-device validation.
+> - **Supabase Cloud**: Supabase Cloud: Undeployed. Schema and atomic migration RPC are implemented and covered by local tests, but have not been deployed to a live Supabase project or validated against a live database.
+> - **Hardware Validation**: Android NFC, iOS CoreNFC, Ghost Bridge ACR122U, and PN532 transceivers are implemented in source code and verified via unit tests; real-device physical execution remains unverified pending attached hardware.
+> - **Pull Requests**: PR #24 and PR #25 remain open and unmerged.
 
 | **Stop & Pause Controls** | Yes | Yes | Yes | N/A |
 | **Opt-in Cloud Metadata** | Optional | Optional | Optional | Client Implemented |

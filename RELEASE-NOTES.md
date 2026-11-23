@@ -2,11 +2,12 @@
 
 > [!WARNING]
 > **UNRELEASED STAGING STATUS**:
+> - **Release Status**: Ghost-Tag v2.1.0 is an unreleased local staging version.
 > - Ghost-Tag v2.1.0 has **NOT** been tagged or published to GitHub Releases.
 > - **PR #24** and **PR #25** remain strictly unmerged pending explicit maintainer approval.
-> - **Supabase**: Schemas and Edge Functions are verified locally; not deployed to live production.
+> - **Supabase Cloud**: Supabase Cloud: Undeployed. Schema and atomic migration RPC are implemented and covered by local tests, but have not been deployed to a live Supabase project or validated against a live database.
 > - **Hardware**: Real-device physical validation on Android NFC, iOS CoreNFC, Ghost Bridge ACR122U, and PN532 is pending.
-> - **iOS Scope**: Strictly Read-Only; tag writing is not implemented.
+> - **iOS Scope**: Ghost-Tag on iOS does not currently implement NFC tag writing. Its CoreNFC integration is read-only. iOS tag-writing support, if added in the future, would require separate implementation, entitlement review, compatibility testing, and physical-device validation.
 
 > [!NOTE]
 > **CANONICAL SPECIFICATION REFERENCE**  

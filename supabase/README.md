@@ -8,7 +8,9 @@ Ghost-Tag provides an optional, zero-knowledge cloud synchronization and recover
 ## 1. Deployment Status
 
 > [!CAUTION]
-> **NOT DEPLOYED TO PRODUCTION**: Database migrations and Edge Functions are verified locally and covered by automated test suites. They have **not** been pushed to a live Supabase production instance.
+> **NOT DEPLOYED TO PRODUCTION**:
+> - **Release Status**: Ghost-Tag v2.1.0 is an unreleased local staging version.
+> - **Deployment State**: Supabase Cloud: Undeployed. Schema and atomic migration RPC are implemented and covered by local tests, but have not been deployed to a live Supabase project or validated against a live database.
 
 ---
 

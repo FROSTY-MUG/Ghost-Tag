@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.1.0] - Unreleased (Staging)
 
-> **Notice**: Ghost-Tag v2.1.0 is currently in local staging. PR #24 and PR #25 remain unmerged pending explicit approval. No Git tag has been cut and no GitHub Release has been published. Real physical hardware validation (Android NFC, iOS CoreNFC, Ghost Bridge ACR122U/PN532) and live Supabase deployment are pending.
+> **Notice**: Ghost-Tag v2.1.0 is an unreleased local staging version. PR #24 and PR #25 remain unmerged pending explicit approval. No Git tag has been cut and no GitHub Release has been published. Real physical hardware validation (Android NFC, iOS CoreNFC, Ghost Bridge ACR122U/PN532) and live Supabase deployment are pending. Ghost-Tag on iOS does not currently implement NFC tag writing. Its CoreNFC integration is read-only. iOS tag-writing support, if added in the future, would require separate implementation, entitlement review, compatibility testing, and physical-device validation. Supabase Cloud: Undeployed. Schema and atomic migration RPC are implemented and covered by local tests, but have not been deployed to a live Supabase project or validated against a live database.
 
 
 ### Added

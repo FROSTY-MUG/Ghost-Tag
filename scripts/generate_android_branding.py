@@ -4,7 +4,7 @@ from PIL import Image, ImageDraw
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 LOGO_PATH = os.path.join(PROJECT_ROOT, 'web', 'assets', 'logo.png')
 RES_DIR = os.path.join(PROJECT_ROOT, 'android', 'app', 'src', 'main', 'res')
-ARTIFACT_DIR = r"C:\Users\Aryan\.gemini\antigravity\brain\7de6d289-4dd9-437b-87c8-0b70d966a55b"
+PREVIEW_OUTPUT_PATH = os.environ.get('GHOST_TAG_BRANDING_PREVIEW_PATH', '')
 
 DENSITIES = {
     'mipmap-mdpi': 48,
@@ -85,9 +85,13 @@ def generate_preview():
     # Title
     draw.text((50, 40), "GHOST-TAG ANDROID BRANDING ASSET VALIDATION (PITCH BLACK #000000 / CRISP WHITE #FFFFFF / BLOOD RED #DC2626)", fill=(220, 38, 38))
 
-    preview_path = os.path.join(ARTIFACT_DIR, 'android_branding_preview.png')
-    preview.save(preview_path, 'PNG')
-    print(f"[OK] Saved preview to {preview_path}")
+    if not PREVIEW_OUTPUT_PATH:
+        print("[SKIP] Set GHOST_TAG_BRANDING_PREVIEW_PATH to write a launcher preview image.")
+        return
+
+    os.makedirs(os.path.dirname(os.path.abspath(PREVIEW_OUTPUT_PATH)), exist_ok=True)
+    preview.save(PREVIEW_OUTPUT_PATH, 'PNG')
+    print(f"[OK] Saved preview to {PREVIEW_OUTPUT_PATH}")
 
 if __name__ == '__main__':
     generate_icons()

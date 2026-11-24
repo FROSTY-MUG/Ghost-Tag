@@ -117,11 +117,13 @@ function testCapacityCalculations() {
 
 async function testHttpStatus() {
   const bridge = new GhostBridgeServer();
-  bridge.initHttpServer();
+  bridge.initHttpServer(0);
 
   try {
+    await new Promise((resolve) => bridge.server.once('listening', resolve));
+    const port = bridge.server.address().port;
     await new Promise((resolve, reject) => {
-      http.get(`http://${HOST}:${PORT}/status`, (res) => {
+      http.get(`http://${HOST}:${port}/status`, (res) => {
         let body = '';
         res.on('data', chunk => body += chunk);
         res.on('end', () => {
@@ -139,6 +141,118 @@ async function testHttpStatus() {
           }
         });
       }).on('error', reject);
+    });
+
+    await new Promise((resolve, reject) => {
+      http.get(`http://${HOST}:${port}/status`, { headers: { Origin: 'https://evil.example' } }, (res) => {
+        let body = '';
+        res.on('data', chunk => body += chunk);
+        res.on('end', () => {
+          try {
+            assert.strictEqual(res.statusCode, 403);
+            const data = JSON.parse(body);
+            assert.strictEqual(data.error, 'FORBIDDEN_ORIGIN');
+            resolve();
+          } catch (err) {
+            reject(err);
+          }
+        });
+      }).on('error', reject);
+    });
+  } finally {
+    bridge.stop();
+  }
+}
+
+async function testWebSocketSessionAndOriginGuards() {
+  const WebSocket = require('ws');
+  const bridge = new GhostBridgeServer();
+  bridge.initHttpServer(0);
+  bridge.initWebSocketServer();
+
+  try {
+    await new Promise((resolve) => bridge.server.once('listening', resolve));
+    const port = bridge.server.address().port;
+
+    // 1. Forbidden cross-origin WebSocket must be rejected during handshake
+    await new Promise((resolve, reject) => {
+      const badWs = new WebSocket(`ws://${HOST}:${port}`, {
+        headers: { Origin: 'https://evil.example' },
+      });
+      badWs.on('error', () => {
+        // Expected handshake abort after 403 Forbidden Origin
+      });
+      badWs.on('unexpected-response', (_req, res) => {
+        try {
+          assert.strictEqual(res.statusCode, 403);
+          res.resume();
+          resolve();
+        } catch (err) {
+          reject(err);
+        }
+      });
+      badWs.on('open', () => {
+        badWs.close();
+        reject(new Error('Expected unauthorized Origin WebSocket to be rejected'));
+      });
+    });
+
+    // 2. Approved WebSocket receives sessionToken and enforces it on tag commands
+    await new Promise((resolve, reject) => {
+      const ws = new WebSocket(`ws://${HOST}:${port}`, {
+        headers: { Origin: 'https://frosty-mug.github.io' },
+      });
+      const responses = [];
+      let sessionToken = null;
+
+      ws.on('error', reject);
+      ws.on('message', (raw) => {
+        const msg = JSON.parse(raw.toString());
+        responses.push(msg);
+
+        if (responses.length === 1) {
+          assert.strictEqual(msg.type, 'bridge_status');
+          assert.strictEqual(typeof msg.sessionToken, 'string');
+          assert(msg.sessionToken.length >= 32);
+          sessionToken = msg.sessionToken;
+
+          // Missing sessionToken must be rejected before any hardware call
+          ws.send(JSON.stringify({ action: 'read_tag' }));
+        } else if (responses.length === 2) {
+          assert.strictEqual(msg.type, 'error');
+          assert(msg.message.includes('session token'));
+
+          // Wrong sessionToken must be rejected
+          ws.send(JSON.stringify({
+            action: 'write_tag',
+            sessionToken: 'deadbeef',
+            envelopeBytes: [0x47, 0x54, 0x41, 0x47],
+            mimeType: 'application/vnd.ghost.bulk',
+          }));
+        } else if (responses.length === 3) {
+          assert.strictEqual(msg.type, 'error');
+          assert(msg.message.includes('session token'));
+
+          // Unsupported MIME type with valid sessionToken must be rejected
+          ws.send(JSON.stringify({
+            action: 'write_tag',
+            sessionToken,
+            envelopeBytes: [0x47, 0x54, 0x41, 0x47],
+            mimeType: 'text/plain',
+          }));
+        } else if (responses.length === 4) {
+          assert.strictEqual(msg.type, 'error');
+          assert(msg.message.includes('MIME type'));
+
+          // Simulated NFC action must always be rejected
+          ws.send(JSON.stringify({ action: 'simulate_tag', sessionToken }));
+        } else if (responses.length === 5) {
+          assert.strictEqual(msg.type, 'error');
+          assert(msg.message.includes('prohibited'));
+          ws.close();
+          resolve();
+        }
+      });
     });
   } finally {
     bridge.stop();
@@ -163,8 +277,12 @@ if (typeof describe === 'function') {
       testCapacityCalculations();
     });
 
-    test('HTTP /status endpoint schema', async () => {
+    test('HTTP /status endpoint schema and origin guard', async () => {
       await testHttpStatus();
+    });
+
+    test('WebSocket session token and origin enforcement', async () => {
+      await testWebSocketSessionAndOriginGuards();
     });
   });
 } else {
@@ -174,6 +292,7 @@ if (typeof describe === 'function') {
     await testTagCapability();
     testCapacityCalculations();
     await testHttpStatus();
+    await testWebSocketSessionAndOriginGuards();
     console.log('[PASS] All Ghost Bridge standalone tests passed.');
   })().catch(err => {
     console.error('[FAIL] Standalone test failed:', err);

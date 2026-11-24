@@ -7,7 +7,7 @@
  * verifies Additional Authenticated Data (AAD), and decrypts with AES-256-GCM.
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -18,6 +18,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { theme } from '@ghost-tag/ui/theme';
+import { ghostNfcManager } from '../../nfc/nfcManager';
+import { parseEnvelope } from '../../crypto/envelope';
 
 export interface ReadTagScreenProps {
   readonly onBack?: () => void;
@@ -31,45 +33,106 @@ export const ReadTagScreen: React.FC<ReadTagScreenProps> = () => {
   const [detectedPurpose, setDetectedPurpose] = useState<string | null>(null);
   const [detectedKeyId, setDetectedKeyId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [copied, setCopied] = useState<boolean>(false);
   const [logs, setLogs] = useState<string[]>([
     '[INIT] Ghost-Tag NFC antenna listener ready.',
     '[INFO] Awaiting physical NFC tag scan with 54-byte fixed envelope...',
   ]);
 
-  const handleScanAndDecrypt = () => {
+  useEffect(() => {
+    return () => {
+      ghostNfcManager.stopListening().catch(() => {});
+    };
+  }, []);
+
+  const handleScanAndDecrypt = async () => {
     if (!passphrase || passphrase.length < 16) {
       setErrorMsg('Master Passphrase must be at least 16 characters.');
       return;
     }
 
     setErrorMsg(null);
+    setDecryptedPayload(null);
+    setDetectedPurpose(null);
+    setDetectedKeyId(null);
     setIsScanning(true);
     setLogs((prev) => [
       ...prev,
-      '[NFC] Polling for NDEF Tag (NTAG213 / NTAG215 / NTAG216)...',
+      '[NFC] Checking device NFC controller support and state...',
     ]);
 
-    // Simulate NFC read and Argon2id + AES-256-GCM decryption
-    setTimeout(() => {
-      setIsScanning(false);
-      setDetectedPurpose('0x01: NOTE (Confidential Secret Fragment)');
-      setDetectedKeyId('7a4f91e0d2c3b8a1');
-      setDecryptedPayload('abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about');
+    try {
+      const supported = await ghostNfcManager.isNfcSupported();
+      if (!supported) {
+        setIsScanning(false);
+        setErrorMsg('Hardware NFC controller is not supported on this device.');
+        setLogs((prev) => [...prev, '[ERROR] NFC hardware is unavailable in this runtime.']);
+        return;
+      }
+
+      const enabled = await ghostNfcManager.isNfcEnabled();
+      if (!enabled) {
+        setIsScanning(false);
+        setErrorMsg('NFC is disabled in system settings. Enable NFC to scan physical tags.');
+        setLogs((prev) => [...prev, '[ERROR] Android NFC transceiver is turned off.']);
+        return;
+      }
+
       setLogs((prev) => [
         ...prev,
-        '[TAG] Physical Type 2 NFC Tag detected.',
-        '[MAGIC] Valid "GTAG" marker verified (0x47, 0x54, 0x41, 0x47).',
-        '[ARGON2ID] Deriving 256-bit KEK from master passphrase...',
-        '[AEAD] AES-256-GCM authentication tag verified. AAD bound.',
-        '[SUCCESS] Payload decrypted cleanly.',
+        '[NFC] Foreground dispatch armed. Hold a physical NTAG21x tag near the antenna...',
       ]);
-    }, 1200);
-  };
 
-  const handleCopy = () => {
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+      await ghostNfcManager.startListening(
+        async (tag) => {
+          try {
+            const firstRecord = tag.ndefMessage?.[0];
+            if (!firstRecord || !firstRecord.payload || firstRecord.payload.length === 0) {
+              setErrorMsg('Physical tag detected, but no Ghost-Tag NDEF payload was found.');
+              setLogs((prev) => [...prev, '[ERROR] Tag contains no readable NDEF payload.']);
+              return;
+            }
+
+            const rawBytes = new Uint8Array(firstRecord.payload);
+            const envelope = parseEnvelope(rawBytes);
+            const keyIdHex = Array.from(envelope.header.keyId)
+              .map((b) => b.toString(16).padStart(2, '0'))
+              .join('');
+
+            setDetectedPurpose(`0x${envelope.header.purpose.toString(16).padStart(2, '0')}`);
+            setDetectedKeyId(keyIdHex);
+            setErrorMsg(
+              'Envelope header authenticated (GTAG v1), but ciphertext unwrapping requires an unlocked VaultManager DEK session.'
+            );
+            setLogs((prev) => [
+              ...prev,
+              `[TAG] Physical tag detected (${rawBytes.length}B NDEF payload).`,
+              `[HEADER] Parsed GTAG v${envelope.header.formatVersion} keyId=${keyIdHex}.`,
+              '[VAULT] Awaiting unlocked VaultManager session to unwrap DEK and decrypt.',
+            ]);
+          } catch (parseErr) {
+            const msg = parseErr instanceof Error ? parseErr.message : String(parseErr);
+            setErrorMsg(`Failed to parse Ghost-Tag envelope: ${msg}`);
+            setLogs((prev) => [...prev, `[ERROR] Envelope parse failed: ${msg}`]);
+          } finally {
+            setIsScanning(false);
+            await ghostNfcManager.stopListening();
+          }
+        },
+        {
+          timeoutMs: 15000,
+          onTimeout: () => {
+            setIsScanning(false);
+            setErrorMsg('NFC scan timed out after 15 seconds with no physical tag detected.');
+            setLogs((prev) => [...prev, '[TIMEOUT] No physical NFC tag detected within 15s.']);
+          },
+        }
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setIsScanning(false);
+      setErrorMsg(`NFC scan initialization failed: ${msg}`);
+      setLogs((prev) => [...prev, `[ERROR] ${msg}`]);
+    }
   };
 
   return (
@@ -134,9 +197,6 @@ export const ReadTagScreen: React.FC<ReadTagScreenProps> = () => {
         <View style={styles.resultCard}>
           <View style={styles.resultHeader}>
             <Text style={styles.resultTitle}>DECRYPTED CONFIDENTIAL PAYLOAD</Text>
-            <TouchableOpacity onPress={handleCopy} style={styles.copyBtn}>
-              <Text style={styles.copyBtnText}>{copied ? 'COPIED!' : 'COPY'}</Text>
-            </TouchableOpacity>
           </View>
 
           <View style={styles.metaRow}>

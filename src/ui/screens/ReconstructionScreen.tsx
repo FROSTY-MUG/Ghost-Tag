@@ -25,103 +25,96 @@ export interface DisplayFile {
 }
 
 export interface ReconstructionScreenProps {
+  readonly files?: DisplayFile[];
   readonly onDone?: () => void;
 }
 
-export const ReconstructionScreen: React.FC<ReconstructionScreenProps> = ({ onDone }) => {
-  const [files] = useState<DisplayFile[]>([
-    {
-      id: '1',
-      name: 'holiday.mp4',
-      mimeType: 'video/mp4',
-      sizeBytes: 8 * 1024 * 1024,
-      chunkCount: 74,
-      isVerified: true,
-    },
-    {
-      id: '2',
-      name: 'report.pdf',
-      mimeType: 'application/pdf',
-      sizeBytes: 1024 * 1024,
-      chunkCount: 9,
-      isVerified: true,
-    },
-    {
-      id: '3',
-      name: 'notes.txt',
-      mimeType: 'text/plain',
-      sizeBytes: 500 * 1024,
-      chunkCount: 3,
-      isVerified: true,
-    },
-  ]);
+export const ReconstructionScreen: React.FC<ReconstructionScreenProps> = ({
+  files: initialFiles = [],
+  onDone,
+}) => {
+  const [files] = useState<DisplayFile[]>(initialFiles);
 
-  const [logs, setLogs] = useState<string[]>([
-    '[ASSEMBLE] All 86 chunks present and accounted for.',
-    '[HASH] Verified SHA-256 ciphertext hash for holiday.mp4.',
-    '[CRYPTO] Decrypted holiday.mp4 with vault DEK (AES-256-GCM).',
-    '[HASH] Verified SHA-256 ciphertext hash for report.pdf.',
-    '[CRYPTO] Decrypted report.pdf with vault DEK (AES-256-GCM).',
-    '[HASH] Verified SHA-256 ciphertext hash for notes.txt.',
-    '[CRYPTO] Decrypted notes.txt with vault DEK (AES-256-GCM).',
-    '[RESULT] 3 files reassembled and verified without errors.',
-  ]);
+  const [logs, setLogs] = useState<string[]>(
+    initialFiles.length === 0
+      ? [
+          '[READY] Awaiting verified bulk chunks from BulkScan before reconstruction.',
+          '[INFO] Files appear only after real SHA-256 verification and AES-256-GCM decryption.',
+        ]
+      : [
+          `[RESULT] ${initialFiles.length} file(s) provided from verified reconstruction session.`,
+        ]
+  );
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
       <View style={styles.header}>
         <View style={styles.badgeContainer}>
-          <Text style={styles.badgeText}>RECONSTRUCTION VERIFIED</Text>
+          <Text style={styles.badgeText}>
+            {files.length > 0 ? 'RECONSTRUCTION VERIFIED' : 'AWAITING VERIFIED CHUNKS'}
+          </Text>
         </View>
         <Text style={styles.title}>Reassembled Files</Text>
-        <Text style={styles.subtitle}>All chunks successfully verified and decrypted</Text>
+        <Text style={styles.subtitle}>
+          {files.length > 0
+            ? 'All chunks successfully verified and decrypted'
+            : 'Complete a bulk tag scan session to verify and reconstruct vault files'}
+        </Text>
       </View>
 
       {/* Files List */}
       <View style={styles.filesSection}>
         <Text style={styles.sectionTitle}>Vault Payload ({files.length} Files)</Text>
-        {files.map((file) => (
-          <View key={file.id} style={styles.fileCard}>
-            <View style={styles.fileMeta}>
-              <Text style={styles.fileName}>{file.name}</Text>
-              <Text style={styles.fileMime}>
-                {file.mimeType} • {(file.sizeBytes / 1024).toFixed(0)} KB • {file.chunkCount} Chunks
-              </Text>
-            </View>
-            <View style={styles.verifiedBadge}>
-              <Text style={styles.verifiedText}>SHA-256 MATCH</Text>
-            </View>
-            <View style={styles.actionRow}>
-              <TouchableOpacity
-                style={styles.actionButton}
-                onPress={() => {
-                  setLogs((prev) => [
-                    ...prev,
-                    `[VIEW] Opened in-memory disposable viewer for "${file.name}".`,
-                    `[SECURITY] Memory buffer will be zeroized upon closing viewer.`,
-                  ]);
-                }}
-              >
-                <Text style={styles.actionButtonText}>View In-App</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.actionButton, styles.exportButton]}
-                onPress={() => {
-                  setLogs((prev) => [
-                    ...prev,
-                    `[SAF] Triggered ACTION_CREATE_DOCUMENT for "${file.name}".`,
-                    `[EXPORT] Saved to user-selected content:// destination.`,
-                    `[SECURITY] Transient buffer zeroized.`,
-                  ]);
-                }}
-              >
-                <Text style={[styles.actionButtonText, styles.exportButtonText]}>
-                  Export (SAF)
-                </Text>
-              </TouchableOpacity>
-            </View>
+        {files.length === 0 ? (
+          <View style={styles.fileCard}>
+            <Text style={styles.fileName}>No Reconstructed Files Yet</Text>
+            <Text style={styles.fileMime}>
+              Scan physical vault tags in BulkScan first so ReconstructionEngine can verify chunk SHA-256 digests and unwrap the vault DEK.
+            </Text>
           </View>
-        ))}
+        ) : (
+          files.map((file) => (
+            <View key={file.id} style={styles.fileCard}>
+              <View style={styles.fileMeta}>
+                <Text style={styles.fileName}>{file.name}</Text>
+                <Text style={styles.fileMime}>
+                  {file.mimeType} • {(file.sizeBytes / 1024).toFixed(0)} KB • {file.chunkCount} Chunks
+                </Text>
+              </View>
+              <View style={styles.verifiedBadge}>
+                <Text style={styles.verifiedText}>
+                  {file.isVerified ? 'SHA-256 MATCH' : 'UNVERIFIED'}
+                </Text>
+              </View>
+              <View style={styles.actionRow}>
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => {
+                    setLogs((prev) => [
+                      ...prev,
+                      `[VIEW] Native in-memory viewer hook required to display "${file.name}".`,
+                    ]);
+                  }}
+                >
+                  <Text style={styles.actionButtonText}>View In-App</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.exportButton]}
+                  onPress={() => {
+                    setLogs((prev) => [
+                      ...prev,
+                      `[SAF] Native Android ACTION_CREATE_DOCUMENT bridge required to export "${file.name}".`,
+                    ]);
+                  }}
+                >
+                  <Text style={[styles.actionButtonText, styles.exportButtonText]}>
+                    Export (SAF)
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))
+        )}
       </View>
 
       {/* Terminal Output */}

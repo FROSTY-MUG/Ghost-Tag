@@ -106,8 +106,8 @@ export const HomeScreen: React.FC = () => {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.secondaryActionBtn, { flex: 1 }]}
-            onPress={() => navigation.navigate('Reconstruction', { targetFileCount: 3 })}
+            style={[styles.secondaryActionBtn, styles.flex1]}
+            onPress={() => navigation.navigate('Reconstruction', { targetFileCount: 0 })}
             activeOpacity={0.8}
           >
             <Text style={styles.secondaryActionText}>RECONSTRUCT VAULT</Text>
@@ -125,16 +125,16 @@ export const HomeScreen: React.FC = () => {
 
         <View style={styles.btnRow}>
           <TouchableOpacity
-            style={[styles.secondaryActionBtn, { flex: 1 }]}
+            style={[styles.secondaryActionBtn, styles.flex1]}
             onPress={() => navigation.navigate('Passphrase')}
             activeOpacity={0.8}
           >
             <Text style={styles.secondaryActionText}>PASSPHRASE & BIP39</Text>
-            <Text style={styles.btnSubtext}>24-word recovery phrase</Text>
+            <Text style={styles.btnSubtext}>12-word recovery phrase</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.secondaryActionBtn, { flex: 1 }]}
+            style={[styles.secondaryActionBtn, styles.flex1]}
             onPress={() => navigation.navigate('Settings')}
             activeOpacity={0.8}
           >
@@ -302,5 +302,8 @@ const styles = StyleSheet.create({
     color: '#b24bf3',
     fontSize: 16,
     fontWeight: '700',
+  },
+  flex1: {
+    flex: 1,
   },
 });

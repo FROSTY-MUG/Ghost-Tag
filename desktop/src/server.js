@@ -5,6 +5,7 @@
  * real tag events and write-verification over WebSockets to the web app.
  */
 
+const crypto = require('crypto');
 const http = require('http');
 const wsModule = require('ws');
 const WebSocketServer = wsModule.WebSocketServer || wsModule.Server;
@@ -12,6 +13,11 @@ const { getCardUid, readTagCapability, readTagNdef, writeTagNdefAndVerify } = re
 
 const PORT = 41789;
 const HOST = '127.0.0.1';
+const ALLOWED_GHOST_MIME_TYPES = new Set([
+  'application/vnd.ghost.secure',
+  'application/vnd.ghost.bulk',
+]);
+const MAX_ENVELOPE_BYTES = 8192;
 
 const { isValidLoopbackOrigin, parseApprovedOrigins, isBridgeOriginAllowed } = (() => {
   function isValidLoopback(origin) {
@@ -90,11 +96,18 @@ const { isValidLoopbackOrigin, parseApprovedOrigins, isBridgeOriginAllowed } = (
 class GhostBridgeServer {
   constructor() {
     this.connectedReaders = new Map();
+    this.clientSessions = new WeakMap();
     this.activeCard = null;
     this.activeReader = null;
     this.wss = null;
     this.server = null;
     this.pcsc = null;
+    this.actionHandlers = new Map([
+      ['get_status', (ws, _msg, session) => this.handleGetStatus(ws, session)],
+      ['read_tag', (ws, msg, session) => this.handleReadTag(ws, msg, session)],
+      ['write_tag', (ws, msg, session) => this.handleWriteTag(ws, msg, session)],
+      ['simulate_tag', (ws) => this.handleSimulateTag(ws)],
+    ]);
   }
 
   start() {
@@ -166,18 +179,23 @@ class GhostBridgeServer {
     });
 
     this.wss.on('connection', (ws, req) => {
+      const origin = req.headers['origin'];
+      if (origin !== undefined && !isBridgeOriginAllowed(origin)) {
+        ws.close(1008, 'Forbidden Origin');
+        return;
+      }
+
+      const sessionToken = crypto.randomBytes(24).toString('hex');
+      const session = {
+        sessionToken,
+        origin: origin || null,
+        connectedAt: Date.now(),
+      };
+      this.clientSessions.set(ws, session);
       console.log(`[Ghost Bridge] Web client connected from ${req.socket.remoteAddress}`);
 
-      // Send initial status on connection
-      const readerNames = Array.from(this.connectedReaders.keys());
-      ws.send(JSON.stringify({
-        type: 'bridge_status',
-        version: '2.1.0',
-        readers: readerNames,
-        readerConnected: readerNames.length > 0,
-        cardPresent: this.activeCard !== null,
-        activeCard: this.activeCard
-      }));
+      // Send initial status and per-connection session token
+      this.sendBridgeStatus(ws, sessionToken);
 
       ws.on('message', async (data) => {
         try {
@@ -190,78 +208,141 @@ class GhostBridgeServer {
     });
   }
 
+  sendBridgeStatus(ws, sessionToken) {
+    const readerNames = Array.from(this.connectedReaders.keys());
+    const payload = {
+      type: 'bridge_status',
+      version: '2.1.0',
+      readers: readerNames,
+      readerConnected: readerNames.length > 0,
+      cardPresent: this.activeCard !== null,
+      activeCard: this.activeCard,
+    };
+    if (sessionToken) {
+      payload.sessionToken = sessionToken;
+    }
+    ws.send(JSON.stringify(payload));
+  }
+
+  hasValidSessionToken(session, presentedToken) {
+    if (!session || typeof session.sessionToken !== 'string' || typeof presentedToken !== 'string') {
+      return false;
+    }
+    const expectedBuf = Buffer.from(session.sessionToken, 'utf8');
+    const presentedBuf = Buffer.from(presentedToken, 'utf8');
+    if (expectedBuf.length !== presentedBuf.length) {
+      return false;
+    }
+    return crypto.timingSafeEqual(expectedBuf, presentedBuf);
+  }
+
   async handleClientMessage(ws, msg) {
-    if (msg.action === 'get_status') {
-      const readerNames = Array.from(this.connectedReaders.keys());
+    if (!msg || typeof msg !== 'object' || typeof msg.action !== 'string') {
+      ws.send(JSON.stringify({ type: 'error', message: 'Invalid Ghost Bridge message envelope.' }));
+      return;
+    }
+
+    const session = this.clientSessions.get(ws);
+    if (!session) {
+      ws.send(JSON.stringify({ type: 'error', message: 'Unauthenticated WebSocket session.' }));
+      return;
+    }
+
+    if (!this.actionHandlers.has(msg.action)) {
+      ws.send(JSON.stringify({ type: 'error', message: 'Unsupported Ghost Bridge action.' }));
+      return;
+    }
+
+    const handler = this.actionHandlers.get(msg.action);
+    if (typeof handler !== 'function') {
+      ws.send(JSON.stringify({ type: 'error', message: 'Unsupported Ghost Bridge action.' }));
+      return;
+    }
+
+    await handler(ws, msg, session);
+  }
+
+  handleGetStatus(ws, session) {
+    this.sendBridgeStatus(ws, session.sessionToken);
+  }
+
+  async handleReadTag(ws, msg, session) {
+    if (!this.hasValidSessionToken(session, msg.sessionToken)) {
+      ws.send(JSON.stringify({ type: 'error', message: 'Invalid or missing bridge session token.' }));
+      return;
+    }
+
+    if (!this.activeReader || !this.activeCard) {
+      ws.send(JSON.stringify({ type: 'error', message: 'No card present on USB NFC reader.' }));
+      return;
+    }
+
+    try {
+      const ndefResult = await readTagNdef(this.activeReader);
       ws.send(JSON.stringify({
-        type: 'bridge_status',
-        version: '2.1.0',
-        readers: readerNames,
-        readerConnected: readerNames.length > 0,
-        cardPresent: this.activeCard !== null,
-        activeCard: this.activeCard
+        type: 'tag_read_result',
+        uid: this.activeCard.uid,
+        records: ndefResult.records,
+        rawBytes: ndefResult.rawBytes,
+        timestamp: Date.now(),
       }));
+    } catch (err) {
+      ws.send(JSON.stringify({ type: 'error', message: `Tag read failed: ${err.message}` }));
+    }
+  }
+
+  async handleWriteTag(ws, msg, session) {
+    if (!this.hasValidSessionToken(session, msg.sessionToken)) {
+      ws.send(JSON.stringify({ type: 'error', message: 'Invalid or missing bridge session token.' }));
       return;
     }
 
-    if (msg.action === 'read_tag') {
-      if (!this.activeReader || !this.activeCard) {
-        ws.send(JSON.stringify({ type: 'error', message: 'No card present on USB NFC reader.' }));
-        return;
-      }
-
-      try {
-        const ndefResult = await readTagNdef(this.activeReader);
-        ws.send(JSON.stringify({
-          type: 'tag_read_result',
-          uid: this.activeCard.uid,
-          records: ndefResult.records,
-          rawBytes: ndefResult.rawBytes,
-          timestamp: Date.now()
-        }));
-      } catch (err) {
-        ws.send(JSON.stringify({ type: 'error', message: `Tag read failed: ${err.message}` }));
-      }
+    if (
+      !Array.isArray(msg.envelopeBytes) ||
+      msg.envelopeBytes.length === 0 ||
+      msg.envelopeBytes.length > MAX_ENVELOPE_BYTES ||
+      !msg.envelopeBytes.every((b) => Number.isInteger(b) && b >= 0 && b <= 255)
+    ) {
+      ws.send(JSON.stringify({ type: 'error', message: 'Invalid or out-of-bounds envelopeBytes payload.' }));
       return;
     }
 
-    if (msg.action === 'write_tag') {
-      if (!this.activeReader || !this.activeCard) {
-        ws.send(JSON.stringify({ type: 'error', message: 'No card present on USB NFC reader to write.' }));
-        return;
-      }
-
-      if (!msg.envelopeBytes || !Array.isArray(msg.envelopeBytes)) {
-        ws.send(JSON.stringify({ type: 'error', message: 'Missing envelopeBytes binary payload.' }));
-        return;
-      }
-
-      try {
-        const payloadBuffer = Buffer.from(msg.envelopeBytes);
-        const mediaType = msg.mimeType || 'application/vnd.ghost.bulk';
-        const verifyResult = await writeTagNdefAndVerify(this.activeReader, mediaType, payloadBuffer);
-
-        ws.send(JSON.stringify({
-          type: 'tag_write_verified',
-          uid: this.activeCard.uid,
-          verified: true,
-          sha256: verifyResult.sha256,
-          bytesWritten: verifyResult.bytesWritten,
-          timestamp: Date.now()
-        }));
-      } catch (err) {
-        ws.send(JSON.stringify({ type: 'error', message: `Write verification failed: ${err.message}` }));
-      }
+    const mediaType = typeof msg.mimeType === 'string' && msg.mimeType.length > 0
+      ? msg.mimeType
+      : 'application/vnd.ghost.bulk';
+    if (!ALLOWED_GHOST_MIME_TYPES.has(mediaType)) {
+      ws.send(JSON.stringify({ type: 'error', message: 'Unsupported Ghost-Tag NDEF MIME type.' }));
       return;
     }
 
-    if (msg.action === 'simulate_tag') {
-      // Invariant: Refuse simulated data
+    if (!this.activeReader || !this.activeCard) {
+      ws.send(JSON.stringify({ type: 'error', message: 'No card present on USB NFC reader to write.' }));
+      return;
+    }
+
+    try {
+      const payloadBuffer = Buffer.from(msg.envelopeBytes);
+      const verifyResult = await writeTagNdefAndVerify(this.activeReader, mediaType, payloadBuffer);
+
       ws.send(JSON.stringify({
-        type: 'error',
-        message: 'Non-negotiable product rule: Synthetic or simulated NFC data is strictly prohibited.'
+        type: 'tag_write_verified',
+        uid: this.activeCard.uid,
+        verified: true,
+        sha256: verifyResult.sha256,
+        bytesWritten: verifyResult.bytesWritten,
+        timestamp: Date.now(),
       }));
+    } catch (err) {
+      ws.send(JSON.stringify({ type: 'error', message: `Write verification failed: ${err.message}` }));
     }
+  }
+
+  handleSimulateTag(ws) {
+    // Invariant: Refuse simulated data
+    ws.send(JSON.stringify({
+      type: 'error',
+      message: 'Non-negotiable product rule: Synthetic or simulated NFC data is strictly prohibited.',
+    }));
   }
 
   broadcast(obj) {

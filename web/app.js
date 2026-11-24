@@ -570,6 +570,9 @@
           try {
             const msg = JSON.parse(event.data);
             if (msg.type === 'bridge_status') {
+              if (typeof msg.sessionToken === 'string') {
+                this.sessionToken = msg.sessionToken;
+              }
               this.hasReader = (msg.readers && msg.readers.length > 0) || !!msg.readerConnected;
               this.cardPresent = !!msg.cardPresent;
               this.activeCard = msg.activeCard;
@@ -621,6 +624,7 @@
 
         ws.onclose = () => {
           this.connected = false;
+          this.sessionToken = null;
           this.ws = null;
         };
       } catch (err) {
@@ -630,11 +634,11 @@
 
     async readTag() {
       return new Promise((resolve, reject) => {
-        if (!this.connected || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        if (!this.connected || !this.ws || this.ws.readyState !== WebSocket.OPEN || !this.sessionToken) {
           return reject(new Error('Ghost Bridge is not connected'));
         }
         this.callbacks.set('read_tag', { resolve, reject });
-        this.ws.send(JSON.stringify({ action: 'read_tag' }));
+        this.ws.send(JSON.stringify({ action: 'read_tag', sessionToken: this.sessionToken }));
         setTimeout(() => {
           if (this.callbacks.has('read_tag')) {
             this.callbacks.delete('read_tag');
@@ -646,12 +650,13 @@
 
     async writeTag(envelopeBytes, mimeType) {
       return new Promise((resolve, reject) => {
-        if (!this.connected || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        if (!this.connected || !this.ws || this.ws.readyState !== WebSocket.OPEN || !this.sessionToken) {
           return reject(new Error('Ghost Bridge is not connected'));
         }
         this.callbacks.set('write_tag', { resolve, reject });
         this.ws.send(JSON.stringify({
           action: 'write_tag',
+          sessionToken: this.sessionToken,
           envelopeBytes: Array.from(envelopeBytes),
           mimeType: mimeType || MIME_BULK
         }));

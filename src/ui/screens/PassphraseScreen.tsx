@@ -3,7 +3,7 @@
  * @summary Master Passphrase and Recovery Phrase Management Screen for Ghost-Tag.
  *
  * Enforces >= 16-character passphrases, manages volatile Argon2id KEK lifecycle,
- * generates 24-word BIP39 recovery phrases with checksums, and provides one-touch
+ * generates 12-word BIP39 recovery phrases with checksums, and provides one-touch
  * session lock & key zeroization.
  */
 
@@ -16,24 +16,44 @@ import {
   TextInput,
   ScrollView,
 } from 'react-native';
+import QuickCrypto from 'react-native-quick-crypto';
 import { theme } from '@ghost-tag/ui/theme';
+import { generateSecureRandom } from '../../crypto/random';
+import { zeroize } from '../../crypto/secureMemory';
+import { getWord } from '../../vault/wordlist';
 
 export interface PassphraseScreenProps {
   readonly onBack?: () => void;
 }
 
-const SAMPLE_RECOVERY_WORDS = [
-  'abandon', 'ability', 'able', 'about', 'above', 'absent',
-  'absorb', 'abstract', 'absurd', 'abuse', 'access', 'accident',
-  'account', 'accuse', 'achieve', 'acid', 'acoustic', 'acquire',
-  'across', 'act', 'action', 'actor', 'actress', 'actual',
-];
+function generate12WordRecoveryPhrase(): string[] {
+  const entropy = generateSecureRandom(16);
+  try {
+    const hash = QuickCrypto.createHash('sha256').update(entropy).digest();
+    let bitString = '';
+    for (let i = 0; i < entropy.length; i++) {
+      bitString += entropy[i].toString(2).padStart(8, '0');
+    }
+    const checksumBits = hash[0].toString(2).padStart(8, '0').slice(0, 4);
+    bitString += checksumBits;
+
+    const words: string[] = [];
+    for (let i = 0; i < 12; i++) {
+      const index = parseInt(bitString.slice(i * 11, (i + 1) * 11), 2);
+      words.push(getWord(index));
+    }
+    return words;
+  } finally {
+    zeroize(entropy);
+  }
+}
 
 export const PassphraseScreen: React.FC<PassphraseScreenProps> = () => {
   const [newPass, setNewPass] = useState<string>('');
   const [confirmPass, setConfirmPass] = useState<string>('');
   const [sessionActive, setSessionActive] = useState<boolean>(true);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [recoveryWords, setRecoveryWords] = useState<string[]>([]);
   const [showWords, setShowWords] = useState<boolean>(false);
 
   const handleUpdatePassphrase = () => {
@@ -48,17 +68,30 @@ export const PassphraseScreen: React.FC<PassphraseScreenProps> = () => {
 
     setNewPass('');
     setConfirmPass('');
-    setStatusMsg('Success: Master Passphrase updated. Volatile KEK re-derived with fresh salt.');
+    setStatusMsg('Passphrase policy validated (min 16 chars). Re-keying DEKs requires an unlocked VaultManager session.');
   };
 
   const handleLockSession = () => {
     setSessionActive(false);
-    setStatusMsg('Session locked. All volatile cryptographic keys and buffers zeroized.');
+    setRecoveryWords([]);
+    setShowWords(false);
+    setStatusMsg('Session locked. Transient UI recovery state cleared.');
   };
 
   const handleUnlockSession = () => {
     setSessionActive(true);
-    setStatusMsg('Session unlocked. Ephemeral session active.');
+    setStatusMsg('Session unlocked. Re-enter credentials as needed.');
+  };
+
+  const handleToggleRecoveryWords = () => {
+    if (recoveryWords.length === 0) {
+      const fresh = generate12WordRecoveryPhrase();
+      setRecoveryWords(fresh);
+      setShowWords(true);
+      setStatusMsg('Generated fresh 12-word BIP-39 phrase with CSPRNG 128-bit entropy + SHA-256 checksum.');
+      return;
+    }
+    setShowWords(!showWords);
   };
 
   return (
@@ -98,7 +131,7 @@ export const PassphraseScreen: React.FC<PassphraseScreenProps> = () => {
         </Text>
 
         <TouchableOpacity
-          style={[styles.secondaryButton, { marginTop: 8 }]}
+          style={[styles.secondaryButton, styles.mt8]}
           onPress={sessionActive ? handleLockSession : handleUnlockSession}
         >
           <Text style={styles.secondaryButtonText}>
@@ -128,7 +161,7 @@ export const PassphraseScreen: React.FC<PassphraseScreenProps> = () => {
         />
 
         <TextInput
-          style={[styles.textInput, { marginTop: 10 }]}
+          style={[styles.textInput, styles.mt10]}
           value={confirmPass}
           onChangeText={(text) => {
             setConfirmPass(text);
@@ -152,23 +185,23 @@ export const PassphraseScreen: React.FC<PassphraseScreenProps> = () => {
         )}
 
         <TouchableOpacity
-          style={[styles.primaryButton, { marginTop: 14 }]}
+          style={[styles.primaryButton, styles.mt14]}
           onPress={handleUpdatePassphrase}
         >
-          <Text style={styles.primaryButtonText}>RE-DERIVE VAULT KEK</Text>
+          <Text style={styles.primaryButtonText}>VALIDATE PASSPHRASE</Text>
         </TouchableOpacity>
       </View>
 
-      {/* 24-Word Recovery Phrase Card */}
+      {/* 12-Word Recovery Phrase Card */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>24-WORD BIP39 RECOVERY PHRASE</Text>
+        <Text style={styles.cardTitle}>12-WORD BIP39 RECOVERY PHRASE</Text>
         <Text style={styles.cardDesc}>
           Emergency air-gapped recovery secret. Can restore wrapped DEKs without the master passphrase. Store offline on paper or steel.
         </Text>
 
-        {showWords ? (
+        {showWords && recoveryWords.length > 0 ? (
           <View style={styles.wordGrid}>
-            {SAMPLE_RECOVERY_WORDS.map((w, i) => (
+            {recoveryWords.map((w, i) => (
               <View key={i} style={styles.wordCell}>
                 <Text style={styles.wordNum}>{i + 1}.</Text>
                 <Text style={styles.wordText}>{w}</Text>
@@ -182,11 +215,15 @@ export const PassphraseScreen: React.FC<PassphraseScreenProps> = () => {
         )}
 
         <TouchableOpacity
-          style={[styles.secondaryButton, { marginTop: 12 }]}
-          onPress={() => setShowWords(!showWords)}
+          style={[styles.secondaryButton, styles.mt12]}
+          onPress={handleToggleRecoveryWords}
         >
           <Text style={styles.secondaryButtonText}>
-            {showWords ? 'CONCEAL RECOVERY WORDS' : 'REVEAL 24 RECOVERY WORDS'}
+            {recoveryWords.length === 0
+              ? 'GENERATE 12 RECOVERY WORDS'
+              : showWords
+              ? 'CONCEAL RECOVERY WORDS'
+              : 'REVEAL 12 RECOVERY WORDS'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -363,5 +400,9 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     letterSpacing: 3,
   },
+  mt8: { marginTop: 8 },
+  mt10: { marginTop: 10 },
+  mt12: { marginTop: 12 },
+  mt14: { marginTop: 14 },
 });
 

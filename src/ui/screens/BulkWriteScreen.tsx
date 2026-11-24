@@ -27,8 +27,8 @@ export const BulkWriteScreen: React.FC<BulkWriteScreenProps> = ({
   onFinish,
 }) => {
   const extraTags = Math.max(0, presentedTagCount - requiredTagCount);
-  const [currentChunk, _setCurrentChunk] = useState<number>(1);
-  const [logs, _setLogs] = useState<string[]>([
+  const [currentChunk] = useState<number>(1);
+  const [logs] = useState<string[]>([
     `[PLAN] Target chunks required: ${requiredTagCount}`,
     extraTags > 0
       ? `[EXCLUDE] Only ${requiredTagCount} tags are required. Please set aside the other ${extraTags} tags. Scan the ${requiredTagCount} required tags one by one.`

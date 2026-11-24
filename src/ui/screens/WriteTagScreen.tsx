@@ -7,7 +7,7 @@
  * and executes write-verification.
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -18,15 +18,16 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { theme } from '@ghost-tag/ui/theme';
+import { ghostNfcManager } from '../../nfc/nfcManager';
 
 export interface WriteTagScreenProps {
   readonly onBack?: () => void;
 }
 
 const CHIP_LIMITS = {
-  NTAG213: { userMem: 144, usable: 45 },
+  NTAG213: { userMem: 144, usable: 52 },
   NTAG215: { userMem: 504, usable: 404 },
-  NTAG216: { userMem: 888, usable: 780 },
+  NTAG216: { userMem: 888, usable: 784 },
 };
 
 const PURPOSES = [
@@ -39,7 +40,7 @@ const PURPOSES = [
 export const WriteTagScreen: React.FC<WriteTagScreenProps> = () => {
   const [selectedChip, setSelectedChip] = useState<'NTAG213' | 'NTAG215' | 'NTAG216'>('NTAG215');
   const [selectedPurpose, setSelectedPurpose] = useState<string>('0x01');
-  const [payload, setPayload] = useState<string>('abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about');
+  const [payload, setPayload] = useState<string>('');
   const [passphrase, setPassphrase] = useState<string>('');
   const [isWriting, setIsWriting] = useState<boolean>(false);
   const [writeSuccess, setWriteSuccess] = useState<boolean>(false);
@@ -49,12 +50,22 @@ export const WriteTagScreen: React.FC<WriteTagScreenProps> = () => {
     '[INFO] Select chip, categorical purpose, and enter payload.',
   ]);
 
+  useEffect(() => {
+    return () => {
+      ghostNfcManager.stopListening().catch(() => {});
+    };
+  }, []);
+
   const maxUsable = CHIP_LIMITS[selectedChip].usable;
   const currentBytes = new TextEncoder().encode(payload).length;
   const isOverCapacity = currentBytes > maxUsable;
   const pctUsed = Math.min(100, Math.round((currentBytes / maxUsable) * 100));
 
-  const handleWriteTag = () => {
+  const handleWriteTag = async () => {
+    if (currentBytes === 0) {
+      setErrorMsg('Secret payload cannot be empty.');
+      return;
+    }
     if (isOverCapacity) {
       setErrorMsg(`Payload exceeds ${selectedChip} usable capacity (${currentBytes}B > ${maxUsable}B).`);
       return;
@@ -67,28 +78,62 @@ export const WriteTagScreen: React.FC<WriteTagScreenProps> = () => {
     setErrorMsg(null);
     setIsWriting(true);
     setWriteSuccess(false);
-
     setLogs((prev) => [
       ...prev,
-      `[PREPARE] Formatting 54-byte binary envelope for ${selectedChip}...`,
-      `[ARGON2ID] Calibrating KDF work factors. Deriving KEK...`,
-      `[CRYPTO] AES-256-GCM encrypting ${currentBytes}B with 12B CSPRNG nonce.`,
-      `[AAD] Binding deterministic AAD (MAGIC || VERSION || PURPOSE || KEY_ID || LENGTH).`,
-      `[NFC] Awaiting physical tag tap at NFC antenna...`,
+      '[NFC] Verifying device NFC transceiver state before write...',
     ]);
 
-    setTimeout(() => {
-      setIsWriting(false);
-      setWriteSuccess(true);
+    try {
+      const supported = await ghostNfcManager.isNfcSupported();
+      if (!supported) {
+        setIsWriting(false);
+        setErrorMsg('Hardware NFC controller is not supported on this device.');
+        setLogs((prev) => [...prev, '[ERROR] Physical NFC transceiver unavailable.']);
+        return;
+      }
+
+      const enabled = await ghostNfcManager.isNfcEnabled();
+      if (!enabled) {
+        setIsWriting(false);
+        setErrorMsg('NFC is disabled in system settings. Enable NFC to write tags.');
+        setLogs((prev) => [...prev, '[ERROR] Android NFC transceiver is turned off.']);
+        return;
+      }
+
       setLogs((prev) => [
         ...prev,
-        `[NFC] Connection established with physical ${selectedChip} EEPROM.`,
-        `[WRITE] Writing binary envelope (54B overhead + ${currentBytes}B ciphertext).`,
-        `[VERIFY] Reading back envelope from tag EEPROM...`,
-        `[VERIFY] GCM authentication tag matches! Data verified tamper-free.`,
-        `[SUCCESS] Tag write complete. Tag is encrypted and locked.`,
+        `[NFC] Foreground dispatch armed for ${selectedChip}. Hold blank/writable tag near antenna...`,
       ]);
-    }, 1500);
+
+      await ghostNfcManager.startListening(
+        async (tag) => {
+          setIsWriting(false);
+          await ghostNfcManager.stopListening();
+          const maxSize = tag.maxSize ?? 0;
+          setErrorMsg(
+            'Physical tag detected, but NDEF write-and-verify requires an unlocked VaultManager DEK session via WriteOperation.'
+          );
+          setLogs((prev) => [
+            ...prev,
+            `[TAG] Physical tag detected (maxSize=${maxSize}B).`,
+            '[VAULT] Interactive screen awaiting VaultManager WriteOperation session binding; nothing written.',
+          ]);
+        },
+        {
+          timeoutMs: 15000,
+          onTimeout: () => {
+            setIsWriting(false);
+            setErrorMsg('NFC write timed out after 15 seconds with no physical tag detected.');
+            setLogs((prev) => [...prev, '[TIMEOUT] No physical NFC tag detected within 15s.']);
+          },
+        }
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setIsWriting(false);
+      setErrorMsg(`NFC write preparation failed: ${msg}`);
+      setLogs((prev) => [...prev, `[ERROR] ${msg}`]);
+    }
   };
 
   return (

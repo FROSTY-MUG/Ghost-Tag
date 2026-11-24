@@ -13,6 +13,7 @@ import {
   View,
   TouchableOpacity,
   ScrollView,
+  Alert,
 } from 'react-native';
 
 export const PROMISE_TEXT =
@@ -35,15 +36,8 @@ export interface BulkVaultCreationScreenProps {
 export const BulkVaultCreationScreen: React.FC<BulkVaultCreationScreenProps> = ({
   onProceedToBulkWrite,
 }) => {
-  const [selectedFiles, _setSelectedFiles] = useState<SelectedFile[]>([
-    { id: '1', name: 'holiday.mp4', sizeBytes: 8 * 1024 * 1024, mimeType: 'video/mp4' },
-    { id: '2', name: 'report.pdf', sizeBytes: 1024 * 1024, mimeType: 'application/pdf' },
-    { id: '3', name: 'notes.txt', sizeBytes: 500 * 1024, mimeType: 'text/plain' },
-  ]);
+  const [selectedFiles] = useState<SelectedFile[]>([]);
   const [redundancyM, setRedundancyM] = useState<number>(0);
-
-  // Example capacity baseline for NTAG213 / standard Type 2 Tag (~110 KB chunks or ~134B fixed overhead)
-  const _totalSizeBytes = selectedFiles.reduce((acc, f) => acc + f.sizeBytes, 0);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
@@ -52,7 +46,7 @@ export const BulkVaultCreationScreen: React.FC<BulkVaultCreationScreenProps> = (
           <Text style={styles.badgeText}>BULK DISTRIBUTED VAULT</Text>
         </View>
         <Text style={styles.title}>Create Distributed Vault</Text>
-        <Text style={styles.subtitle}>Store arbitrary files across sets of standard NFC tags</Text>
+        <Text style={styles.subtitle}>Store arbitrary files across NTAG215/NTAG216 tag sets</Text>
       </View>
 
       {/* Core User Promise */}
@@ -70,23 +64,32 @@ export const BulkVaultCreationScreen: React.FC<BulkVaultCreationScreenProps> = (
       {/* File List */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Selected Files ({selectedFiles.length})</Text>
-        {selectedFiles.map((f) => (
-          <View key={f.id} style={styles.fileRow}>
-            <View>
-              <Text style={styles.fileName}>{f.name}</Text>
-              <Text style={styles.fileMime}>{f.mimeType}</Text>
+        {selectedFiles.length === 0 ? (
+          <Text style={styles.sectionSubtitle}>
+            No files selected yet. Bulk chunking requires NTAG215/NTAG216 tags (NTAG213 cannot hold v2 bulk headers).
+          </Text>
+        ) : (
+          selectedFiles.map((f) => (
+            <View key={f.id} style={styles.fileRow}>
+              <View>
+                <Text style={styles.fileName}>{f.name}</Text>
+                <Text style={styles.fileMime}>{f.mimeType}</Text>
+              </View>
+              <Text style={styles.fileSize}>{(f.sizeBytes / 1024).toFixed(1)} KB</Text>
             </View>
-            <Text style={styles.fileSize}>{(f.sizeBytes / 1024).toFixed(1)} KB</Text>
-          </View>
-        ))}
+          ))
+        )}
 
         <TouchableOpacity
           style={styles.addFileButton}
           onPress={() => {
-            // In production, opens Android SAF ACTION_OPEN_DOCUMENT
+            Alert.alert(
+              'SAF File Picker Required',
+              'Multi-file selection uses Android Storage Access Framework (ACTION_OPEN_DOCUMENT) and is pending native picker bridge integration.'
+            );
           }}
         >
-          <Text style={styles.addFileButtonText}>+ Add Another File (SAF)</Text>
+          <Text style={styles.addFileButtonText}>+ Select Files via Android SAF</Text>
         </TouchableOpacity>
       </View>
 
@@ -113,7 +116,8 @@ export const BulkVaultCreationScreen: React.FC<BulkVaultCreationScreenProps> = (
 
       {/* Action */}
       <TouchableOpacity
-        style={styles.primaryButton}
+        style={[styles.primaryButton, selectedFiles.length === 0 && styles.primaryButtonDisabled]}
+        disabled={selectedFiles.length === 0}
         onPress={() => onProceedToBulkWrite?.(selectedFiles, redundancyM)}
       >
         <Text style={styles.primaryButtonText}>Calculate Tags & Begin Write</Text>
@@ -285,6 +289,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     marginTop: 8,
+  },
+  primaryButtonDisabled: {
+    opacity: 0.4,
   },
   primaryButtonText: {
     color: '#000000',

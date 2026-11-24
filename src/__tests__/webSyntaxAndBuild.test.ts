@@ -71,5 +71,16 @@ describe('Ghost-Tag Web Client Syntax & Build Integrity', () => {
     expect(fs.existsSync(distHtml)).toBe(true);
     const htmlContent = fs.readFileSync(distHtml, 'utf-8');
     expect(htmlContent).toContain('Ghost-Tag');
+
+    // Regression guard for /app/*.html hash route support & keyboard-focusable header buttons
+    const srcHtml = fs.readFileSync(path.join(webDir, 'index.html'), 'utf-8');
+    expect(srcHtml).toMatch(/<button[^>]+id="headerAccountLink"/);
+    expect(srcHtml).toMatch(/<button[^>]+id="headerRecoveryLink"/);
+    expect(srcHtml).toMatch(/<button[^>]+id="headerSettingsLink"/);
+
+    const appJsContent = fs.readFileSync(path.join(webDir, 'app.js'), 'utf-8');
+    for (const h of ["'app'", "'bulk'", "'write'", "'scan'", "'recovery'", "'settings'"]) {
+      expect(appJsContent).toContain(h);
+    }
   });
 });

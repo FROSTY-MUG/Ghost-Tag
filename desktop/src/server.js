@@ -6,19 +6,86 @@
  */
 
 const http = require('http');
-const { WebSocketServer } = require('ws');
+const wsModule = require('ws');
+const WebSocketServer = wsModule.WebSocketServer || wsModule.Server;
 const { getCardUid, readTagCapability, readTagNdef, writeTagNdefAndVerify } = require('./apdu');
 
 const PORT = 41789;
 const HOST = '127.0.0.1';
 
-const ALLOWED_ORIGINS = new Set([
-  'https://frosty-mug.github.io',
-  'http://localhost:8080',
-  'http://localhost:3000',
-  'http://127.0.0.1:8080',
-  'http://127.0.0.1:3000',
-]);
+const { isValidLoopbackOrigin, parseApprovedOrigins, isBridgeOriginAllowed } = (() => {
+  function isValidLoopback(origin) {
+    if (!origin || typeof origin !== 'string') return false;
+    try {
+      const parsed = new URL(origin);
+      if (
+        parsed.protocol !== 'http:' ||
+        parsed.username ||
+        parsed.password ||
+        (parsed.pathname !== '' && parsed.pathname !== '/') ||
+        parsed.search ||
+        parsed.hash ||
+        parsed.origin !== origin
+      ) {
+        return false;
+      }
+      if (parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') {
+        return false;
+      }
+      if (!parsed.port) return false;
+      const port = Number(parsed.port);
+      return Number.isInteger(port) && port >= 1 && port <= 65535;
+    } catch {
+      return false;
+    }
+  }
+
+  function parseApproved(extra) {
+    const allowed = new Set(['https://frosty-mug.github.io']);
+    if (!extra) return allowed;
+    for (const raw of String(extra).split(',')) {
+      const trimmed = raw.trim();
+      if (!trimmed || trimmed === '*' || trimmed.includes('*')) continue;
+      try {
+        const parsed = new URL(trimmed);
+        if (
+          parsed.protocol === 'https:' &&
+          !parsed.username &&
+          !parsed.password &&
+          (parsed.pathname === '' || parsed.pathname === '/') &&
+          !parsed.search &&
+          !parsed.hash &&
+          parsed.origin === trimmed
+        ) {
+          allowed.add(parsed.origin);
+        }
+      } catch {
+        // Ignore malformed origins
+      }
+    }
+    return allowed;
+  }
+
+  function isAllowed(origin, opts = {}) {
+    if (!origin || typeof origin !== 'string') return false;
+    const trimmed = origin.trim();
+    if (!trimmed || trimmed === '*' || trimmed === 'null') return false;
+    const approved = parseApproved(
+      opts.approvedOrigins !== undefined ? opts.approvedOrigins : process.env.GHOST_APPROVED_ORIGINS
+    );
+    if (approved.has(trimmed)) return true;
+    const isDev =
+      opts.allowLocalhost === true ||
+      (opts.environment !== undefined ? opts.environment : process.env.GHOST_ENV) !== 'production';
+    return isDev && isValidLoopback(trimmed);
+  }
+
+  return {
+    isValidLoopbackOrigin: isValidLoopback,
+    parseApprovedOrigins: parseApproved,
+    isBridgeOriginAllowed: isAllowed,
+  };
+})();
 
 class GhostBridgeServer {
   constructor() {
@@ -37,18 +104,18 @@ class GhostBridgeServer {
     console.log(`[Ghost Bridge] Running at ws://${HOST}:${PORT} and http://${HOST}:${PORT}/status`);
   }
 
-  initHttpServer() {
+  initHttpServer(listenPort = PORT) {
     this.server = http.createServer((req, res) => {
       const origin = req.headers['origin'];
 
-      // Reject unauthorized cross-origin requests with HTTP 403
-      if (origin && !ALLOWED_ORIGINS.has(origin)) {
-        res.writeHead(403, { 'Content-Type': 'application/json' });
+      // Reject unauthorized cross-origin requests with HTTP 403 (never emit *)
+      if (origin !== undefined && !isBridgeOriginAllowed(origin)) {
+        res.writeHead(403, { 'Content-Type': 'application/json', Vary: 'Origin' });
         res.end(JSON.stringify({ error: 'FORBIDDEN_ORIGIN' }));
         return;
       }
 
-      if (origin && ALLOWED_ORIGINS.has(origin)) {
+      if (origin && isBridgeOriginAllowed(origin)) {
         res.setHeader('Access-Control-Allow-Origin', origin);
       }
       res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -79,14 +146,24 @@ class GhostBridgeServer {
       }
 
       res.writeHead(404, { 'Content-Type': 'text/plain' });
-      res.end('Ghost Bridge 2.0.5');
+      res.end('Ghost Bridge 2.1.0');
     });
 
-    this.server.listen(PORT, HOST);
+    this.server.listen(listenPort, HOST);
   }
 
   initWebSocketServer() {
-    this.wss = new WebSocketServer({ server: this.server });
+    this.wss = new WebSocketServer({
+      server: this.server,
+      verifyClient: (info, callback) => {
+        const origin = info.origin || info.req.headers['origin'];
+        if (origin !== undefined && !isBridgeOriginAllowed(origin)) {
+          callback(false, 403, 'Forbidden Origin');
+          return;
+        }
+        callback(true);
+      },
+    });
 
     this.wss.on('connection', (ws, req) => {
       console.log(`[Ghost Bridge] Web client connected from ${req.socket.remoteAddress}`);
@@ -344,5 +421,8 @@ class GhostBridgeServer {
 module.exports = {
   GhostBridgeServer,
   PORT,
-  HOST
+  HOST,
+  isBridgeOriginAllowed,
+  isValidLoopbackOrigin,
+  parseApprovedOrigins,
 };

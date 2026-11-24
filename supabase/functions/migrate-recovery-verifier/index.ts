@@ -4,6 +4,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.8";
 import { timingSafeEqual } from "node:crypto";
+import { evaluateCors } from "../_shared/cors.ts";
 
 const MAX_FAILED_PER_ACCOUNT = 25;
 const MAX_FAILED_PER_USER = 20;
@@ -12,24 +13,12 @@ const MAX_FAILED_PER_IP = 100;
 const RFC4122_UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HEX64_REGEX = /^[0-9a-fA-F]{64}$/;
 
-const ALLOWED_ORIGINS = new Set([
-  "https://frosty-mug.github.io",
-  "http://localhost:8080",
-  "http://localhost:3000",
-  "http://127.0.0.1:8080",
-  "http://127.0.0.1:3000",
-]);
-
-function getCorsHeaders(origin: string | null): Record<string, string> {
-  const headers: Record<string, string> = {
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-    "Vary": "Origin",
+function getCorsOptions() {
+  return {
+    environment: Deno.env.get("GHOST_ENV") ?? "production",
+    allowLocalhostCors: Deno.env.get("ALLOW_LOCALHOST_CORS") === "true",
+    approvedProductionOrigins: Deno.env.get("APPROVED_CORS_ORIGINS") ?? "",
   };
-  if (origin && ALLOWED_ORIGINS.has(origin)) {
-    headers["Access-Control-Allow-Origin"] = origin;
-  }
-  return headers;
 }
 
 function hexToBytes(hex: string): Uint8Array {
@@ -64,20 +53,20 @@ async function hashIp(clientIp: string, salt: string): Promise<string> {
 
 serve(async (req: Request) => {
   const origin = req.headers.get("Origin");
-  if (origin && !ALLOWED_ORIGINS.has(origin)) {
+  const cors = evaluateCors(origin, getCorsOptions());
+  if (!cors.allowed) {
     return new Response(JSON.stringify({ error: "MIGRATION_FAILED" }), {
       status: 403,
-      headers: { "Content-Type": "application/json" },
+      headers: { ...cors.headers, "Content-Type": "application/json" },
     });
   }
 
-  const corsHeaders = getCorsHeaders(origin);
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return new Response("ok", { headers: cors.headers });
   }
 
   const responseHeaders = {
-    ...corsHeaders,
+    ...cors.headers,
     "Content-Type": "application/json",
   };
 
@@ -181,8 +170,6 @@ serve(async (req: Request) => {
     const currentAttemptId = rateResult ? rateResult.attempt_id : null;
 
     // Atomic Transactional Verification and Migration via Postgres RPC
-    // Acquires row-level FOR UPDATE lock, validates recovery_kdf_version = 1,
-    // checks legacy verifier equality in constant time, upgrades to v2, and updates owner atomically.
     const { data: migrationRows, error: migrationRpcError } = await adminClient.rpc(
       "migrate_recovery_verifier_atomic",
       {
@@ -197,7 +184,6 @@ serve(async (req: Request) => {
     const migrationResult = Array.isArray(migrationRows) && migrationRows.length > 0 ? migrationRows[0] : null;
 
     if (migrationRpcError || !migrationResult || migrationResult.migrated !== true) {
-      // Maintained constant-time delay on failure paths
       const candidateLegacyBytes = hexToBytes(legacy_recovery_verifier);
       const dummyVerifierBytes = new Uint8Array(candidateLegacyBytes.length > 0 ? candidateLegacyBytes.length : 32);
       timingSafeEqual(Buffer.from(candidateLegacyBytes), Buffer.from(dummyVerifierBytes));

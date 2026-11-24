@@ -404,13 +404,13 @@
       if (verifierHex) payload.recovery_verifier = verifierHex;
       if (saltHex) payload.recovery_salt = saltHex;
 
-      const resp = await fetch(`${config.url}/rest/v1/ghost_vaults`, {
+      // Direct client write access to ghost_vaults is revoked; sync through Edge Function
+      const resp = await fetch(`${config.url}/functions/v1/sync-vault-metadata`, {
         method: 'POST',
         headers: {
           'apikey': config.anonKey,
           'Authorization': `Bearer ${auth.token || config.anonKey}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'resolution=merge-duplicates'
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload)
       });
@@ -438,7 +438,8 @@
     if (config.isConfigured && !config.disabled) {
       try {
         const auth = await signInAnonymously();
-        const resp = await fetch(`${config.url}/rest/v1/ghost_vaults?account_id=eq.${accountId}&select=*`, {
+        // Query restricted status view only (never read recovery_verifier, recovery_salt, or encrypted_vault_blob via REST)
+        const resp = await fetch(`${config.url}/rest/v1/ghost_vault_status?account_id=eq.${accountId}&select=account_id,vault_version,recovery_kdf_version,created_at,updated_at`, {
           method: 'GET',
           headers: {
             'apikey': config.anonKey,
@@ -451,14 +452,14 @@
           const rows = await resp.json();
           if (Array.isArray(rows) && rows.length > 0) {
             const row = rows[0];
-            const isLegacy = row.recovery_kdf_version === 1 || !row.recovery_kdf_version || (row.recovery_verifier && row.recovery_verifier.length !== 64);
+            const isLegacy = row.recovery_kdf_version === 1 || !row.recovery_kdf_version;
             return {
               accountId: row.account_id,
-              encryptedBlob: row.encrypted_vault_blob,
+              encryptedBlob: null,
               vaultVersion: row.vault_version,
               recoveryKdfVersion: row.recovery_kdf_version || 1,
-              recoveryVerifier: row.recovery_verifier || null,
-              recoverySalt: row.recovery_salt || null,
+              recoveryVerifier: null,
+              recoverySalt: null,
               needsMigration: isLegacy,
               source: 'supabase-cloud'
             };
@@ -785,12 +786,15 @@
     try {
       const auth = await signInAnonymously();
       const key = config.publishableKey || config.anonKey;
-      const resp = await fetch(`${config.url}/rest/v1/ghost_vaults?account_id=eq.${accountId}`, {
-        method: 'DELETE',
+      // Direct DELETE on legacy ghost_vaults is revoked; use Edge Function
+      const resp = await fetch(`${config.url}/functions/v1/schedule-account-deletion`, {
+        method: 'POST',
         headers: {
           'apikey': key,
-          'Authorization': `Bearer ${auth.token || key}`
-        }
+          'Authorization': `Bearer ${auth.token || key}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ account_id: accountId })
       });
       return { success: resp.ok, source: 'supabase-cloud' };
     } catch (err) {
@@ -839,6 +843,7 @@
     upgradeRecoveryVerifier,
     recoverVaultWithVerifier,
     deleteEncryptedVault,
+    deleteRemoteVault: deleteEncryptedVault,
     bytesToHex,
     hexToBytes
   };

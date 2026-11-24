@@ -273,15 +273,19 @@ export async function uploadEncryptedVaultMetadata(
   try {
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const timeoutId = controller ? setTimeout(() => controller.abort(), 1000) : null;
-    const resp = await fetch(`${activeConfig.url}/rest/v1/ghost_vaults`, {
+    // Direct client writes to legacy ghost_vaults are revoked; route sync via Edge Function.
+    const resp = await fetch(`${activeConfig.url}/functions/v1/sync-vault-metadata`, {
       method: 'POST',
       headers: {
         apikey: activeConfig.anonKey,
         Authorization: `Bearer ${activeConfig.anonKey}`,
         'Content-Type': 'application/json',
-        Prefer: 'resolution=merge-duplicates',
       },
-      body: JSON.stringify(entry),
+      body: JSON.stringify({
+        account_id: entry.account_id,
+        encrypted_vault_blob: entry.encrypted_vault_blob,
+        vault_version: entry.vault_version,
+      }),
       signal: controller?.signal,
     });
     if (timeoutId) clearTimeout(timeoutId);
@@ -296,7 +300,9 @@ export async function uploadEncryptedVaultMetadata(
 }
 
 /**
- * Downloads encrypted vault metadata directly if already authenticated as the owner.
+ * Downloads non-sensitive vault status metadata (never selects recovery_verifier,
+ * recovery_salt, or encrypted_vault_blob directly via REST). Full vault recovery
+ * must use recoverVaultWithVerifier().
  */
 export async function downloadEncryptedVaultMetadata(
   accountId: string
@@ -316,7 +322,7 @@ export async function downloadEncryptedVaultMetadata(
       const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
       const timeoutId = controller ? setTimeout(() => controller.abort(), 1000) : null;
       const resp = await fetch(
-        `${activeConfig.url}/rest/v1/ghost_vaults?account_id=eq.${accountId}&select=*`,
+        `${activeConfig.url}/rest/v1/ghost_vault_status?account_id=eq.${accountId}&select=account_id,vault_version,recovery_kdf_version`,
         {
           headers: {
             apikey: activeConfig.anonKey,
@@ -332,7 +338,7 @@ export async function downloadEncryptedVaultMetadata(
         if (Array.isArray(rows) && rows.length > 0) {
           return {
             accountId: rows[0].account_id,
-            encryptedBlob: rows[0].encrypted_vault_blob,
+            encryptedBlob: '',
             vaultVersion: rows[0].vault_version,
             source: 'supabase-cloud',
           };
@@ -556,14 +562,17 @@ export async function deleteEncryptedVaultMetadata(
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const timeoutId = controller ? setTimeout(() => controller.abort(), 1000) : null;
     const key = activeConfig.publishableKey || activeConfig.anonKey;
+    // Direct client DELETE on legacy ghost_vaults is revoked; use deletion Edge Function.
     const resp = await fetch(
-      `${activeConfig.url}/rest/v1/ghost_vaults?account_id=eq.${accountId}`,
+      `${activeConfig.url}/functions/v1/schedule-account-deletion`,
       {
-        method: 'DELETE',
+        method: 'POST',
         headers: {
           apikey: key,
           Authorization: `Bearer ${key}`,
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ account_id: accountId }),
         signal: controller?.signal,
       }
     );

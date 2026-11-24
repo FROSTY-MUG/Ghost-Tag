@@ -1,325 +1,447 @@
 # Ghost-Tag
 
-```
-   ██████╗ ██╗  ██╗ ██████╗ ███████╗████████╗   ████████╗ █████╗  ██████╗ 
-  ██╔════╝ ██║  ██║██╔═══██╗██╔════╝╚══██╔══╝   ╚══██╔══╝██╔══██╗██╔════╝ 
-  ██║  ███╗███████║██║   ██║███████╗   ██║         ██║   ███████║██║  ███╗
-  ██║   ██║██╔══██║██║   ██║╚════██║   ██║         ██║   ██╔══██║██║   ██║
-  ╚██████╔╝██║  ██║╚██████╔╝███████║   ██║         ██║   ██║  ██║╚██████╔╝
-   ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝   ╚═╝         ╚═╝   ╚═╝  ╚═╝ ╚═════╝ 
-```
+**Ghost-Tag** is designed for offline-first encrypted NFC vaults, with optional zero-knowledge cloud recovery. It turns ordinary NFC tags into local-first encrypted NFC vaults.
 
-> **Encrypted NFC storage. Write. Scan. Decrypt.**
-> Offline-first, cross-platform encrypted NFC vault writing authenticated AES-256-GCM ciphertext envelopes to physical NDEF tags, backed by a 12-word BIP-39 recovery hierarchy.
+It combines AES-256-GCM authenticated encryption, Argon2id key derivation, a KEK/DEK key hierarchy, BIP-39 recovery, and Reed-Solomon erasure coding to distribute encrypted data across multiple NTAG tags.
 
----
+Ghost-Tag uses 12-word BIP-39 recovery phrases as the primary recovery format. 24-word recovery support is retained for compatibility where implemented.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
-[![Platform: Android](https://img.shields.io/badge/Platform-Android%20(API%2026%2B)-black.svg)](https://developer.android.com)
-[![Web Client: Live](https://img.shields.io/badge/Web%20Client-GitHub%20Pages-blue.svg)](https://frosty-mug.github.io/Ghost-Tag/)
-[![Crypto: AES--256--GCM](https://img.shields.io/badge/Crypto-AES--256--GCM%20%2B%20Argon2id-blueviolet.svg)](./docs/CANONICAL-SPECIFICATION.md)
-[![Tests: 258 Passing](https://img.shields.io/badge/Tests-258%20Passing%20(100%25)-brightgreen.svg)](./docs/testing.md)
-[![TypeScript: Strict](https://img.shields.io/badge/TypeScript-0%20Errors-blue.svg)](./tsconfig.json)
-[![Milestone: v2.1.0](https://img.shields.io/badge/Milestone-v2.1.0-orange.svg)](https://github.com/FROSTY-MUG/Ghost-Tag)
-[![Latest Release: v2.0.6](https://img.shields.io/badge/Latest%20Release-v2.0.6-crimson.svg)](https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.6)
+Ghost-Tag is designed for people who want sensitive data to remain under their control: encrypted locally, recoverable without trusting a cloud provider with plaintext, and physically portable.
 
-> [!IMPORTANT]
-> **Release Status**: Ghost-Tag v2.1.0 is an unreleased local staging version.
+[![CI](https://github.com/FROSTY-MUG/Ghost-Tag/actions/workflows/ci.yml/badge.svg)](https://github.com/FROSTY-MUG/Ghost-Tag/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/FROSTY-MUG/Ghost-Tag/actions/workflows/codeql.yml/badge.svg)](https://github.com/FROSTY-MUG/Ghost-Tag/actions/workflows/codeql.yml)
+[![Security Audit](https://github.com/FROSTY-MUG/Ghost-Tag/actions/workflows/agent-security-audit.yml/badge.svg)](https://github.com/FROSTY-MUG/Ghost-Tag/actions/workflows/agent-security-audit.yml)
+[![Quality Gate](https://github.com/FROSTY-MUG/Ghost-Tag/actions/workflows/agent-quality-gate.yml/badge.svg)](https://github.com/FROSTY-MUG/Ghost-Tag/actions/workflows/agent-quality-gate.yml)
+[![Android Build](https://github.com/FROSTY-MUG/Ghost-Tag/actions/workflows/android-build.yml/badge.svg)](https://github.com/FROSTY-MUG/Ghost-Tag/actions/workflows/android-build.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
----
+> **Status:** Ghost-Tag v2.1.0 is an unreleased local staging version. Android, iOS, Ghost Bridge, and PN532 hardware support are not yet physically validated. Supabase is not deployed.
 
-### Authoritative Documentation & Quick Links
-- **[Canonical Technical Specification](./docs/CANONICAL-SPECIFICATION.md)** — **Single authoritative specification** for envelopes, AAD, KDF derivations, recovery verifier, and wire formats.
-- **[Launch Web Companion](https://frosty-mug.github.io/Ghost-Tag/)** — Client-side encrypted NFC app deployed on GitHub Pages.
-- **[Download Android APK (v2.0.6)](https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.6)** — Primary native client (`Ghost-Tag-v2.0.6.apk`, SHA-256 verified).
-- **[Security Policy & Boundaries](./SECURITY.md)** — Vulnerability reporting SLA, zero-secrets policy, and explicit threat model boundaries.
-- **[Cross-Platform Cryptographic Audit](./docs/security-audit.md)** — In-depth verification report across Android, Web, Desktop Ghost Bridge, and iOS.
+## Why Ghost-Tag?
 
----
+Most password managers and cloud vaults require trusting a hosted service with metadata, availability, and sometimes recovery workflows.
 
-## 1. Project Thesis
+Ghost-Tag takes a different approach:
 
-### 1.1 The Core Problem
-Ordinary NFC tags are physical, ubiquitous, and convenient—but fundamentally insecure by default:
-- Anyone with an NFC-enabled smartphone can read their contents in plaintext.
-- Standard NDEF formatting commands zero out only table-of-contents records, leaving data remanence in EEPROM pages.
-- Losing an NFC tag carrying sensitive recovery seed phrases, Wi-Fi credentials, or private files exposes plaintext to any finder.
+- Your master passphrase stays on your device.
+- Your recovery phrase stays offline.
+- Your data is encrypted before it reaches an NFC tag.
+- Cloud recovery stores only a verifier and encrypted metadata—not your passphrase, keys, or plaintext.
+- Large files can be split across multiple physical NFC tags.
+- Reed-Solomon parity can allow recovery if some tags are lost or damaged.
 
-### 1.2 Ghost-Tag's Solution
-Ghost-Tag provides **data confidentiality and cryptographic tamper-evidence** for payloads stored on physical NFC chips:
-> **The physical NFC tag may be inspected, duplicated, erased, or lost—yet its protected payload remains computationally unusable without the user's master passphrase and cryptographic key material.**
+Ghost-Tag does not replace a hardware security key. It is a portable, encrypted, offline-first data vault built around commodity NFC hardware.
 
-### 1.3 What Ghost-Tag IS NOT
-- **Not a Proxmark3 or Flipper Zero replacement**: Ghost-Tag does not clone chips, perform raw RF sniffing, or bypass proprietary chip auth.
-- **Not a centralized cloud vault or key escrow**: Ghost-Tag is local-first and offline-by-default. All cryptographic operations and NFC read/write workflows execute strictly on the client without remote dependencies. An optional, zero-knowledge Supabase cloud sync mode exists purely for encrypted vault metadata backup—it never receives or stores passphrases, recovery phrases, encryption keys, or NFC data.
-- **Not an anti-cloning token**: If an attacker copies an NFC tag byte-for-byte, they duplicate the ciphertext; they still cannot decrypt it without the key hierarchy.
-- **Hardware Support Notice**: Desktop USB reader (ACR122U) and PN532 serial drivers are implemented in source; hardware testing is actively ongoing.
+## How it works
 
----
-
-## 2. System Architecture
-
-Ghost-Tag operates across client interfaces sharing a unified binary envelope and key recovery format:
-
-```mermaid
-flowchart TD
-    subgraph Clients["Ghost-Tag Client Interfaces"]
-        AndroidApp["Android Native APK<br/>(Primary Full Client, API 26+)"]
-        WebApp["Web Client Companion<br/>(GitHub Pages, Chrome Android)"]
-        GhostBridge["Desktop Ghost Bridge<br/>(Node.js Daemon, ACR122U / PN532)"]
-        iOSCore["iOS Cryptographic Core<br/>(Swift + Clibargon2 Foundation)"]
-    end
-
-    subgraph SecurityCore["Cryptographic Security Engine"]
-        KDF["Argon2id RFC 9106 / PBKDF2<br/>(Canonical Cross-Platform KDF)"]
-        AES["AES-256-GCM Cipher<br/>(12-Byte IV, 16-Byte Tag)"]
-        AAD["Deterministic AAD Binding<br/>(26B Single / 74B Bulk)"]
-        BIP39Engine["BIP-39 12-Word Engine<br/>(128-Bit Entropy + 4-Bit Checksum)"]
-    end
-
-    subgraph HardwareTransceiver["NFC Transceiver Layer"]
-        SingleTag["Single-Tag Envelope (v1)<br/>(application/vnd.ghost.secure)"]
-        BulkTag["Bulk File Vault Chunks (v2)<br/>(application/vnd.ghost.bulk)"]
-    end
-
-    subgraph PhysicalChips["Target Physical Media"]
-        NTAG213["NTAG213 (144B NDEF)"]
-        NTAG215["NTAG215 (504B NDEF)"]
-        NTAG216["NTAG216 (888B NDEF)"]
-    end
-
-    AndroidApp --> KDF
-    WebApp --> KDF
-    GhostBridge --> KDF
-    iOSCore --> KDF
-    KDF --> AES
-    AES --> AAD
-    BIP39Engine -.-> KDF
-    AAD --> SingleTag
-    AAD --> BulkTag
-    SingleTag --> NTAG213
-    SingleTag --> NTAG215
-    SingleTag --> NTAG216
-    BulkTag --> NTAG215
-    BulkTag --> NTAG216
+```text
+Master passphrase
+       |
+       v
+   Argon2id
+       |
+       v
+  KEK (Key Encryption Key)
+       |
+       +-----------------------------+
+       |                             |
+       v                             v
+  Wrap DEK with AES-GCM      Encrypt vault data with DEK
+       |                             |
+       v                             v
+  Wrapped DEK metadata        Encrypted chunks
+                                     |
+                                     v
+                       Reed-Solomon parity encoding
+                                     |
+                                     v
+                     Distributed across NFC tags
 ```
 
----
+When you unlock a vault:
 
-## 3. Cryptographic Key Hierarchy
+1. Ghost-Tag derives a Key Encryption Key (KEK) from your passphrase using Argon2id.
+2. The KEK unwraps a randomly generated Data Encryption Key (DEK).
+3. The DEK decrypts the vault payload using AES-256-GCM.
+4. AES-GCM authentication fails immediately if the ciphertext or authenticated metadata has been tampered with.
 
-Ghost-Tag enforces an ephemeral two-tier key hierarchy where master keys are never stored in plaintext on disk:
+Changing your passphrase re-wraps the DEK under a new KEK. It does not require rewriting every encrypted NFC tag.
 
-```mermaid
-flowchart TD
-    subgraph UserCredentials["User Input & Recovery"]
-        Passphrase["Master Passphrase<br/>(≥16 Characters)"]
-        RecoveryPhrase["12-Word BIP-39 Recovery Phrase<br/>(128-bit CSPRNG Entropy)"]
-    end
+## Core features
 
-    subgraph KDFDerivation["Memory-Hard KDF"]
-        Salt["CSPRNG Salt (16/32 Bytes)"]
-        Salt --> DerivationEngine["Argon2id RFC 9106 (Native Android / iOS / Web Recovery)<br/>PBKDF2-SHA256 (Web local KEK, 100k iters)"]
-        Passphrase --> DerivationEngine
-        RecoveryPhrase -.-> DerivationEngine
-    end
+- **AES-256-GCM authenticated encryption** for confidentiality and tamper detection.
+- **Argon2id key derivation** for passphrase-based KEK generation.
+- **KEK/DEK separation** so passphrase changes do not require re-encrypting every tag.
+- **BIP-39 recovery phrases** for disaster recovery.
+- **Reed-Solomon erasure coding** for multi-tag resilience.
+- **Out-of-order NFC tag scanning** for distributed vault reconstruction.
+- **SHA-256 integrity verification** for individual chunks and reconstructed ciphertext.
+- **DEK-free vault verification** to check whether enough valid chunks are present before decryption.
+- **Cross-platform architecture** for Android, web, desktop Ghost Bridge, and proposed iOS support.
+- **Zero-knowledge Supabase recovery design** that stores encrypted metadata and a recovery verifier, not plaintext secrets.
 
-    subgraph MemoryTier["Volatile Memory (Never Persisted)"]
-        KEK["Key Encryption Key (KEK, 256-bit)"]
-        DEK["Data Encryption Key (DEK, 256-bit)"]
-        DerivationEngine --> KEK
-        KEK -->|Unwraps| DEK
-    end
+## Supported NFC tags
 
-    subgraph LocalStorage["Encrypted Local State (MMKV / localStorage)"]
-        WrappedDEK["Wrapped DEK Ciphertext"]
-        SaltStorage["Vault Salt (16/32B)"]
-        IVStorage["DEK IV (12B) + Tag (16B)"]
-    end
+| Tag | Usable memory | Intended use |
+|---|---:|---|
+| NTAG213 | 144 bytes | Small single-tag Ghost v1 vaults |
+| NTAG215 | 504 bytes | Single-tag vaults and bulk multi-tag vaults |
+| NTAG216 | 888 bytes | Single-tag vaults and bulk multi-tag vaults |
 
-    WrappedDEK -.-> DEK
-    SaltStorage -.-> Salt
+MIFARE Classic tags are not supported.
+
+## Ghost v1: single-tag vaults
+
+Ghost v1 stores a small encrypted payload on one NFC tag.
+
+```text
+application/vnd.ghost.secure
 ```
 
----
+The envelope includes:
 
-## 4. NFC Write Flow & Read-Back Verification
+- A `GTAG` magic header.
+- A format version.
+- A purpose identifier.
+- Payload length.
+- Argon2id salt.
+- AES-256-GCM nonce.
+- AES-256-GCM ciphertext.
+- A 128-bit GCM authentication tag.
 
-Every NFC write transaction executes cryptographic encapsulation followed by immediate read-back verification:
+The fixed envelope overhead is **54 bytes**. The first **26 bytes** are bound as Additional Authenticated Data (AAD), preventing tampering with critical envelope metadata.
 
-```mermaid
-flowchart TD
-    StartWrite["Select Data (Text or File)"] --> CheckSize{"Payload Fits<br/>Tag Writable Space?"}
-    CheckSize -- No --> AlertBulk["Prompt: Use Bulk File Vault"]
-    CheckSize -- Yes --> GenEnvelope["Construct 54-Byte Header<br/>Magic (GTAG) + Version (0x01) + KeyID"]
-    GenEnvelope --> EncryptPayload["AES-256-GCM Encrypt<br/>(12B Nonce, 16B Tag, 26B AAD Bound)"]
-    EncryptPayload --> WriteNDEF["Write NDEF MIME Record<br/>(application/vnd.ghost.secure)"]
-    WriteNDEF --> ReadBack["Immediate Read-Back from Tag Chip"]
-    ReadBack --> VerifyTag{"Compare Decrypted<br/>vs Original Data?"}
-    VerifyTag -- Match --> DoneSuccess["WRITTEN AND VERIFIED<br/>Data safely encrypted on tag"]
-    VerifyTag -- Mismatch --> AlertFail["WRITE NOT VERIFIED<br/>Data corrupted or incomplete"]
+## Ghost v2: multi-tag bulk vaults
+
+Ghost v2 splits a larger encrypted payload into chunks and distributes them across multiple NFC tags.
+
+```text
+application/vnd.ghost.bulk
 ```
 
----
+Each chunk carries:
 
-## 5. Bulk File Vault & Multi-Tag Reconstruction
+- Vault, file, and key identifiers.
+- Global and file-specific chunk indexes.
+- Chunk and total-chunk counts.
+- Chunk ciphertext length.
+- A SHA-256 hash of the chunk ciphertext.
+- AES-256-GCM nonce, ciphertext, and authentication tag.
 
-Arbitrary files (images, PDFs, ZIPs, videos) are split across multiple NFC chips. Tags can be scanned in any order during recovery:
+The fixed envelope overhead is **134 bytes**. The first **74 bytes** are authenticated as AAD.
 
-```mermaid
-flowchart LR
-    subgraph FileSlice["File Chunking & Erasure Coding"]
-        LargeFile["Arbitrary Binary File"] --> EncryptWhole["AES-256-GCM Encrypt File"]
-        EncryptWhole --> SplitChunks["Split into K Data Chunks"]
-        SplitChunks --> CauchyRS["Cauchy Reed-Solomon GF(2^8)<br/>Generate M Recovery Chunks"]
-    end
+Bulk verification uses a flat two-tier SHA-256 scheme:
 
-    subgraph PhysicalTags["Arbitrary Order NFC Tags"]
-        Tag3["Tag #3 (Chunk 3/N)"]
-        Tag1["Tag #1 (Chunk 1/N)"]
-        TagN["Tag #N (Chunk N/N)"]
-        Tag2["Tag #2 (Chunk 2/N)"]
-    end
+1. Each chunk ciphertext is checked against its stored SHA-256 hash.
+2. The reconstructed ciphertext is checked against the file-level SHA-256 hash.
 
-    subgraph Reconstruction["Reconstruction Engine"]
-        ScanLoop["Scan Tags in Any Order"]
-        VolatileSession["Volatile In-Memory Session<br/>(Zero Persistent Disk Cache)"]
-        DecryptAction["Tap Decrypt Now"]
-        Reassemble["Invert Cauchy Matrix & Reassemble"]
-        RecoveredFile["Recovered Original Files"]
-    end
+This is not a binary Merkle tree.
 
-    CauchyRS --> Tag3
-    CauchyRS --> Tag1
-    CauchyRS --> TagN
-    CauchyRS --> Tag2
+## Reed-Solomon recovery
 
-    Tag3 --> ScanLoop
-    Tag1 --> ScanLoop
-    TagN --> ScanLoop
-    Tag2 --> ScanLoop
+Ghost-Tag uses Cauchy-Reed-Solomon erasure coding over GF(2^8).
 
-    ScanLoop --> VolatileSession
-    VolatileSession --> DecryptAction
-    DecryptAction --> Reassemble
-    Reassemble --> RecoveredFile
+A vault can be configured with:
+
+- `k` data chunks.
+- `m` parity chunks.
+
+Any `k` valid chunks from the `k + m` total chunks can reconstruct the original encrypted payload.
+
+For example, with `k = 4` and `m = 2`:
+
+```text
+Original encrypted data
+          |
+          v
+   4 data chunks + 2 parity chunks
+          |
+          v
+  Distributed across 6 NFC tags
 ```
 
----
+You can lose up to `m` tags and still reconstruct the vault, provided the remaining chunks are valid and sufficient.
 
-## 6. Cross-Platform Recovery Workflow
+Chunks can be scanned in any order. Duplicate scans are ignored, and corrupted or truncated chunks fail integrity verification.
 
-Vaults initialized on Android can be seamlessly recovered on the Web Companion (and vice versa) using the 12-word mnemonic:
+## Security model
 
-```mermaid
-flowchart TD
-    subgraph SetupDevice["Device A (e.g. Android APK)"]
-        GenEntropy["Generate 128-bit CSPRNG Entropy"] --> CalcChecksum["Append 4-Bit SHA-256 Checksum (132 Bits Total)"]
-        CalcChecksum --> MapWords["Map to 12 BIP-39 English Words"]
-        MapWords --> ConfirmWords["Confirm Words 4, 8, 11"]
-        ConfirmWords --> VaultActiveA["Vault Created & Initialized"]
-    end
+Ghost-Tag is designed around these principles:
 
-    subgraph ExportImport["Mnemonic Transfer"]
-        UserPhrase["User Records 12 Words on Physical Paper or Steel"]
-    end
+- **Local-first cryptography:** Passphrases, recovery phrases, KEKs, and DEKs are not sent to Supabase.
+- **Authenticated encryption:** AES-256-GCM detects tampering with ciphertext or authenticated metadata.
+- **Memory-hard key derivation:** Argon2id makes offline passphrase guessing more expensive.
+- **Explicit zeroization:** Sensitive ephemeral buffers are wiped where supported.
+- **Fail-closed parsing:** Malformed, truncated, unsupported, or tampered envelopes are rejected.
+- **Rate-limited recovery:** Supabase recovery is designed with layered rate limits and constant-time verifier comparison.
 
-    subgraph RecoverDevice["Device B (e.g. GitHub Pages Web Companion)"]
-        ImportAction["Select 'I Have a Recovery Phrase'"] --> InputWords["Enter 12 Words"]
-        InputWords --> VerifyChecksum{"Validate 11-Bit Indices<br/>& 4-Bit Checksum"}
-        VerifyChecksum -- Valid --> DeriveVerifier["Derive Argon2id recovery_verifier<br/>(m=32768, t=3, p=2)"]
-        DeriveVerifier --> RestoreCloud["Fetch Encrypted Metadata from Supabase"]
-        RestoreCloud --> SetLocalPass["Set Local Device Passphrase"]
-        SetLocalPass --> VaultActiveB["Vault Successfully Restored"]
-        VerifyChecksum -- Invalid --> ShowErr["Show: Recovery phrase is invalid."]
-    end
+### What Ghost-Tag cannot protect against
 
-    VaultActiveA --> UserPhrase
-    UserPhrase --> ImportAction
+Ghost-Tag cannot prevent every physical or device-level attack.
+
+- A compromised or unlocked phone can expose data displayed in the app.
+- A passive NFC tag can be physically cloned; cloning copies ciphertext, not plaintext.
+- Ghost-Tag cannot guarantee silicon-level forensic erasure.
+- A lost passphrase and lost recovery phrase mean the data is unrecoverable.
+- Replay of an older valid tag version may be possible unless monotonic hardware counters are available.
+- Supabase recovery requires the recovery verifier; it does not eliminate the need to protect recovery phrases.
+
+## Platform support
+
+| Platform | NFC read | NFC write | Status |
+|---|---|---|---|
+| Android | Implemented in source | Implemented in source | Pending physical-device validation |
+| Web companion | Web NFC where supported | Not a primary supported flow | Local staging |
+| Desktop Ghost Bridge | PC/SC APDU transport | PC/SC APDU transport | Pending physical-reader validation |
+| iOS | Proposed CoreNFC read-only integration | Not implemented | PR #25 open and unmerged |
+
+### Android
+
+Ghost-Tag uses React Native with native Android modules and a C++ cryptographic core.
+
+- Foreground NFC dispatch.
+- Native Argon2id bridge.
+- Secure screen capture prevention with `FLAG_SECURE`.
+- Encrypted local storage.
+- Android Keystore-oriented security controls.
+
+Android NFC has not yet been validated on a physical handset.
+
+### iOS
+
+iOS support is proposed through PR #25.
+
+- CoreNFC-based read-only scanning.
+- `NFCReaderUsageDescription` and NFC reader-session entitlements.
+- No iOS tag writing is implemented.
+- Requires a macOS build host, Xcode, and a physical iPhone for real validation.
+
+iOS has not been built or physically tested in the current verification environment.
+
+### Desktop Ghost Bridge
+
+Ghost Bridge is a local desktop companion for PC/SC-compatible readers such as the ACS ACR122U.
+
+- Local-only service boundary.
+- ISO/IEC 7816-4 APDU-based NFC operations.
+- Browser companion interoperability.
+- PN532 serial transport support.
+
+Physical ACR122U and PN532 hardware have not yet been validated.
+
+### Web companion
+
+The web companion is a client-side Vite application.
+
+- Web NFC reading where the browser supports it.
+- Local cryptographic operations.
+- No telemetry or third-party analytics.
+- GitHub Pages deployment workflow.
+
+Web NFC availability varies by browser and platform. It is primarily available in supported Android Chrome environments.
+
+## Supabase recovery
+
+Ghost-Tag’s Supabase integration is designed to avoid sending secrets to the cloud.
+
+```text
+Recovery phrase
+      |
+      v
+Derive account_id, recovery_auth_secret, and recovery_salt
+      |
+      v
+Argon2id recovery verifier
+      |
+      v
+Supabase stores verifier and encrypted vault metadata
 ```
 
----
+Supabase stores:
 
-## 7. Cross-Platform Compatibility Matrix
+- An account identifier.
+- A recovery salt.
+- A recovery verifier.
+- Encrypted vault metadata.
 
-| Feature / Capability | Android APK (Primary) | Web Companion (Chrome Android) | Desktop Ghost Bridge | iOS Foundation |
-| :--- | :---: | :---: | :---: | :---: |
-| **NDEF Reading** | Yes (Native)* | Yes (Web NFC)* | Yes (ACR122U / PN532)* | CoreNFC Code Only* |
-| **NDEF Writing** | Yes (Native)* | Yes (Web NFC)* | Yes (ACR122U / PN532)* | No (Strictly Read-Only) |
-| **AES-256-GCM Encryption** | Yes (256-bit) | Yes (WebCrypto) | Yes (Node.js Crypto) | Yes (CryptoKit) |
-| **BIP-39 12-Word Recovery** | Yes (Canonical) | Yes (Canonical) | Yes (Canonical) | Yes (Canonical) |
-| **Single-Tag Vault (v1)** | Yes (54B Overhead) | Yes (54B Overhead) | Yes (54B Overhead) | Model Implemented |
-| **Bulk Multi-Tag Vault (v2)**| Yes (134B Overhead) | Yes (134B Overhead) | Yes (134B Overhead) | Model Implemented |
-| **Scanned Chunk Cache** | Volatile RAM Only | Volatile RAM Only | Volatile RAM Only | N/A |
+Supabase does **not** store:
 
-> \* **Hardware & Cloud Status Disclosure**:
-> - **Release Status**: Ghost-Tag v2.1.0 is an unreleased local staging version.
-> - **iOS**: Ghost-Tag on iOS does not currently implement NFC tag writing. Its CoreNFC integration is read-only. iOS tag-writing support, if added in the future, would require separate implementation, entitlement review, compatibility testing, and physical-device validation.
-> - **Supabase Cloud**: Supabase Cloud: Undeployed. Schema and atomic migration RPC are implemented and covered by local tests, but have not been deployed to a live Supabase project or validated against a live database.
-> - **Hardware Validation**: Android NFC, iOS CoreNFC, Ghost Bridge ACR122U, and PN532 transceivers are implemented in source code and verified via unit tests; real-device physical execution remains unverified pending attached hardware.
-> - **Pull Requests**: PR #24 and PR #25 remain open and unmerged.
+- Your recovery phrase.
+- Your master passphrase.
+- Your KEK.
+- Your DEK.
+- Plaintext vault data.
+- Plaintext NFC contents.
 
-| **Stop & Pause Controls** | Yes | Yes | Yes | N/A |
-| **Opt-in Cloud Metadata** | Optional | Optional | Optional | Client Implemented |
+**Supabase is not deployed.** The schema, Edge Functions, and migration RPC are implemented and locally tested, but have not been deployed to a live Supabase project.
 
----
+## Installation
 
-## 8. Physical NFC Tag Capacity Invariants
+### Prerequisites
 
-| IC Type | Total EEPROM | Usable NDEF Space | v1 Overhead | v1 Max Payload | v2 Overhead | v2 Max Payload |
-| :--- | :--- | :--- | :---: | :---: | :---: | :---: |
-| **NTAG213** | 180 Bytes | 144 Bytes | 54 Bytes | **~90 Bytes** | 134 Bytes | **~10 Bytes** |
-| **NTAG215** | 540 Bytes | 504 Bytes | 54 Bytes | **~450 Bytes** | 134 Bytes | **~370 Bytes** |
-| **NTAG216** | 924 Bytes | 888 Bytes | 54 Bytes | **~834 Bytes** | 134 Bytes | **~754 Bytes** |
+- Node.js 20 LTS or newer
+- npm 10 or newer
+- Python 3.11 or newer for repository audit agents
+- JDK 17 and Android SDK for Android builds
 
----
-
-## 9. Verification & Quality Gates
-
-Ghost-Tag maintains a 100% test passing rate across all cryptographic and integration suites:
+### Clone and install
 
 ```bash
-# Run unit & integration tests (258 passing tests on main)
+git clone https://github.com/FROSTY-MUG/Ghost-Tag.git
+cd Ghost-Tag
+npm ci
+npm --prefix web ci
+```
+
+### Run the web companion
+
+```bash
+cd web
+npm run dev
+```
+
+### Run desktop tests
+
+```bash
+cd desktop
+npm install
 npm test
+```
 
-# Static type verification (0 errors in strict mode)
-npx tsc --noEmit
+## Testing
 
-# Run automated security invariants audit
+Run the full verification suite:
+
+```bash
+npm run verify
+```
+
+Run Jest with coverage:
+
+```bash
+npm test -- --ci --coverage --maxWorkers=2
+```
+
+Run the repository audit agents:
+
+```bash
+python scripts/quality_audit_agent.py
 python scripts/security_audit_agent.py
 ```
 
----
+### Current quality signals
 
-## 10. Repository Architecture
+- **307 automated tests pass.**
+- **TypeScript strict check passes.**
+- **ESLint passes.**
+- **Web production build passes.**
+- **Android release build passes in CI.**
+- **Zero open CodeQL, Dependabot, and secret-scanning alerts.**
 
+Measured coverage:
+
+| Metric | Coverage |
+|---|---:|
+| Statements | 52.19% |
+| Branches | 41.05% |
+| Functions | 51.28% |
+| Lines | 53.25% |
+
+A high test-pass rate does not mean 100% code coverage.
+
+## Repository architecture
+
+```text
+Ghost-Tag
+├── android/         React Native Android app and native modules
+├── desktop/         Ghost Bridge, PC/SC, and PN532 transport
+├── docs/            Cryptography, envelope, and security documentation
+├── ios/             Proposed CoreNFC integration
+├── scripts/         Build, audit, and release tooling
+├── src/             Shared React Native / TypeScript domain logic
+├── supabase/        Zero-knowledge recovery schema and Edge Functions
+└── web/             Browser companion application
 ```
-Ghost-Tag/
-├── android/               # Android APK native codebase (Gradle, NDK C++, JNI)
-├── desktop/               # Desktop Ghost Bridge daemon (PC/SC, APDU, PN532 UART/I2C)
-├── ios/                   # iOS Swift core, Clibargon2 C library, and XCTest suite
-├── web/                   # Client-side web companion deployed to GitHub Pages
-├── supabase/              # Supabase migrations and zero-knowledge edge functions
-├── test-fixtures/         # Golden reference vectors (crypto, envelopes, recovery)
-├── src/                   # React Native & TypeScript cross-platform domain core
-│   ├── contracts/         # Canonical schemas, enums, errors, and hardware limits
-│   ├── crypto/            # AES-256-GCM, Argon2id, envelope codec, Cauchy RS
-│   ├── operations/        # Orchestrators for scan, write, bulk, and reconstruction
-│   ├── security/          # In-memory zeroization, anti-leak, and device integrity
-│   └── vault/             # Local vault managers, DEK rotation, and RAM chunk cache
-├── docs/                  # Technical documentation suite
-│   ├── CANONICAL-SPECIFICATION.md # Single authoritative source of truth
-│   ├── security-audit.md  # Comprehensive security audit report
-│   ├── recovery.md        # BIP-39 12-word recovery guide
-│   └── architecture.md    # Subsystem decomposition guide
-├── CHANGELOG.md           # Keep a Changelog compliant history
-├── LICENSE                # MIT License
-├── README.md              # Project thesis and technical specifications
-└── SECURITY.md            # Vulnerability disclosure policy and boundaries
-```
 
----
+## Contributing
+
+Contributions are welcome.
+
+Before opening a pull request:
+
+1. Fork the repository.
+2. Create a topic branch.
+3. Install dependencies.
+4. Run the verification suite.
+5. Ensure TypeScript, ESLint, tests, and relevant builds pass.
+6. Open a pull request with a clear description and test evidence.
+
+Direct pushes to `main` are blocked by repository rules. All changes must go through pull requests.
+
+Do not commit:
+
+- Secrets, tokens, credentials, or private keys.
+- Recovery phrases or passphrases.
+- Generated APK, AAB, IPA, or build artifacts.
+- Synthetic NFC or hardware-test evidence.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
+## Security reporting
+
+Do **not** open a public GitHub issue for a security vulnerability.
+
+Report vulnerabilities privately through [GitHub Security Advisories](https://github.com/FROSTY-MUG/Ghost-Tag/security/advisories/new).
+
+Include:
+
+- A clear description.
+- Affected version or commit.
+- Reproduction steps.
+- Potential impact.
+- Suggested remediation, if available.
+
+See [SECURITY.md](SECURITY.md).
+
+## Roadmap
+
+- Validate the Android APK on a physical Android device.
+- Review and merge PR #24 after final evidence review.
+- Rebase and validate PR #25 on macOS and a physical iPhone.
+- Validate Ghost Bridge with a physical ACR122U reader.
+- Validate PN532 serial transport with physical hardware.
+- Deploy and validate Supabase recovery in a controlled environment.
+- Add offline web support through a service worker.
+- Prepare a future Ghost-Tag core package for reusable cryptographic and envelope utilities.
+
+## FAQ
+
+### Is Ghost-Tag anonymous?
+
+No. Ghost-Tag is a privacy-focused encrypted vault, not an anonymity tool. Network metadata, device identifiers, and Supabase account data may still be observable depending on how you use the system.
+
+### Can someone clone my NFC tag?
+
+Yes. Passive NFC tags can be physically cloned. However, a clone contains encrypted ciphertext, not plaintext. Without the correct passphrase or recovery phrase, the cloned data cannot be decrypted.
+
+### What happens if I lose a tag?
+
+If the vault uses Reed-Solomon parity, you may still recover it if enough valid chunks remain. With `k` data chunks and `m` parity chunks, up to `m` tags can be unavailable, assuming the remaining `k` chunks are valid.
+
+### Does Ghost-Tag upload my secrets?
+
+No. The intended design sends only a recovery verifier and encrypted vault metadata to Supabase. Plaintext secrets, passphrases, KEKs, DEKs, and NFC contents are not sent to the cloud.
+
+### Does iOS support writing tags?
+
+No. Ghost-Tag’s iOS integration is read-only. Tag writing is not implemented.
+
+### Is Ghost-Tag production-ready?
+
+Not yet. Ghost-Tag v2.1.0 is unreleased staging software. Physical Android, iOS, Ghost Bridge, and PN532 validation remain pending.
 
 ## License
 
-Ghost-Tag is licensed under the [MIT License](./LICENSE).
+Ghost-Tag is released under the [MIT License](LICENSE).
+
+Ghost-Tag is an independent open-source project. It is not affiliated with, endorsed by, or sponsored by NXP Semiconductors, Apple, Google, ACS, or any other hardware vendor.

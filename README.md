@@ -331,7 +331,7 @@ python scripts/security_audit_agent.py
 
 ### Current quality signals
 
-- **345 automated Jest tests pass across 26 suites** (covering cryptography, key wrap codecs, RLS & rate-limit security, Turnstile CAPTCHA, challenge-proof recovery, anti-enumeration, deletion purge worker, desktop Ghost Bridge & PN532 serial, and web build checks).
+- **346 automated Jest tests pass across 26 suites** (covering cryptography, key wrap codecs, RLS & rate-limit security, Turnstile CAPTCHA, challenge-proof recovery, anti-enumeration, deletion purge worker, desktop Ghost Bridge & PN532 serial, and web build checks).
 - **TypeScript strict check passes.**
 - **ESLint passes.**
 - **Web production build passes.**

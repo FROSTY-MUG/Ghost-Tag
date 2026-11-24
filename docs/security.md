@@ -22,8 +22,7 @@ Ghost-Tag is engineered around a zero-trust, zero-telemetry, offline-first secur
 - **Additional Authenticated Data (AAD)**: 26 bytes including envelope magic, format version, purpose byte, key identifier, and Little-Endian length field.
 
 ### 2.2 Key Derivation Function (KDF)
-- **Web Client**: PBKDF2-SHA256 with 100,000 iterations and a 32-byte CSPRNG salt.
-- **Android Client**: Argon2id (RFC 9106) with memory cost $m=64\,\text{MB}$, iteration count $t=3$, parallelism $p=4$, and 32-byte salt.
+- **Web & Mobile Canonical KDF**: Argon2id (RFC 9106, version `0x13`) with memory cost $m=32768\,\text{KiB}$ ($32\,\text{MB}$), iteration count $t=3$, parallelism $p=2$, 32-byte key output, and CSPRNG salt (`argon2.umd.min.js` on Web; native Argon2id module on Android).
 
 ---
 

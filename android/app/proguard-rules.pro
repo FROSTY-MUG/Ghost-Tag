@@ -1,20 +1,17 @@
 # ---------------------------------------------------------------------------
-# Ghost-Tag Strict ProGuard / R8 Obfuscation & Hardening Rules
+# Ghost-Tag ProGuard / R8 Hardening Rules for React Native 0.88+
 # ---------------------------------------------------------------------------
 
-# Flatten obfuscated packages to hinder reverse-engineering directory analysis
--repackageclasses 'com.ghosttag.obf'
--allowaccessmodification
-
-# Optimization passes
--optimizationpasses 5
+# Disable aggressive bytecode optimization and obfuscation to guarantee JNI & TurboModule integrity
+-dontoptimize
+-dontobfuscate
 -dontusemixedcaseclassnames
 -dontskipnonpubliclibraryclasses
 -verbose
 
 # Strip debugging attributes: line numbers, local variables, source files
 -renamesourcefileattribute ''
--keepattributes Exceptions,InnerClasses,Signature
+-keepattributes *Annotation*,Exceptions,InnerClasses,Signature,EnclosingMethod
 
 # Strip logging calls across release builds to prevent credential/hash leaks
 -assumenosideeffects class android.util.Log {
@@ -31,21 +28,64 @@
 }
 
 # Preserve native JNI methods and symbols
--keepclasseswithmembernames class * {
+-keepclassmembers,includedescriptorclasses class * {
     native <methods>;
 }
 
-# Preserve React Native entrypoints and bridge reflection
--keep class com.facebook.react.** { *; }
--keep class com.facebook.jni.** { *; }
+# Official React Native & TurboModules Keep Rules
+-keep,allowobfuscation @interface com.facebook.proguard.annotations.DoNotStrip
+-keep @com.facebook.proguard.annotations.DoNotStrip class *
+-keepclassmembers class * {
+    @com.facebook.proguard.annotations.DoNotStrip *;
+}
+-keep @com.facebook.proguard.annotations.DoNotStripAny class * { *; }
+-keep @com.facebook.jni.annotations.DoNotStrip class *
+-keepclassmembers class * {
+    @com.facebook.jni.annotations.DoNotStrip *;
+}
+-keep @com.facebook.jni.annotations.DoNotStripAny class * { *; }
+
+-keep class * implements com.facebook.react.bridge.JavaScriptModule { *; }
+-keep class * implements com.facebook.react.bridge.NativeModule { *; }
+-keep class * implements com.facebook.react.turbomodule.core.interfaces.TurboModule { *; }
+-keep class * extends com.facebook.react.bridge.BaseJavaModule { *; }
+-keep class * extends com.facebook.react.bridge.ReactContextBaseJavaModule { *; }
+-keepclassmembers class * { @com.facebook.react.uimanager.annotations.ReactProp <methods>; }
+-keepclassmembers class * { @com.facebook.react.uimanager.annotations.ReactPropGroup <methods>; }
+
+-dontwarn com.facebook.react.**
+-keep,includedescriptorclasses class com.facebook.react.** { *; }
+-keep,includedescriptorclasses class com.facebook.jni.** { *; }
+-keep,includedescriptorclasses class com.facebook.fbreact.specs.** { *; }
+-keep,includedescriptorclasses class com.facebook.react.bridge.** { *; }
+-keep,includedescriptorclasses class com.facebook.react.turbomodule.core.** { *; }
+-keep,includedescriptorclasses class com.facebook.react.internal.turbomodule.core.** { *; }
+-keep,includedescriptorclasses class com.facebook.react.defaults.** { *; }
+-keep,includedescriptorclasses class com.facebook.react.uimanager.** { *; }
+-keep,includedescriptorclasses class com.facebook.soloader.** { *; }
+-keep,includedescriptorclasses class com.facebook.hermes.** { *; }
+
+# Ghost-Tag Native & Security Components
 -keep class com.ghosttag.MainApplication { *; }
 -keep class com.ghosttag.MainActivity { *; }
--keep class com.ghosttag.security.SecurityBridgeModule { *; }
--keep class com.ghosttag.security.SecurityPackage { *; }
--keep class com.ghosttag.security.KeyStoreMasterKey { *; }
+-keep class com.ghosttag.security.** { *; }
+-keep class com.ghosttag.** { *; }
 
-# Keep React Native annotations
--keepclassmembers class * {
-    @com.facebook.react.bridge.ReactMethod *;
-    @com.facebook.react.bridge.ReactContextBaseJavaModule *;
-}
+# 3rd-Party React Native Libraries
+-keep class com.swmansion.rnscreens.** { *; }
+-keep class com.th3rdwave.safeareacontext.** { *; }
+-keep class com.quickcrypto.** { *; }
+-keep class com.tencent.mmkv.** { *; }
+-keep class com.margelo.nitro.** { *; }
+-keep class community.revteltech.nfc.** { *; }
+-keep class com.lambdapioneer.argon2kt.** { *; }
+-keep class com.oblador.keychain.** { *; }
+
+-dontwarn com.swmansion.rnscreens.**
+-dontwarn com.th3rdwave.safeareacontext.**
+-dontwarn com.quickcrypto.**
+-dontwarn com.tencent.mmkv.**
+-dontwarn com.margelo.nitro.**
+-dontwarn community.revteltech.nfc.**
+-dontwarn com.lambdapioneer.argon2kt.**
+-dontwarn com.oblador.keychain.**

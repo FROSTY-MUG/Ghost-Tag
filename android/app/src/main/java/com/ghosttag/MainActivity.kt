@@ -10,7 +10,7 @@ import com.facebook.react.defaults.DefaultReactActivityDelegate
 class MainActivity : ReactActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
-    super.onCreate(savedInstanceState)
+    super.onCreate(null)
     // Enforce FLAG_SECURE: blocks screen recording, screenshots, and task switcher thumbnail leaks
     window.setFlags(
       WindowManager.LayoutParams.FLAG_SECURE,

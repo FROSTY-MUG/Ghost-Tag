@@ -85,11 +85,6 @@ android {
         versionCode 7
         versionName "2.1.0"
 
-        externalNativeBuild {
-            cmake {
-                cppFlags "-std=c++17 -fvisibility=hidden -fvisibility-inlines-hidden -fstack-protector-strong -D_FORTIFY_SOURCE=2"
-            }
-        }
         ndk {
             abiFilters "arm64-v8a", "armeabi-v7a", "x86", "x86_64"
         }
@@ -97,10 +92,17 @@ android {
 
     externalNativeBuild {
         cmake {
-            path "src/main/cpp/CMakeLists.txt"
+            path "src/main/jni/CMakeLists.txt"
             version "3.22.1"
         }
     }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     signingConfigs {
         debug {
             if (file('debug.keystore').exists()) {

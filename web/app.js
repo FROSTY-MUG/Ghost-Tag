@@ -1009,6 +1009,31 @@
     if (target) {
       target.classList.add('active');
       window.scrollTo(0, 0);
+
+      // Smooth skeleton transition for detail/settings views
+      if (viewId === 'view-account') {
+        const skel = document.getElementById('accountSkeleton');
+        const content = document.getElementById('accountDetailsContent');
+        if (skel && content) {
+          skel.style.display = 'block';
+          content.style.opacity = '0.3';
+          setTimeout(() => {
+            skel.style.display = 'none';
+            content.style.opacity = '1';
+          }, 180);
+        }
+      } else if (viewId === 'view-settings') {
+        const skel = document.getElementById('settingsSkeleton');
+        const statusBlock = document.getElementById('cloudSyncStatusBlock');
+        if (skel && statusBlock) {
+          skel.style.display = 'block';
+          statusBlock.style.opacity = '0.3';
+          setTimeout(() => {
+            skel.style.display = 'none';
+            statusBlock.style.opacity = '1';
+          }, 180);
+        }
+      }
     }
 
     // Header visibility: visible once account exists and outside setup views

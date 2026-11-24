@@ -1,16 +1,6 @@
 cmake_minimum_required(VERSION 3.22.1)
-project("ghosttag_security" LANGUAGES CXX C)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-# Aggressive compiler hardening flags:
-# -fvisibility=hidden hides all symbols by default except JNIEXPORT
-# -fstack-protector-strong detects stack buffer overflows
-# -D_FORTIFY_SOURCE=2 provides buffer overflow checking on libc calls
-# -Wformat -Wformat-security flags format string vulnerabilities
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility=hidden -fvisibility-inlines-hidden -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wall -Wextra")
-
+# Build ghosttag_security native library (hardware-anchored security & anti-tamper checks)
 add_library(
     ghosttag_security
     SHARED
@@ -19,8 +9,11 @@ add_library(
     jni_bridge.cpp
 )
 
-find_library(log-lib log)
+target_include_directories(ghosttag_security PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_features(ghosttag_security PRIVATE cxx_std_17)
+target_compile_options(ghosttag_security PRIVATE -fvisibility=hidden -fvisibility-inlines-hidden -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wall -Wextra)
 
+find_library(log-lib log)
 target_link_libraries(
     ghosttag_security
     ${log-lib}

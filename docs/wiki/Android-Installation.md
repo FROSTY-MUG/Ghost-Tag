@@ -1,51 +1,33 @@
-# Android Installation
+# Android Installation (`v2.0.6` Release / `v2.1.0` Staging)
 
-The Ghost-Tag Android APK is the primary full-featured client. It provides direct hardware-level NFC access, background tag intent interception, physical sector verification, and safe entry deletion.
-
----
-
-## 1. Downloading the APK
-
-Always download official Ghost-Tag APK releases directly from the GitHub repository:
-- **Releases Page**: [https://github.com/FROSTY-MUG/Ghost-Tag/releases](https://github.com/FROSTY-MUG/Ghost-Tag/releases)
-- **Direct Asset**: `Ghost-Tag-v2.1.0.apk`
+> **Release Honesty Note**: The latest published GitHub Release is **`v2.0.6`** ([v2.0.6 Release](https://github.com/FROSTY-MUG/Ghost-Tag/releases/tag/v2.0.6)). **`v2.1.0`** (`Ghost-Tag-v2.1.0.apk`, `versionCode 7`) is an unreleased local staging APK pending real physical NFC handset validation and live Supabase deployment (`../../PROJECT-STATUS.md`).
 
 ---
 
-## 2. Integrity Verification
+## 1. Requirements
+- Android `8.0+` (`minSdk 26`, `targetSdk 36`).
+- Hardware NFC transceiver enabled in Android System Settings for physical tag operations.
 
-Before installing, verify the SHA-256 checksum of the downloaded file:
+## 2. Local Staging Checksum Verification (`v2.1.0`)
+If verifying the local staging build [`web/assets/Ghost-Tag-v2.1.0.apk`](../../web/assets/Ghost-Tag-v2.1.0.apk) (`41,367,086` bytes / `39.45 MB`):
 
-### Windows (PowerShell)
-```powershell
-Get-FileHash -Algorithm SHA256 .\Ghost-Tag-v2.1.0.apk
-```
-
-### Linux / macOS
 ```bash
-sha256sum Ghost-Tag-v2.1.0.apk
+sha256sum web/assets/Ghost-Tag-v2.1.0.apk
 ```
 
-### Expected Checksum for v2.1.0:
+Expected SHA-256 (`web/assets/Ghost-Tag-v2.1.0.apk.sha256`):
+
 ```text
-27bb49ae1bba7a110022e3f0df8f220f8a58bbe878f658c511cc0508730e8a31
+077ecdb3ec3c052b5c30ec52d884e56461209cf92eb0cc1fe93ddd8214723952  Ghost-Tag-v2.1.0.apk
 ```
 
----
+## 3. Building & Packaging Locally (JDK 17+ Required)
 
-## 3. Installation Steps
+```powershell
+$env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
+$env:ANDROID_KEY_ALIAS = "<your-alias>"
+$env:ANDROID_KEYSTORE_PASSWORD = "<your-password>"
+python scripts/package_release_apk.py
+```
 
-1. Transfer the `.apk` file to your Android device (or download directly in your mobile browser).
-2. Tap the downloaded APK in your device's file manager or notification drawer.
-3. If prompted with *"Install unknown apps"*, enable permission for your browser or file manager.
-4. Tap **Install**.
-5. Ensure NFC is enabled in Android Settings:
-   - Go to **Settings** → **Connected devices** → **Connection preferences** → **NFC** → **On**.
-
----
-
-## 4. Permissions
-Ghost-Tag requests only the minimum hardware permissions required for its function:
-- `android.permission.NFC`: To communicate with NFC tags.
-- `android.permission.VIBRATE`: To provide tactile feedback when a tag is detected or written.
-- Ghost-Tag does **NOT** request location, contacts, camera, microphone, or telephony permissions.
+See [`../../android/README.md`](../../android/README.md) and [`../../FAQ.md`](../../FAQ.md).

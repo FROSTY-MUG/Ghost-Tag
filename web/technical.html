@@ -153,7 +153,7 @@ AES_GCM_AUTH_TAG (16B Authentication Tag)
       </p>
       <ul>
         <li><strong>Authenticated Symmetric Encryption</strong>: AES-256-GCM with unique 96-bit CSPRNG nonces per chunk.</li>
-        <li><strong>Key Derivation Function</strong>: PBKDF2-SHA256 (100,000 iterations) on Web, Argon2id ($m=64\,\text{MB}, t=3, p=4$) on Android.</li>
+        <li><strong>Key Derivation Function</strong>: RFC 9106 Argon2id (<code>16 / 32 / 64 MiB</code> primary tiers on native; vendored offline <code>hash-wasm</code> Argon2id WASM <code>m=32768, t=3, p=2</code> for cross-platform recovery auth/verifier, with WebCrypto PBKDF2 local KEK compatibility where applicable).</li>
         <li><strong>Two-Tier Hierarchy</strong>: Key Encryption Key (KEK) unwraps ephemeral Data Encryption Keys (DEKs) in volatile memory only.</li>
         <li><strong>Zero Secrets Policy</strong>: Master passphrases, raw KEKs, and decrypted plaintext are never persisted to disk or cloud storage.</li>
         <li><strong>Supabase Cloud Role</strong>: Supabase stores exclusively an encrypted vault metadata blob for cross-device account restoration; it never receives keys, plaintexts, or NFC data.</li>

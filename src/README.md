@@ -1,82 +1,40 @@
-# Ghost-Tag Shared TypeScript Core Subsystem
+# Ghost-Tag Shared TypeScript Core (`src/`)
 
-## Overview
-The `src/` directory contains the core application architecture, business logic, cryptographic engines, NFC transceivers, and UI screens for Ghost-Tag.
+## 1. Overview
+`src/` contains the canonical TypeScript contracts, cryptographic engines, security memory defenses, vault orchestration, NFC hardware abstraction, optional Supabase client helpers, React Native UI screens, and 24 core automated Jest suites.
 
----
+## 2. Directory Structure
 
-## Directory Decomposition
-
-```
+```text
 src/
-├── contracts/      # Wire protocols, envelope layouts, error taxonomies, and interface types
-├── crypto/         # AES-256-GCM, Argon2id, Cauchy-Reed-Solomon, KEK/DEK, and secure memory
-├── nfc/            # Hardware abstraction layer, NDEF builder/parser, and chip capability limits
-├── operations/     # High-level state machines: Scan, Write, Wipe, Verify, Reconstruct
-├── vault/          # Session management, chunk cache, journal manager, database, and wordlist
-├── ui/             # React Native screens, theme definitions, and navigation graph
-├── utils/          # Cross-environment polyfills and runtime helpers
-└── __tests__/      # Automated Jest unit and integration test suites
+├── cloud/          # Opt-in Supabase recovery & metadata client + URL sanitizer
+├── contracts/      # Shared wire protocols, error taxonomy (38 codes), KDF/recovery/tag types
+├── crypto/         # AES-256-GCM, Argon2id RFC 9106, Cauchy RS GF(2^8), 54B/134B codecs, keyWrap
+├── nfc/            # Hardware manager, NTAG21x capacity calculations, NDEF framing, wipe/verify
+├── operations/     # Finite state machines: scan, write, bulkWrite, bulkScan, reconstruct, wipe
+├── security/       # Device integrity checks, 4-pass secureWipe, constant-time compare, redaction
+├── ui/             # React Navigation stack, monochrome terminal theme, 9 screens + DeleteEntryModal
+├── utils/          # Buffer polyfills and shared runtime utilities
+├── vault/          # Session auto-lock, DEK manager, 72h RAM ChunkCache, journal, BIP-39 wordlist
+└── __tests__/      # 24 automated Jest test suites (plus 1 desktop & 1 cors/integration suite)
 ```
 
----
+## 3. Canonical Constants in `src/contracts/`
+- **v1 Single-Tag Envelope (`contracts/envelope.ts`)**: `GTAG` magic, version `0x01`, `54B` overhead (`26B` AAD), MIME `application/vnd.ghost.secure`.
+- **v2 Bulk Distributed Envelope (`contracts/bulkEnvelope.ts`)**: `GTAG` magic, version `0x02`, `RECORD_TYPE = 0x10`, `134B` overhead (`74B` AAD, bytes `0..73`), full `32B` SHA-256 `CHUNK_HASH` at `74..105`, MIME `application/vnd.ghost.bulk`.
+- **Argon2id Tiers (`contracts/keyHierarchy.ts`)**: `LOW_END` (`16 MiB`, `t=2`, `p=1`), `STANDARD` (`32 MiB`, `t=3`, `p=2`), `HIGH_END` (`64 MiB`, `t=4`, `p=4`), `DEFAULT_RECOVERY_KDF_CONFIG` (`64 MiB`, `t=5`, `p=4`, `32B` salt).
+- **NTAG21x Capacities (`nfc/tagInfo.ts`)**:
+  - `NTAG213` (`144B`): v1 `52B`; v2 bulk **`0B` (does not fit)**.
+  - `NTAG215` (`504B`): v1 `404B`; v2 bulk `326B`.
+  - `NTAG216` (`888B`): v1 `784B`; v2 bulk `706B`.
 
-## Important Subsystems
-
-| Module | Purpose | Key Files |
-| :--- | :--- | :--- |
-| **Contracts** | Wire formats and binary specifications | `contracts/envelope.ts` (v1 54B), `contracts/bulkEnvelope.ts` (v2 134B), `contracts/recovery.ts` |
-| **Crypto** | Authenticated encryption and erasure coding | `crypto/aesGcm.ts`, `crypto/argon2.ts`, `crypto/erasureCoding.ts`, `crypto/keyWrap.ts` |
-| **NFC** | Transceiver layer and tag handling | `nfc/nfcManager.ts`, `nfc/ndefBuilder.ts`, `nfc/bulkNdefBuilder.ts`, `nfc/tagInfo.ts` |
-| **Operations** | User workflows and orchestrators | `operations/writeOperation.ts`, `operations/scanOperation.ts`, `operations/reconstructionEngine.ts` |
-| **Vault** | Local state and storage | `vault/vaultManager.ts`, `vault/bulkVaultManager.ts`, `vault/chunkCache.ts`, `vault/dekManager.ts` |
-| **UI** | Mobile user interface | `ui/screens/HomeScreen.tsx`, `ui/screens/ReadTagScreen.tsx`, `ui/screens/BulkVaultCreationScreen.tsx` |
-
----
-
-## How to Build & Typecheck
+## 4. Build, Lint & Test
 
 ```bash
-# Compile TypeScript declarations
-npm run build
-
-# Strict TypeCheck without emitting
 npm run typecheck
+npx tsc -p tsconfig.build.json --noEmit
+npm run lint
+npm test -- --ci --maxWorkers=2
 ```
 
----
-
-## How to Test
-
-```bash
-# Run all unit and integration test suites
-npm test
-
-# Run tests with coverage reporting
-npm test -- --coverage
-```
-
----
-
-## Security & Hardware Constraints
-
-1. **Zero Secret Persistence**: Never log or store passphrases, KEKs, DEKs, or plaintext files in unencrypted storage.
-2. **Volatile Memory Sanitization**: Sensitive buffers must be explicitly overwritten using `crypto/secureMemory.ts` wipe routines.
-3. **NFC Capacity Invariant**: Payloads must strictly obey chip page boundaries:
-   - NTAG213: 144 writable bytes
-   - NTAG215: 504 writable bytes
-   - NTAG216: 888 writable bytes
-4. **Hardware Reality**: In automated test environments without attached physical NFC devices, tests utilize simulated adapters (`__mocks__/react-native-nfc-manager.ts`). All physical hardware claims remain pending real-device validation.
-
----
-
-## Contributor Guidelines
-
-1. **Adding a Feature**:
-   - Define interfaces in `src/contracts/` before implementing logic.
-   - Maintain strict separation of concerns: UI screens must not invoke raw crypto directly; use `src/operations/`.
-2. **Adding a Test**:
-   - Create tests in `src/__tests__/` with descriptive naming (`*.test.ts` or `*.test.tsx`).
-   - All tests must pass in CI without network access.
-3. **Adding a Cryptographic Vector**:
-   - Update `test-fixtures/` and add corresponding test assertions in `src/__tests__/crossPlatformCryptoCompatibility.test.ts`.
+All UI screens under `src/ui/screens/` avoid simulated tag events or hardcoded sample files and check real hardware availability via `ghostNfcManager` and `checkDeviceIntegrity`. Physical NFC testing on real handset hardware remains pending (`../PROJECT-STATUS.md`, [`../FAQ.md`](../FAQ.md)).

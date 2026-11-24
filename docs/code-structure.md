@@ -85,7 +85,7 @@ Ghost-Tag/
 │   │   ├── journalManager.ts            # Write and scan crash-resilient transaction journals
 │   │   ├── session.ts                   # Ephemeral KEK lifecycle with 5-minute auto-lock
 │   │   ├── dekManager.ts                # Wrapped 256-bit DEK generation, storage, and rotation
-│   │   ├── recoveryManager.ts           # 24-word BIP39 mnemonic derivation & disaster recovery
+│   │   ├── recoveryManager.ts           # 12-word primary (24-word local compat) BIP39 recovery
 │   │   ├── manifest.ts                  # HMAC-SHA-256 tamper-evident metadata authentication
 │   │   ├── auditLog.ts                  # Append-only hash-chained operational audit log
 │   │   ├── wordlist.ts                  # Canonical 2048-word BIP39 English dictionary
@@ -122,7 +122,7 @@ Ghost-Tag/
 │   │   │   ├── BulkWriteScreen.tsx      # Sequential tag write orchestrator with extra-tag exclusion
 │   │   │   ├── BulkScanScreen.tsx       # Random-order tag scanner with cache TTL countdown
 │   │   │   ├── ReconstructionScreen.tsx # File assembly visualizer, integrity check, SAF export
-│   │   │   ├── PassphraseScreen.tsx     # Master passphrase update & 24-word BIP39 recovery
+│   │   │   ├── PassphraseScreen.tsx     # Master passphrase validation & 12-word BIP39 generator
 │   │   │   ├── SettingsScreen.tsx       # Platform defense matrix, Argon2id tuning & panic wipe
 │   │   │   └── index.ts                 # Barrel export for screens
 │   │   ├── navigation/
@@ -191,11 +191,11 @@ Ghost-Tag/
 - **Purpose**: Centralized source of truth for interfaces, constants, and layouts. Has **zero internal or external dependencies**.
 - **Key Files**:
   - `envelope.ts`: Fixed 54-byte v1 envelope layout (`GTAG`), categorical purposes, and AAD calculations.
-  - `bulkEnvelope.ts`: Fixed 134-byte v2 bulk envelope layout (`GTBK`), 74-byte AAD specification, and chunk flags.
+  - `bulkEnvelope.ts`: Fixed 134-byte v2 bulk envelope layout (`GTAG`, `0x02`, `0x10`), 74-byte AAD specification, and chunk flags.
   - `bulkVault.ts`: Multi-file manifest records, private physical tag mappings, chunk cache schemas, and transaction journals.
   - `errors.ts`: Canonical registry of 38 error codes, severity levels, and the primary `GhostTagError` class.
   - `keyHierarchy.ts`: KEK, DEK, WrappedDEK, and device-tier calibrated Argon2id parameter profiles.
-  - `recovery.ts`: 24-word BIP39 mnemonic configurations and recovery envelope schemas.
+  - `recovery.ts`: Primary 12-word BIP-39 configurations (plus 24-word local unwrapping compat) and recovery envelope schemas.
   - `tags.ts`: Supported Type 2 Tag hardware matrix, page capacities, dynamic lock bytes, and exclusions.
   - `states.ts`: Deterministic finite state machine definitions for Scan, Write, Bulk, and Wipe operations.
   - `vault.ts`: Vault database schemas, HMAC manifest structures, and forbidden field lists.
@@ -233,7 +233,7 @@ Ghost-Tag/
   - `journalManager.ts`: Crash-resilient write and scan transaction journals.
   - `session.ts`: In-memory ephemeral KEK lifecycle with 5-minute auto-lock and background task wiping.
   - `dekManager.ts`: Generates, stores, and rotates wrapped 256-bit Data Encryption Keys.
-  - `recoveryManager.ts`: 24-word BIP39 mnemonic generation, derivation, and disaster recovery.
+  - `recoveryManager.ts`: 12-word BIP-39 mnemonic derivation/verification (plus legacy 24-word local compat) and disaster recovery.
   - `manifest.ts`: HMAC-SHA-256 tamper-evident integrity protection for vault metadata.
   - `auditLog.ts`: Append-only audit logger with rolling SHA-256 hash chaining.
   - `wordlist.ts`: Canonical 2048-word BIP39 English dictionary.
@@ -293,20 +293,7 @@ Ghost-Tag/
 
 ## 3. Automated Test Suite Inventory
 
-Ghost-Tag maintains **178 automated tests across 10 test suites with 100% pass rate**:
-
-| Test Suite File | Test Count | Target Subsystems & Features Tested |
-| :--- | :--- | :--- |
-| `src/__tests__/security.test.ts` | 13 | 4-pass memory wiping, object scrub, `timingSafeEqual`, anti-leak redaction, debugger/hooking/root fail-closed assertions, vault auto-lock abort. |
-| `src/__tests__/bulkEnvelope.test.ts` | 18 | v2 134-byte binary chunk envelope layout, 74-byte AAD binding, corrupt chunk rejection, SHA-256 chunk integrity verification. |
-| `src/__tests__/fileEncryptionAndErasure.test.ts` | 19 | Multi-type file encryption (PDF, MP4, TXT, ZIP), chunk splitting, Cauchy RS erasure encoding & decoding over $\text{GF}(2^8)$, damaged tag recovery. |
-| `src/__tests__/bulkOperations.test.ts` | 18 | End-to-end bulk vault creation, sequential write with extra-tag exclusion, random-order scanning, 72h chunk cache TTL, full-file reassembly. |
-| `src/__tests__/nfc.test.ts` | 37 | NFC adapter lifecycle, tag discovery, tag capacity formulas, NDEF framing, atomic read-back verification, multi-pass wipe. |
-| `src/__tests__/vault.test.ts` | 12 | Vault initialization, Argon2id benchmark, DEK generation, KEK wrap/unwrap, 5-minute auto-lock, BIP39 24-word recovery. |
-| `src/__tests__/operations.test.ts` | 11 | FSM workflows: ScanOperation, WriteOperation, WipeOperation, VerifyOperation, DiagnosticsExporter. |
-| `src/crypto/__tests__/crypto.test.ts` | 39 | AES-256-GCM encryption/decryption, Argon2id KDF derivation, downgrade rejection, key wrap AAD binding, CSPRNG nonces. |
-| `__tests__/crypto.test.ts` | 9 | Root crypto regression tests. |
-| `__tests__/App.test.tsx` | 2 | Root application container mounting and navigation smoke tests. |
+Ghost-Tag currently runs **347 automated tests across 26 Jest suites** via `npm test -- --ci --maxWorkers=2`, plus **22 protocol tests in 1 suite** via `npx jest desktop/test/pn532_serial.test.js` (**369 tests across 27 suites** total; coverage `56.06% Stmts | 46.44% Branch | 54.67% Funcs | 57.16% Lines`). For the current per-suite inventory and repository map (`desktop/`, `supabase/`, `scripts/`, `tests/`, `test-fixtures/`, and root [`FAQ.md`](../FAQ.md)), see [`../tests/README.md`](../tests/README.md) and [`../README.md`](../README.md).
 
 ---
 

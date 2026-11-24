@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-Ghost-Tag v2.0.6 has undergone end-to-end security hardening, static analysis remediation, dependency vulnerability auditing, and pipeline defense enforcement across all project layers. All identified CodeQL alerts (high-severity, warnings, and informational note alerts), Dependabot security alerts, and architectural security invariants have been systematically remediated and verified.
+Ghost-Tag (`v2.1.0` staging; latest published GitHub Release `v2.0.6`) has undergone end-to-end security hardening, static analysis remediation, dependency vulnerability auditing, and pipeline defense enforcement across all project layers. CodeQL alerts (`#75`, `#76` `js/user-controlled-bypass` and follow-up `#78` `js/unvalidated-dynamic-method-call` on `desktop/src/server.js`) were resolved cleanly in PR `#34` using per-connection CSPRNG `sessionToken` (`timingSafeEqual`) and allowlisted `actionHandlers` `Map` guards with zero suppressions or alert dismissals.
 
 ---
 

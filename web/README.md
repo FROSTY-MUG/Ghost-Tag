@@ -1,44 +1,28 @@
-# Ghost-Tag Web Client (v2.1.0)
+# Ghost-Tag Web Companion (`web/`, v2.1.0 Staging)
 
-Ghost-Tag Web is a minimal, dark, client-side encrypted NFC storage application deployed to GitHub Pages. It enables writing, scanning, and decrypting Ghost-Tag data directly within modern web browsers.
+## 1. Purpose
+Client-side encrypted NFC web companion built with Vite (`vite@6.4.6`), WebCrypto AES-256-GCM, vendored offline `hash-wasm` Argon2id WebAssembly (`vendor/argon2.umd.min.js`), Cloudflare Turnstile integration, Android Chrome Web NFC (`NDEFReader`), and local WebSocket RPC to Desktop **Ghost Bridge** (`127.0.0.1:41789`).
 
-**Live Deployment**: [https://frosty-mug.github.io/Ghost-Tag/](https://frosty-mug.github.io/Ghost-Tag/)
+**Live Pages Deployment**: [https://frosty-mug.github.io/Ghost-Tag/](https://frosty-mug.github.io/Ghost-Tag/)
 
----
+## 2. Browser & Hardware Support
 
-## 1. Features
-
-- **Encrypted NFC Storage**: Single-tag and bulk multi-tag vault writing with AES-256-GCM.
-- **Stop and Pause Scanning/Writing**: Explicit control over hardware scan loops with state preservation.
-- **BIP-39 12-Word Recovery**: Cross-platform interoperability with Ghost-Tag Android.
-- **72-Hour Ephemeral Cache**: IndexedDB cache for paused sessions and fast resumption.
-- **Automatic Chip Detection**: Transparent handling of NTAG213, NTAG215, and NTAG216 tags.
-- **Zero-Secrets Policy**: Completely client-side execution; no plaintext or keys ever touch a server.
-
----
-
-## 2. Browser Compatibility & Web NFC
-
-| Platform | Browser | Web NFC Support | Notes |
+| Platform | Browser | NFC Hardware Path | Status |
 | :--- | :--- | :--- | :--- |
-| **Android** | Google Chrome (89+) | **Full Support** | Requires HTTPS context. Supports NDEF reading and writing. |
-| **Android** | Other Chromium Browsers | Varies | Edge/Opera for Android support Web NFC when enabled. |
-| **iOS** | Safari / Chrome | **No Web NFC** | iOS does not expose Web NFC API to browsers; use Android APK. |
-| **Desktop** | Chrome / Firefox / Safari | **Simulation Mode** | Automatic simulated transceiver for testing and vault management. |
+| **Android** | Google Chrome (89+) | Web NFC API (`NDEFReader`) | Requires HTTPS context (`https://frosty-mug.github.io/Ghost-Tag/` or port-forwarded localhost); pending physical handset tag pass. |
+| **Desktop** | Chrome / Edge / Chromium | **Ghost Bridge** (`ws://127.0.0.1:41789` + USB reader) | Hardware-only bridge using per-connection `sessionToken`. **Zero synthetic or simulation mode.** |
+| **iOS** | Safari / Chrome iOS | Unsupported by browser APIs | Apple iOS exposes no Web NFC API to browsers; native iOS target (`#25`) is deferred to `iOS Beta`. |
 
----
-
-## 3. Development & Local Testing
+## 3. Build, Audit & Architecture
+- **Multi-View Showcase & App**: [`index.html`](index.html), [`app/`](app/index.html), [`technical.html`](technical.html), [`docs/technical.md`](docs/technical.md), [`styles.css`](styles.css).
+- **Cryptography & Cloud Recovery**: [`app.js`](app.js), [`crypto-simulator.js`](crypto-simulator.js), [`supabase.js`](supabase.js), [`src/supabaseClient.ts`](src/supabaseClient.ts), [`wordlist.js`](wordlist.js), [`vendor/argon2.umd.min.js`](vendor/argon2.umd.min.js).
+- **Release Metadata Note**: [`index.html`](index.html) links the latest published GitHub Release (`v2.0.6`), while [`assets/release-meta.json`](assets/release-meta.json) and [`assets/Ghost-Tag-v2.1.0.apk.sha256`](assets/Ghost-Tag-v2.1.0.apk.sha256) track the local staging APK (`077ecdb3ec3c052b5c30ec52d884e56461209cf92eb0cc1fe93ddd8214723952`, `39.45 MB`). `v2.1.0` has not yet been tagged or published on GitHub Releases.
 
 ```bash
-cd web
-
-# Run locally using any static file server
-python -m http.server 8080
-
-# Or with Vite
-npm install
-npm run dev
+# Install and build production bundle into web/dist/
+npm --prefix web ci
+npm --prefix web run build
+npm --prefix web audit --audit-level=moderate
 ```
 
-Visit `http://localhost:8080` in your browser. On Android devices with USB debugging, use Chrome DevTools port forwarding to access `http://localhost:8080` with Web NFC enabled.
+See [`../FAQ.md`](../FAQ.md) and [`releases/README.md`](releases/README.md) for verification details.

@@ -1,36 +1,26 @@
-# Ghost-Tag Supabase Cloud Relay
+# Ghost-Tag Cloud Recovery & Metadata Backend (`supabase/`, v2.1.0 Schema)
 
-## Overview
-Ghost-Tag provides an optional, zero-knowledge cloud synchronization and recovery relay using Supabase. It stores strictly encrypted vault metadata and enforces zero-knowledge ownership proofs for cross-device recovery.
+## 1. Purpose
+Opt-in, zero-knowledge Supabase PostgreSQL schema, hardened Row-Level Security (RLS) policies, and Deno Edge Functions powering cross-device recovery and encrypted vault metadata backup. **Ghost-Tag works 100% offline without Supabase.**
 
----
+## 2. Database Migrations (`supabase/migrations/`)
 
-## 1. Deployment Status
+| Migration File | Purpose |
+| :--- | :--- |
+| [`20261115_ghost_vaults.sql`](migrations/20261115_ghost_vaults.sql) | Initial `ghost_vaults` metadata & rate-limit schema |
+| [`20261122_cross_platform_recovery.sql`](migrations/20261122_cross_platform_recovery.sql) | Cross-platform Argon2id (`recovery_kdf_version = 2`) recovery extensions |
+| [`20261125_lockdown_ghost_vaults.sql`](migrations/20261125_lockdown_ghost_vaults.sql) | Revokes direct client access to `ghost_vaults` sensitive columns and introduces restricted `ghost_vault_status` view |
+| [`20261126_v210_account_security_schema.sql`](migrations/20261126_v210_account_security_schema.sql) | v2.1.0 hardened tables (`user_accounts`, `vault_metadata`, `recovery_challenges`), server-generated 32B CSPRNG `recovery_salt`, column/RLS lockdown, and atomic rate limits |
 
-> [!CAUTION]
-> **NOT DEPLOYED TO PRODUCTION**:
-> - **Release Status**: Ghost-Tag v2.1.0 is an unreleased local staging version.
-> - **Deployment State**: Supabase Cloud: Undeployed. Schema and atomic migration RPC are implemented and covered by local tests, but have not been deployed to a live Supabase project or validated against a live database.
+## 3. Edge Functions (`supabase/functions/`)
+- [`verify-captcha`](functions/verify-captcha/index.ts): Verifies Cloudflare Turnstile widgets (`_shared/turnstile.ts`) and issues short-lived HMAC-signed verification tokens.
+- [`account-auth`](functions/account-auth/index.ts): Provisions server-generated 32-byte CSPRNG `recovery_salt` and stores two-stage Argon2id (`m=32768, t=3, p=2, v=0x13`) recovery verifiers & `encrypted_recovery_envelope` via service-role only.
+- [`recover-vault`](functions/recover-vault/index.ts): Issues single-use recovery challenges and verifies `76B` HMAC challenge proofs with Turnstile gating, constant-time checks, anti-enumeration uniform errors, and atomic 15-minute sliding-window rate limits.
+- [`sync-vault-metadata`](functions/sync-vault-metadata/index.ts): Syncs client-side AEAD `encrypted_metadata` (`_shared/syncMetadataHandler.ts`).
+- [`schedule-account-deletion`](functions/schedule-account-deletion/index.ts), [`cancel-account-deletion`](functions/cancel-account-deletion/index.ts), [`process-account-deletions`](functions/process-account-deletions/index.ts): Service-role controlled deletion lifecycle (`_shared/deletionHandlers.ts`).
+- [`migrate-recovery-verifier`](functions/migrate-recovery-verifier/index.ts): Legacy `v1` verifier migration handler retained for backward schema transition.
 
----
-
-## 2. Security Invariants & Zero-Knowledge Architecture
-
-1. **Zero Secret Persistence**:
-   The cloud database never receives, processes, or stores master passphrases, 12-word recovery phrases, Key Encryption Keys (KEKs), Data Encryption Keys (DEKs), plaintext file contents, or NFC tag payloads.
-2. **Zero-Session Recovery**:
-   A brand-new device with zero prior authentication sessions can initiate recovery using solely the public anon key and the 12-word recovery phrase.
-3. **Owner Reassignment Policy**:
-   - Requests authenticated with an anon key verify the Argon2id verifier and return the encrypted blob **without modifying `owner_user_id`**.
-   - Requests authenticated with a valid user JWT reassign `owner_user_id = user.id` **only if** the caller proves ownership by supplying the matching 256-bit `recovery_verifier`.
-4. **Atomic Legacy Migration**:
-   Legacy web records (`recovery_kdf_version = 1`) are upgraded to canonical Argon2id (`recovery_kdf_version = 2`) atomically via the `migrate_recovery_verifier_atomic` PostgreSQL RPC. Row-level exclusive locking (`FOR UPDATE`) prevents concurrent migration races, enforces one-way version upgrade, and eliminates partial update risks.
-
----
-
-## 3. Edge Functions
-
-| Endpoint | Method | Purpose | Authentication |
-|---|---|---|---|
-| `/functions/v1/recover-vault` | `POST` | Fetches encrypted vault blob | Bearer Anon Key or User JWT + 256-bit `recovery_verifier` |
-| `/functions/v1/migrate-recovery-verifier` | `POST` | Upgrades legacy PBKDF2 verifier to Argon2id | Bearer Anon Key or User JWT + legacy verifier proof |
+## 4. Security Verification & Deployment Status
+- **Automated Policy Tests**: Verified locally via Jest (`rlsUserAccounts`, `rlsGhostVaults`, `rateLimitAndSchema`, `antiEnumeration`, `recoveryChallengeProof`, `captchaAndAuthResponsibility`, `corsValidation`, `auditSanitizer`, `deletionPurgeWorker`, `supabaseSecurity`, `supabaseSync`).
+- **Live Cloud Deployment Status**: Migrations and Edge Functions are staged in Git; **live deployment to hosted Supabase (`supabase db push` / `supabase functions deploy`) remains pending** operator secrets (`IP_HASH_SALT`, `TURNSTILE_SECRET_KEY`, `CAPTCHA_TOKEN_HMAC_KEY`, `SUPABASE_SERVICE_ROLE_KEY`).
+- Never commit `.env` files, service-role keys, or secrets ([`../SECURITY.md`](../SECURITY.md), [`../FAQ.md`](../FAQ.md)).

@@ -39,5 +39,5 @@ Link related issues: `Fixes #` or `Relates to #`.
 ## Code Review & Verification
 - [ ] All unit and integration tests pass cleanly (`npm test`).
 - [ ] TypeScript compilation passes with 0 errors (`npx tsc --noEmit`).
-- [ ] Self-audit completed against [SECURITY.md](file:///c:/Users/Aryan/Desktop/Projects/Ghost-Tag/SECURITY.md) and [CODE_OF_CONDUCT.md](file:///c:/Users/Aryan/Desktop/Projects/Ghost-Tag/CODE_OF_CONDUCT.md).
+- [ ] Self-audit completed against [SECURITY.md](SECURITY.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 - [ ] Backward compatibility with existing NDEF envelope schemas verified.

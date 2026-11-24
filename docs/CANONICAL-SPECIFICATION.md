@@ -50,7 +50,9 @@ The canonical recovery credential for Ghost-Tag accounts is a **12-word BIP-39 m
 
 ### 2.1 Account Identity (`account_id`)
 - **Formula**:
-  $$\text{account\_id} = \text{UUIDv4}\left(\text{SHA-256}\left(\text{"ghost-account-id-v2.0.5:"} \mathbin{\Vert} \text{cleanPhrase}\right)[0 \dots 15]\right)$$
+### Historical Option A Reference Vectors vs Production v2.1.0 Salt Architecture
+- **Deterministic Test Fixtures (`test-fixtures/recovery/recoveryVectors.json`, Option A)**: Retained in source tests (`crossPlatformCryptoCompatibility.test.ts`) to validate deterministic vector generation (`SHA-256("ghost-account-id-v2.0.5:" || cleanPhrase)`, `SHA-256("ghost-recovery-auth-v2.0.5:" || cleanPhrase)`, `SHA-256("ghost-recovery-salt-v2.0.5:" || cleanPhrase)` + Argon2id).
+- **Production v2.1.0 Supabase Protocol (`supabase/functions/account-auth/`, `recover-vault/`)**: Generates a **server-random 32-byte CSPRNG `recovery_salt`** during account setup, derives `recovery_auth_secret` and `recovery_verifier` via two-stage Argon2id (`m = 32768 KiB, t = 3, p = 2, h = 32B, v = 0x13`), and authenticates recovery via Turnstile-gated `76B` HMAC challenge-proof verification (`src/__tests__/recoveryChallengeProof.test.ts`).
 - **Normalization**: `cleanPhrase` trims leading/trailing whitespace, converts all words to lowercase, and joins words with single ASCII spaces (`0x20`).
 - **Formatting**: RFC 4122 version 4 UUID with bit adjustments:
   - Byte 6: `(byte[6] & 0x0f) | 0x40` (Version 4)
@@ -193,9 +195,9 @@ Encapsulated inside an NFC Forum Type 2 NDEF Message TLV (`0x03` [len] [payload]
 
 | Tag Model | IC Type | Total EEPROM | Usable NDEF Capacity | Single-Tag Usable Payload ($N$) | Bulk-Tag Usable Payload ($N$) |
 | :--- | :--- | :---: | :---: | :---: | :---: |
-| **NTAG213** | NXP NTAG213 | 180 Bytes | 144 Bytes | $\sim 58\text{ Bytes}$ | $\sim 10\text{ Bytes}$ |
-| **NTAG215** | NXP NTAG215 | 540 Bytes | 504 Bytes | $\sim 418\text{ Bytes}$ | $\sim 370\text{ Bytes}$ |
-| **NTAG216** | NXP NTAG216 | 924 Bytes | 888 Bytes | $\sim 802\text{ Bytes}$ | $\sim 754\text{ Bytes}$ |
+| **NTAG213** | NXP NTAG213 | 180 Bytes | 144 Bytes | `52B` (`TagInfo.ts`) / `56B` (`apdu.js`) | **Incompatible (`0B`, `fits: false`)** |
+| **NTAG215** | NXP NTAG215 | 540 Bytes | 504 Bytes | `404B` (`TagInfo.ts`) / `411B` (`apdu.js`) | `326B` (`TagInfo.ts`) / `333B` (`apdu.js`) |
+| **NTAG216** | NXP NTAG216 | 924 Bytes | 888 Bytes | `784B` (`TagInfo.ts`) / `795B` (`apdu.js`) | `706B` (`TagInfo.ts`) / `717B` (`apdu.js`) |
 
 ---
 
@@ -227,34 +229,12 @@ Encapsulated inside an NFC Forum Type 2 NDEF Message TLV (`0x03` [len] [payload]
 - When enabled, Supabase stores **strictly encrypted vault metadata** (`encrypted_metadata`).
 - Plaintext files, passphrases, recovery phrases, and Data Encryption Keys are **NEVER** sent to Supabase.
 
-### 7.2 Recovery Request Protocol (`POST /functions/v1/recover-vault`)
-- **Headers**: `apikey: <public_key>`, `Content-Type: application/json` (no owner JWT required).
-- **Request Body**:
-  ```json
-  {
-    "account_id": "668aca74-6dd2-4e35-a38b-9c9123997810",
-    "recovery_verifier": "5e75bac7805c6a6ebe4df15130f3ddc7f66a6f3530e5198bc8d6852b25859b5f"
-  }
-  ```
-- **Verification**: Edge function verifies `recovery_verifier` against the database in constant time (`crypto.subtle.timingSafeEqual`).
-- **Layered Rate Limiting (15-Minute Sliding Window)**:
-  - Max 25 failed attempts per `account_id` (`p_max_account = 25`, serialized via `pg_advisory_xact_lock`).
-  - Max 20 failed attempts per authenticated `owner_user_id` (`p_max_user = 20`).
-  - Max 100 failed attempts per client IP hash (`p_max_ip = 100`, hashed with secret `IP_HASH_SALT`).
-  - Non-blocking global monitoring alert threshold at 500 failed attempts across all accounts.
-  - Enforced atomically inside PostgreSQL via `check_and_record_recovery_attempt()`. Only failed attempts count toward the quota.
-
-### 7.3 Legacy Migration Protocol (`POST /functions/v1/migrate-recovery-verifier`)
-Used to migrate legacy PBKDF2 recovery records (`recovery_kdf_version = 1`) to canonical Argon2id verifiers:
-- **Request Body**:
-  ```json
-  {
-    "account_id": "<uuid>",
-    "legacy_recovery_verifier": "<64-hex pbkdf2>",
-    "new_recovery_verifier": "<64-hex argon2id>",
-    "recovery_salt": "<32-byte phrase-derived salt hex>"
-  }
-  ```
+### 7.2 Production v2.1.0 Challenge-Response Recovery (`POST /functions/v1/recover-vault`)
+- **Precondition**: Caller passes Cloudflare Turnstile (`POST /functions/v1/verify-captcha`), receiving a short-lived HMAC verification token.
+- **Step 1 (Challenge Request)**: Client requests a recovery challenge for `account_id`. Server enforces atomic 15-minute sliding-window rate limits (via PostgreSQL `pg_advisory_xact_lock`, account/user/hashed-IP quotas) and returns single-use `{ challenge_id, nonce, server_timestamp, recovery_salt }` (or uniform anti-enumeration output).
+- **Step 2 (Proof Verification)**: Client derives `recovery_auth_secret` and submits `{ account_id, challenge_id, recovery_proof (76B HMAC-SHA256 proof) }`. Edge Function validates the proof in constant time via service-role access and returns `encrypted_recovery_envelope`.
+- **Table Lockdown**: Direct client read/write access to legacy `ghost_vaults` and sensitive `user_accounts` recovery columns is revoked; metadata status is restricted via `ghost_vault_status` and hardened RLS (`supabase/migrations/20261125_lockdown_ghost_vaults.sql`, `20261126_v210_account_security_schema.sql`).
+- **Cloud Deployment Status**: Verified by Jest policy/security suites; live remote Supabase deployment remains pending.
 
 ---
 
@@ -262,18 +242,14 @@ Used to migrate legacy PBKDF2 recovery records (`recovery_kdf_version = 1`) to c
 
 | Platform / Subsystem | Implementation Status | Hardware Testing Status | Security / Readiness Status |
 | :--- | :--- | :--- | :--- |
-| **Android APK** | Full React Native + C++ NDK | Tested on real NFC devices | Active Primary Client |
-| **Web Companion** | Web NFC + WebAssembly | Tested on Chrome Android | Active Companion Client |
-| **Desktop Ghost Bridge** | Node.js Daemon + PC/SC | ACR122U & PN532 UART/I2C | Active Desktop Driver |
-| **iOS Client** | Swift Cryptographic Foundation | No Core NFC UI; pending macOS build | Foundation Code Only |
-| **PN532 Serial** | Driver implemented in `desktop/` | Hardware testing ongoing | In Active Validation |
-| **ACR122U USB** | APDU handler in `desktop/` | Hardware testing ongoing | In Active Validation |
+| **Android APK** | Full React Native + C++17 NDK | Emulator launch clean (`Medium_Phone_API_37.0`); **physical NFC pending** | Active Primary Staging Client (`v2.1.0` unreleased) |
+| **Web Companion** | Vite MPA + WASM Argon2id + Web NFC | Chromium SPA showcase verified; **physical Android Chrome Web NFC pending** | Active Companion Client |
+| **Desktop Ghost Bridge** | Node.js Daemon + PC/SC + PN532 Serial | Unit/WS `sessionToken` + PN532 protocol tests pass; **physical ACR122U / ESP32-PN532 pending** | Hardened (`CodeQL` alerts `#75/#76/#78` fixed) |
+| **iOS Client** | Swift Cryptographic Foundation (`2.1.0`, build `7`) | PR `#25` deferred (`iOS Beta`); pending macOS build & iPhone CoreNFC test | Foundation Code / Deferred Beta |
 
 ---
 
 ## 9. Test Suite Baselines
 
-- **Committed Test Baseline (`main`)**: **258 passing tests** across 15 test suites.
-- **Merged PR #24 Baseline**: **265 passing tests** across 16 test suites (adds 7 tests in `bulkVaultVerification.test.ts`).
-- **Full Local Working Suite**: **280 passing tests** (includes 15 untracked tests in `desktop/test/pn532_serial.test.js`).
-- **Standard Verification Command**: `npm test`
+- **Default Jest Suite (`npm test -- --ci --maxWorkers=2`)**: **26/26 suites, 347/347 tests passing** (`56.06% Stmts | 46.44% Branch | 54.67% Funcs | 57.16% Lines`).
+- **PN532 Serial Protocol Suite (`npx jest desktop/test/pn532_serial.test.js`)**: **1/1 suite, 22/22 tests passing** (combined **369 tests across 27 suites**).

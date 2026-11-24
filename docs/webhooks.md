@@ -21,7 +21,7 @@ export function verifyWebhook(rawPayload: string, headerSignature: string, secre
 }
 ```
 
-A standalone verification utility is provided at [`scripts/verify-webhook.js`](file:///c:/Users/Aryan/Desktop/Projects/Ghost-Tag/scripts/verify-webhook.js).
+A standalone verification utility is provided at [`scripts/verify-webhook.js`](../scripts/verify-webhook.js).
 
 ---
 

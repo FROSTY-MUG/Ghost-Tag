@@ -2,7 +2,7 @@
 
 > [!NOTE]
 > **CANONICAL SPECIFICATION ALIGNMENT**  
-> For the complete, authoritative specification of identity, salt, and recovery verifier derivations across Android, Web, and iOS, refer to [CANONICAL-SPECIFICATION.md](file:///c:/Users/Aryan/Desktop/Projects/Ghost-Tag/docs/CANONICAL-SPECIFICATION.md).
+> For the complete, authoritative specification of identity, salt, and recovery verifier derivations across Android, Web, and iOS, refer to [CANONICAL-SPECIFICATION.md](./CANONICAL-SPECIFICATION.md).
 > 
 > **Canonical Standard**: **12-Word BIP-39 English Mnemonic** (128-bit entropy + 4-bit checksum). 24-word phrases are an internal legacy option supported in the local `RecoveryManager` engine for offline vault unwrapping, but cross-platform recovery, Web client, iOS foundation, and Supabase cloud metadata recovery strictly require 12 words.
 

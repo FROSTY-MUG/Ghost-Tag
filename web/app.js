@@ -454,7 +454,7 @@
   }
 
   function splitCiphertext(fullBytes, chunkSize) {
-    if (chunkSize <= 0) chunkSize = 370;
+    if (chunkSize <= 0) chunkSize = 333;
     const chunks = [];
     let offset = 0;
     while (offset < fullBytes.length) {

@@ -1,67 +1,35 @@
-# Ghost-Tag Android Client
+# Ghost-Tag Android Client (`v2.1.0`)
 
-Ghost-Tag Android is the primary, full-featured native client for Ghost-Tag encrypted NFC storage.
+## 1. Purpose
+Native React Native (`0.84.1`) + Kotlin + C++17 (NDK/CMake) Android client and security runtime for Ghost-Tag. Implements physical NFC Forum Type 2 tag reading/writing, hardware-backed AndroidKeyStore TEE key protection, `FLAG_SECURE` window protection, native ptrace/Frida/root/memory-locking checks, and local offline vault management.
 
----
+## 2. Architecture & Key Files
+- [`app/build.gradle`](app/build.gradle): `applicationId "com.ghosttag"`, `versionCode 7`, `versionName "2.1.0"`, `minSdk 26`, `targetSdk 36`, `compileSdk 37`, Hermes + New Architecture, CMake C++17 native security library (`libghosttag_security.so`), release R8/ProGuard hardening.
+- [`app/src/main/AndroidManifest.xml`](app/src/main/AndroidManifest.xml): Declares `android.permission.NFC`, `<uses-feature android:name="android.hardware.nfc" android:required="false" />`, `android.permission.INTERNET` (used only when optional Supabase cloud metadata sync or dev Metro bundling is enabled; cleartext traffic disabled via `res/xml/network_security_config.xml`), `android:allowBackup="false"`, and NFC tech dispatch filters.
+- [`app/src/main/java/com/ghosttag/`](app/src/main/java/com/ghosttag/): `MainActivity.kt` (`FLAG_SECURE`), `MainApplication.kt`, `security/KeyStoreMasterKey.kt`, `security/SecurityBridgeModule.kt`, `security/SecurityPackage.kt`.
+- [`app/src/main/cpp/`](app/src/main/cpp/): `CMakeLists.txt`, `security_core.cpp/.h`, `secure_memory.cpp/.h` (`mlock` + 4-pass volatile zeroization + compiler barrier), `jni_bridge.cpp`.
+- [`app/src/main/res/`](app/src/main/res/): Custom Ghost-Tag adaptive launcher icons (`mipmap-*`) and pitch-black splash resources (`#000000` / `#FFFFFF` / `#DC2626`).
+- [`app/src/main/assets/index.android.bundle`](app/src/main/assets/index.android.bundle): Pre-bundled React Native JS bundle kept in sync with `src/`.
 
-## 1. Overview & Capabilities
+## 3. Build & Verification (JDK 17+ Required)
+Gradle requires JDK 17+ (`OpenJDK 25.0.4` via Android Studio JBR or Adoptium JDK 17; a legacy JRE 8 on `PATH` will fail):
 
-- **Direct Hardware NFC Access**: Full ISO/IEC 14443 Type A, Mifare Ultralight, and NDEF raw page read/write transceiver.
-- **Hardware-Backed Keystore**: Secure key isolation using Android Keystore and Argon2id memory-hard KDF.
-- **Offline Invariant**: Zero internet or network permissions (`android.permission.INTERNET` is omitted from `AndroidManifest.xml`).
-- **Binary Envelope Support**: Compatible with the canonical Ghost-Tag NDEF envelope format (`application/vnd.ghost.secure` and `application/vnd.ghost.bulk`).
-- **Mixed Tag Handling**: Real-time capacity computation and chunk distribution across NTAG213, NTAG215, and NTAG216 chips.
+```powershell
+# PowerShell (Windows with Android Studio JBR)
+$env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
+Push-Location android
+./gradlew.bat test --no-daemon
+Pop-Location
+```
 
----
-
-## 2. Building from Source
-
-### Prerequisites
-- Android Studio Hedgehog (2023.1.1) or newer
-- JDK 17
-- Android SDK Platform 34
-- Android NDK 25.1+
-
-### Build Commands
 ```bash
-cd android
-
-# Build Debug APK
-./gradlew assembleDebug
-
-# Build Signed Release APK
-./gradlew assembleRelease
+# Re-bundle React Native JS bundle after modifying src/
+npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle
 ```
 
-The output APK will be generated at:
-`android/app/build/outputs/apk/release/app-release.apk`
+To package a signed release APK via [`../scripts/package_release_apk.py`](../scripts/package_release_apk.py), supply `ANDROID_KEY_ALIAS` and `ANDROID_KEYSTORE_PASSWORD` environment variables (never store passwords in source control).
 
----
-
-## 3. Architecture & Security Invariants
-
-```
-+-------------------------------------------------------+
-| UI Layer: React Native (TypeScript, Brutalist Theme) |
-+-------------------------------------------------------+
-                           |
-+-------------------------------------------------------+
-| JNI / NDK Bridge: Native C++ Memory Zeroing (memset_s)|
-+-------------------------------------------------------+
-                           |
-+-------------------------------------------------------+
-| Android Keystore + Argon2id (RFC 9106) KDF            |
-+-------------------------------------------------------+
-                           |
-+-------------------------------------------------------+
-| Android NFC Adapter (NDEF Reader / Writer)            |
-+-------------------------------------------------------+
-```
-
----
-
-## 4. Hardware Validation Status
-
-> [!IMPORTANT]
-> **Pending Physical Hardware Execution**: The Android release build pipeline compiles cleanly with verified v2/v3 signatures. However, physical device launch and NFC read/write testing on real physical Android hardware remain pending physical device connection. No claim of physical hardware validation is made without real-device test logs.
-
+## 4. Verification Status & Hardware Caveats
+- **Gradle Build (`./gradlew.bat test --no-daemon`)**: Compiles cleanly (`BUILD SUCCESSFUL`). Note that `:app:testDebugUnitTest` currently outputs `NO-SOURCE` because no standalone JVM unit tests exist under `android/app/src/test`.
+- **Emulator Launch**: Verified clean launch on `Medium_Phone_API_37.0` with custom branding and zero crash signatures in `logcat`.
+- **Pending Physical Hardware Gate**: Real physical Android phone NFC antenna read/write validation against physical `NTAG213` / `NTAG215` / `NTAG216` tags remains open (`PROJECT-STATUS.md`, [`../FAQ.md`](../FAQ.md)).

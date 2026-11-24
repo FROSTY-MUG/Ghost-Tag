@@ -46,7 +46,8 @@ Ghost-Tag operates via three clients:
 | **[Batch Write](Batch-Write)** | Multi-tag batch distribution and write verification |
 | **[Batch Read](Batch-Read)** | Order-independent tag scanning, reassembly, and recovery |
 | **[NFC Compatibility](NFC-Compatibility)** | Supported tag families (NTAG213, NTAG215, NTAG216) |
-| **[Security Model](Security-Model)** | Zero-knowledge architecture, Argon2id/PBKDF2, AES-256-GCM |
+| **[Security Model](Security-Model)** | Two-tier Argon2id (`16/32/64 MiB` & WASM), AES-256-GCM, Turnstile challenge/proof |
+| **[FAQ](../../FAQ.md)** | 70 evidence-cited Q&As covering formats, chips, security, and release state |
 | **[Technical Format](Technical-Format)** | Binary envelope (`GTAG`), Little-Endian layout, NDEF MIME |
 | **[Recovery System](Recovery)** | Restoring vaults across devices with zero server secrets |
 | **[Troubleshooting](Troubleshooting)** | Hardware alignment, write verification errors, browser flags |

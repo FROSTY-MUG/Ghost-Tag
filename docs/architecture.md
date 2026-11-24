@@ -2,7 +2,7 @@
 
 > [!NOTE]
 > **CANONICAL SPECIFICATION ALIGNMENT**  
-> For the authoritative wire layouts, cryptographic parameters, envelope definitions, and cross-platform derivation standards, refer to [CANONICAL-SPECIFICATION.md](file:///c:/Users/Aryan/Desktop/Projects/Ghost-Tag/docs/CANONICAL-SPECIFICATION.md).
+> For the authoritative wire layouts, cryptographic parameters, envelope definitions, and cross-platform derivation standards, refer to [CANONICAL-SPECIFICATION.md](./CANONICAL-SPECIFICATION.md).
 > 
 > Invariants:
 > - **Recovery**: Canonical 12-word BIP-39 mnemonic recovery phrases across Android, Web, and iOS.

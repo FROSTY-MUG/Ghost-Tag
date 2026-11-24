@@ -1,95 +1,35 @@
-# Ghost Bridge v2.1.0
+# Ghost Bridge — Desktop Hardware NFC Daemon (`v2.1.0`)
 
-**Native Desktop PC/SC USB NFC Hardware Companion for Ghost-Tag**
+## 1. Purpose
+Local loopback desktop daemon connecting physical USB PC/SC NFC readers (such as the ACS ACR122U) and serial PN532/ESP32 bridges to browsers over `http://127.0.0.1:41789` and `ws://127.0.0.1:41789`. Ghost Bridge strictly forbids synthetic or simulated NFC events (`simulate_tag` always returns an error).
 
-Ghost Bridge is a lightweight, zero-cloud desktop companion application that enables the Ghost-Tag web client to interact with real USB NFC readers on laptops and desktop computers.
+## 2. Security & Transport Architecture
+- [`src/server.js`](src/server.js):
+  - Binds strictly to `127.0.0.1:41789` (`HOST = '127.0.0.1'`).
+  - Enforces strict Origin validation on both HTTP (`/status`) and WebSocket handshakes (`isBridgeOriginAllowed`, HTTP `403 FORBIDDEN_ORIGIN` without wildcard CORS). Approved origins: `https://frosty-mug.github.io`, validated HTTPS entries in `GHOST_APPROVED_ORIGINS`, and loopback origins in non-production mode.
+  - Issues a per-connection 24-byte CSPRNG hex `sessionToken` (`crypto.randomBytes(24)` stored in `WeakMap`) and requires constant-time token verification (`crypto.timingSafeEqual`) before `read_tag` or `write_tag`.
+  - Validates message actions through an allowlisted `Map` (`has()` + callable check), restricts `envelopeBytes` to `1..8192` byte integers, and allowlists MIME types (`application/vnd.ghost.secure`, `application/vnd.ghost.bulk`).
+- [`src/apdu.js`](src/apdu.js): PC/SC APDU commands for Type 2 tag identification, TLV + NDEF MIME serialization, and mandatory read-back SHA-256 write verification.
+  - Exact `apdu.js` framing limits (`calculateTagCapacity`):
+    - **NTAG213 (`144B` user EEPROM)**: v1 max ciphertext `56B`; v2 bulk **`fits: false` (`0B`)**.
+    - **NTAG215 (`504B` user EEPROM)**: v1 max ciphertext `411B`; v2 bulk `333B`.
+    - **NTAG216 (`888B` user EEPROM)**: v1 max ciphertext `795B`; v2 bulk `717B`.
+- [`src/transports/serialTransport.js`](src/transports/serialTransport.js) & [`firmware/esp32_pn532/`](firmware/esp32_pn532/README.md): Serial framing protocol for ESP32 + PN532 hardware.
+- [`bin/ghost-bridge.js`](bin/ghost-bridge.js): CLI entry point.
 
----
+## 3. Running & Testing
 
-## Architecture
+```bash
+# Start local bridge (PC/SC driver active when hardware is connected)
+node desktop/bin/ghost-bridge.js
 
+# Run Ghost Bridge standalone + HTTP/WebSocket security tests
+node desktop/test/bridge.test.js
+
+# Run via workspace Jest (included in npm test) & PN532 serial suite (22 tests)
+npm test -- desktop/test/bridge.test.js
+npx jest desktop/test/pn532_serial.test.js
 ```
-Laptop Browser (Web Client)
-           │
-           │  WebSocket / JSON (ws://127.0.0.1:41789)
-           ▼
-Ghost Bridge Desktop Companion (Node.js / PC/SC)
-           │
-           │  WinSCard / pcscd APDUs
-           ▼
-Physical USB NFC Reader (ACR122U)
-           │
-           │  13.56 MHz RF Field (ISO 14443-4A / Type 2)
-           ▼
-Physical NFC Tag (NTAG213 / NTAG215 / NTAG216)
-```
 
----
-
-## Supported Hardware Compatibility List
-
-| Hardware Model | Type | Connectivity | Driver Stack | Status |
-| :--- | :--- | :--- | :--- | :--- |
-| **ACS ACR122U** | USB NFC Reader / Writer | USB 2.0 Full Speed | PC/SC (`WinSCard` / `pcscd`) | Implemented in Source (Pending physical hardware testing) |
-| **ACS ACR1252U** | USB NFC Reader / Writer | USB 2.0 Full Speed | PC/SC (`WinSCard` / `pcscd`) | Compatible PC/SC Target |
-| **Identiv uTrust 3700 F** | USB NFC Reader | USB 2.0 | PC/SC | Compatible PC/SC Target |
-| **Sony RC-S380 (PaSoRi)**| USB NFC Reader | USB 2.0 | PC/SC | Compatible PC/SC Target |
-
-> [!IMPORTANT]
-> Ghost-Tag targets the **ACS ACR122U USB NFC Reader**. PC/SC and PN532 transports are fully implemented in source code and verified via unit tests, but remain pending real-device validation with physical hardware.
-
----
-
-## Tag Capability & Model Detection
-
-Ghost Bridge automatically queries Block 3 (Capability Container `CC`) upon tag tap to dynamically detect tag model, writable memory bounds, and lock status:
-
-| Tag Model | CC Byte 2 (Size) | Total EEPROM | User Writable Memory | Typical Usage |
-| :--- | :--- | :--- | :--- | :--- |
-| **NXP NTAG213** | `0x12` | 180 Bytes | 144 Bytes (Blocks 4–39) | Single-Tag Ghost v1 Envelopes |
-| **NXP NTAG215** | `0x3E` | 540 Bytes | 504 Bytes (Blocks 4–129) | Multi-Entry Vault Chunks |
-| **NXP NTAG216** | `0x6D` | 924 Bytes | 888 Bytes (Blocks 4–225) | Bulk Ghost v2 Envelopes |
-
-
-Pre-flight checks automatically reject non-Type 2 tags, read-only/locked tags (`CC[3] & 0x0F != 0`), and payloads that exceed the physical tag capacity before any write operation is attempted.
-
----
-
-## Non-Negotiable Invariants
-
-1. **Zero Synthetic / Simulated Tags**: Ghost Bridge refuses to fabricate, simulate, or mock NFC tags or capacity values. It communicates solely through real PC/SC smart card events.
-2. **Local-Only Binding**: Ghost Bridge binds strictly to `127.0.0.1:41789`. It never exposes endpoints to the local network or internet.
-3. **Hardware Truth**: If no reader is plugged in, it reports `NO USB NFC READER DETECTED`. If no card is on the antenna, it reports `NO NFC TAG DETECTED`.
-4. **Cryptographic Verification**: Every write operation executes a physical read-back pass that parses the NDEF record, verifies the 16-byte AES-GCM authentication tag, and checks the 32-byte SHA-256 ciphertext hash.
-
----
-
-## Prerequisites
-
-- **Windows**: The built-in *Smart Card* service must be running (`ScardSvr`). ACS ACR122U drivers are usually installed automatically via Windows Update.
-- **macOS**: Built-in `PCSC.framework` is active by default.
-- **Linux**: Requires `pcscd` and `libpcsclite-dev`:
-  ```bash
-  sudo apt-get install pcscd libpcsclite-dev
-  sudo systemctl enable --now pcscd
-  ```
-
----
-
-## Installation & Usage
-
-1. Navigate to the desktop directory:
-   ```bash
-   cd desktop
-   npm install
-   ```
-
-2. Start the bridge:
-   ```bash
-   npm start
-   ```
-
-3. Open the Ghost-Tag web client in your laptop browser:
-   [https://frosty-mug.github.io/Ghost-Tag/](https://frosty-mug.github.io/Ghost-Tag/)
-
-4. When you tap **Start Scanning**, Ghost-Tag automatically detects the active Ghost Bridge connection and begins receiving real card-present events.
+## 4. Hardware Verification Status
+All protocol logic, session-token enforcement, origin guards, NDEF capacity bounds, and PN532 framing tests pass locally (`bridge.test.js` and 22 tests in `pn532_serial.test.js`). Live hardware validation against physical ACS ACR122U USB readers and physical ESP32 + PN532 modules with real NTAG21x tags remains pending (`../PROJECT-STATUS.md`, [`../FAQ.md`](../FAQ.md)).

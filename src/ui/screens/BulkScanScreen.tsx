@@ -24,8 +24,8 @@ export const BulkScanScreen: React.FC<BulkScanScreenProps> = ({
   totalRequiredChunks,
   onProceedToReconstruction,
 }) => {
-  const [collectedIndices, _setCollectedIndices] = useState<number[]>([]);
-  const [logs, _setLogs] = useState<string[]>([
+  const [collectedIndices] = useState<number[]>([]);
+  const [logs] = useState<string[]>([
     `[SCAN] Initializing bulk scan session. Total required: ${totalRequiredChunks}`,
     `[CACHE] Local encrypted chunk cache active (72h TTL).`,
     `[PROMPT] Present any vault tag to the NFC antenna in any order...`,
@@ -61,12 +61,12 @@ export const BulkScanScreen: React.FC<BulkScanScreenProps> = ({
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statBox}>
-          <Text style={[styles.statNumber, { color: '#ff9500' }]}>{remainingCount}</Text>
+          <Text style={[styles.statNumber, styles.statNumberWarning]}>{remainingCount}</Text>
           <Text style={styles.statLabel}>REMAINING</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statBox}>
-          <Text style={[styles.statNumber, { color: '#ffffff' }]}>{totalRequiredChunks}</Text>
+          <Text style={[styles.statNumber, styles.statNumberTotal]}>{totalRequiredChunks}</Text>
           <Text style={styles.statLabel}>TOTAL</Text>
         </View>
       </View>
@@ -177,6 +177,12 @@ const styles = StyleSheet.create({
     fontSize: 26,
     fontWeight: '800',
     fontFamily: 'monospace',
+  },
+  statNumberWarning: {
+    color: '#ff9500',
+  },
+  statNumberTotal: {
+    color: '#ffffff',
   },
   statLabel: {
     color: '#8e8e93',

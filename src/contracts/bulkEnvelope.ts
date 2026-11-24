@@ -23,7 +23,7 @@
  * - (118+N)..(133+N) (16B): GCM_TAG
  *
  * Total fixed overhead: 134 bytes.
- * Authenticated Additional Data (AAD): Bytes 0..73 (70 bytes total).
+ * Authenticated Additional Data (AAD): Bytes 0..73 (74 bytes total).
  */
 
 // ---------------------------------------------------------------------------

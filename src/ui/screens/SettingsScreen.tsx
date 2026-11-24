@@ -7,7 +7,7 @@
  * instant panic zeroization of all active session keys.
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -16,6 +16,7 @@ import {
   ScrollView,
   Alert,
   TextInput,
+  NativeModules,
 } from 'react-native';
 import { theme } from '@ghost-tag/ui/theme';
 import {
@@ -23,6 +24,14 @@ import {
   configureSupabase,
   resetSupabaseConfig,
 } from '../../cloud/supabaseClient';
+import {
+  DEFAULT_KDF_PARAMETERS_BY_TIER,
+  DeviceTier,
+} from '../../contracts/keyHierarchy';
+import {
+  checkDeviceIntegrity,
+  type DeviceIntegrityStatus,
+} from '../../security/deviceIntegrity';
 
 export interface SettingsScreenProps {
   readonly onBack?: () => void;
@@ -30,9 +39,18 @@ export interface SettingsScreenProps {
 
 const TIMEOUT_OPTIONS = ['1 Min', '5 Min', '15 Min', 'Never'];
 
+const ARGON_PROFILE_OPTIONS = [
+  `Low-End (${DEFAULT_KDF_PARAMETERS_BY_TIER[DeviceTier.LOW_END].memoryCost / 1024} MiB)`,
+  `Standard (${DEFAULT_KDF_PARAMETERS_BY_TIER[DeviceTier.STANDARD].memoryCost / 1024} MiB)`,
+  `High-End (${DEFAULT_KDF_PARAMETERS_BY_TIER[DeviceTier.HIGH_END].memoryCost / 1024} MiB)`,
+] as const;
+
+type ArgonProfileLabel = (typeof ARGON_PROFILE_OPTIONS)[number];
+
 export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
   const [selectedTimeout, setSelectedTimeout] = useState<string>('5 Min');
-  const [argonProfile, setArgonProfile] = useState<'Standard (64MB)' | 'High (128MB)' | 'Paranoid (256MB)'>('Standard (64MB)');
+  const [argonProfile, setArgonProfile] = useState<ArgonProfileLabel>(ARGON_PROFILE_OPTIONS[1]);
+  const [integrity, setIntegrity] = useState<DeviceIntegrityStatus | null>(null);
   const [wipeStatus, setWipeStatus] = useState<string | null>(null);
 
   const [cloudConfig, setCloudConfig] = useState(getCloudConfig());
@@ -40,6 +58,20 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
   const [supabaseUrl, setSupabaseUrl] = useState(cloudConfig.url || '');
   const [supabaseKey, setSupabaseKey] = useState(cloudConfig.publishableKey || '');
   const [cloudStatusMessage, setCloudStatusMessage] = useState<string | null>(null);
+
+  const hasNativeSecurityBridge = Boolean((NativeModules as Record<string, unknown>)?.GhostSecurityBridge);
+
+  useEffect(() => {
+    let active = true;
+    checkDeviceIntegrity()
+      .then((status) => {
+        if (active) setIntegrity(status);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleSaveCloud = () => {
     if (!supabaseUrl.trim() || !supabaseKey.trim()) {
@@ -49,7 +81,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
     configureSupabase(supabaseUrl, supabaseKey);
     setCloudConfig(getCloudConfig());
     setIsConfiguringCloud(false);
-    setCloudStatusMessage('Cloud sync enabled. Connected to Supabase.');
+    setCloudStatusMessage('Cloud configuration updated cleanly.');
     setTimeout(() => setCloudStatusMessage(null), 3500);
   };
 
@@ -60,8 +92,39 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
     setTimeout(() => setCloudStatusMessage(null), 3500);
   };
 
-  const handlePanicWipe = () => {
-    setWipeStatus('ALL VOLATILE BUFFERS SCRUBBED (0xAA, 0x55, CSPRNG, 0x00). SESSION RESEALED.');
+  const handleSyncCheck = async () => {
+    if (cloudConfig.mode !== 'supabase' || !cloudConfig.url) {
+      setCloudStatusMessage('Cloud sync is disabled (offline mode).');
+      return;
+    }
+    try {
+      const resp = await fetch(`${cloudConfig.url}/rest/v1/`, {
+        method: 'HEAD',
+        headers: cloudConfig.publishableKey ? { apikey: cloudConfig.publishableKey } : undefined,
+      });
+      setCloudStatusMessage(`Supabase endpoint responded (HTTP ${resp.status}). Vault sync runs during authenticated vault operations.`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setCloudStatusMessage(`Supabase connectivity check failed: ${msg}`);
+    }
+  };
+
+  const handlePanicWipe = async () => {
+    resetSupabaseConfig();
+    setCloudConfig(getCloudConfig());
+    const nativeBridge = (NativeModules as Record<string, { wipeNativeMemory?: () => Promise<void> }>)?.GhostSecurityBridge;
+    if (nativeBridge && typeof nativeBridge.wipeNativeMemory === 'function') {
+      try {
+        await nativeBridge.wipeNativeMemory();
+      } catch {
+        // Best-effort native wipe
+      }
+    }
+    setWipeStatus(
+      hasNativeSecurityBridge
+        ? 'Native GhostSecurityBridge wipe requested and cloud config reset.'
+        : 'Cloud session config reset in JS runtime (native C++ wipe requires Android runtime).'
+    );
     setTimeout(() => setWipeStatus(null), 4000);
   };
 
@@ -79,57 +142,43 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>PLATFORM DEFENSE MATRIX</Text>
         <Text style={styles.cardDesc}>
-          Live hardware and native OS integrity enforcement.
+          Runtime integrity status queried from deviceIntegrity and NativeModules.
         </Text>
 
         <View style={styles.matrixList}>
           <View style={styles.matrixRow}>
             <View>
-              <Text style={styles.matrixName}>FLAG_SECURE Window Protection</Text>
-              <Text style={styles.matrixSub}>Blocks screenshots and task switcher previews</Text>
+              <Text style={styles.matrixName}>FLAG_SECURE & Kernel mlock</Text>
+              <Text style={styles.matrixSub}>Android window protection & native C++ page lock</Text>
             </View>
-            <View style={styles.activeTag}>
-              <Text style={styles.activeTagText}>● ACTIVE</Text>
-            </View>
-          </View>
-
-          <View style={styles.matrixRow}>
-            <View>
-              <Text style={styles.matrixName}>AndroidKeyStore Hardware TEE</Text>
-              <Text style={styles.matrixSub}>Hardware-backed AES keys in secure enclave</Text>
-            </View>
-            <View style={styles.activeTag}>
-              <Text style={styles.activeTagText}>● ACTIVE</Text>
+            <View style={hasNativeSecurityBridge ? styles.activeTag : styles.mutedTag}>
+              <Text style={hasNativeSecurityBridge ? styles.activeTagText : styles.mutedTagText}>
+                {hasNativeSecurityBridge ? '● NATIVE ACTIVE' : '○ JS / TEST'}
+              </Text>
             </View>
           </View>
 
           <View style={styles.matrixRow}>
             <View>
-              <Text style={styles.matrixName}>Native ptrace Anti-Debugging</Text>
-              <Text style={styles.matrixSub}>PTRACE_TRACEME blocks debugger attachment</Text>
+              <Text style={styles.matrixName}>Debugger Detection</Text>
+              <Text style={styles.matrixSub}>PTRACE_TRACEME / runtime inspector check</Text>
             </View>
-            <View style={styles.activeTag}>
-              <Text style={styles.activeTagText}>● ACTIVE</Text>
-            </View>
-          </View>
-
-          <View style={styles.matrixRow}>
-            <View>
-              <Text style={styles.matrixName}>Kernel Memory Page Locking (mlock)</Text>
-              <Text style={styles.matrixSub}>Forbids Linux kernel swap of cryptographic buffers</Text>
-            </View>
-            <View style={styles.activeTag}>
-              <Text style={styles.activeTagText}>● ACTIVE</Text>
+            <View style={integrity?.isDebuggerActive ? styles.dangerTag : styles.activeTag}>
+              <Text style={integrity?.isDebuggerActive ? styles.dangerTagText : styles.activeTagText}>
+                {integrity ? (integrity.isDebuggerActive ? '● DETECTED' : '● CLEAN') : 'Checking...'}
+              </Text>
             </View>
           </View>
 
           <View style={styles.matrixRow}>
             <View>
-              <Text style={styles.matrixName}>Frida / Hooking Framework Scan</Text>
-              <Text style={styles.matrixSub}>Scans /proc/self/maps for injected hooks</Text>
+              <Text style={styles.matrixName}>Root & Hook Integrity Scan</Text>
+              <Text style={styles.matrixSub}>Scans for root binaries and Frida/Xposed hooks</Text>
             </View>
-            <View style={styles.activeTag}>
-              <Text style={styles.activeTagText}>● CLEAN</Text>
+            <View style={integrity && (integrity.isRooted || integrity.isHooked) ? styles.dangerTag : styles.activeTag}>
+              <Text style={integrity && (integrity.isRooted || integrity.isHooked) ? styles.dangerTagText : styles.activeTagText}>
+                {integrity ? (integrity.isRooted || integrity.isHooked ? '● COMPROMISED' : '● CLEAN') : 'Checking...'}
+              </Text>
             </View>
           </View>
         </View>
@@ -139,11 +188,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>ARGON2ID WORK FACTOR PROFILE</Text>
         <Text style={styles.cardDesc}>
-          Memory hardness protects against GPU/ASIC brute-force dictionary attacks.
+          Canonical RFC 9106 profiles (16 / 32 / 64 MiB) matched to DeviceTier.
         </Text>
 
         <View style={styles.optionRow}>
-          {(['Standard (64MB)', 'High (128MB)', 'Paranoid (256MB)'] as const).map((prof) => (
+          {ARGON_PROFILE_OPTIONS.map((prof) => (
             <TouchableOpacity
               key={prof}
               style={[styles.optionBtn, argonProfile === prof && styles.optionBtnActive]}
@@ -214,7 +263,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
 
         <View style={styles.syncNoteBox}>
           <Text style={styles.syncNoteText}>Cloud sync is optional.</Text>
-          <Text style={[styles.syncNoteText, { fontWeight: '700', color: theme.colors.textPrimary }]}>
+          <Text style={[styles.syncNoteText, styles.syncNoteStrong]}>
             Ghost works fully offline.
           </Text>
         </View>
@@ -265,12 +314,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
               <>
                 <TouchableOpacity
                   style={styles.actionBtn}
-                  onPress={() => {
-                    setCloudStatusMessage('Cloud sync complete: Encrypted vault metadata up to date.');
-                    setTimeout(() => setCloudStatusMessage(null), 3000);
-                  }}
+                  onPress={handleSyncCheck}
                 >
-                  <Text style={styles.actionBtnText}>Sync Now</Text>
+                  <Text style={styles.actionBtnText}>Check Cloud Link</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.actionBtnSecondary} onPress={handleDisableCloud}>
                   <Text style={styles.actionBtnTextSecondary}>Disable Cloud Sync</Text>
@@ -286,8 +332,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
       </View>
 
       {/* Panic Wipe & Session Zeroize */}
-      <View style={[styles.card, { borderColor: '#ff2a4b' }]}>
-        <Text style={[styles.cardTitle, { color: '#ff2a4b' }]}>PANIC ZEROIZATION TRIGGER</Text>
+      <View style={[styles.card, styles.panicCard]}>
+        <Text style={[styles.cardTitle, styles.panicTitle]}>PANIC ZEROIZATION TRIGGER</Text>
         <Text style={styles.cardDesc}>
           Emergency volatile scrub. Executes multi-pass memory wipe across all active session buffers and halts pending cryptographic jobs.
         </Text>
@@ -601,6 +647,44 @@ const styles = StyleSheet.create({
   actionBtnTextSecondary: {
     color: '#ff6666',
     fontSize: 11,
+    fontFamily: 'monospace',
+  },
+  syncNoteStrong: {
+    fontWeight: '700',
+    color: theme.colors.textPrimary,
+  },
+  panicCard: {
+    borderColor: '#ff2a4b',
+  },
+  panicTitle: {
+    color: '#ff2a4b',
+  },
+  mutedTag: {
+    backgroundColor: 'rgba(142, 142, 147, 0.12)',
+    borderColor: '#636366',
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  mutedTagText: {
+    color: '#8e8e93',
+    fontSize: 9,
+    fontWeight: '700',
+    fontFamily: 'monospace',
+  },
+  dangerTag: {
+    backgroundColor: 'rgba(255, 42, 75, 0.12)',
+    borderColor: '#ff2a4b',
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  dangerTagText: {
+    color: '#ff2a4b',
+    fontSize: 9,
+    fontWeight: '700',
     fontFamily: 'monospace',
   },
 });

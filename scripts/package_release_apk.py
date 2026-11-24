@@ -7,7 +7,8 @@ production release keystore, verifies the APK signature, and exports it to web/a
 Requirements:
 - JDK 17+
 - Android SDK & NDK
-- release.keystore in android/app/ (password: ghosttag, alias: ghosttag)
+- release.keystore in android/app/
+- Environment variables: ANDROID_KEY_ALIAS and ANDROID_KEYSTORE_PASSWORD (and optional ANDROID_KEY_PASSWORD)
 
 Usage:
     python scripts/package_release_apk.py
@@ -33,8 +34,9 @@ WEB_ASSET_SHA256 = os.path.join(WEB_ASSETS_DIR, 'Ghost-Tag-v2.1.0.apk.sha256')
 WEB_RELEASE_META = os.path.join(WEB_ASSETS_DIR, 'release-meta.json')
 
 KEYSTORE_PATH = os.path.join(ANDROID_APP_DIR, 'release.keystore')
-KEYSTORE_ALIAS = os.environ.get('ANDROID_KEY_ALIAS', 'ghosttag')
-KEYSTORE_PASS = os.environ.get('ANDROID_KEYSTORE_PASSWORD', 'ghosttag')
+KEYSTORE_ALIAS = os.environ.get('ANDROID_KEY_ALIAS')
+KEYSTORE_PASS = os.environ.get('ANDROID_KEYSTORE_PASSWORD')
+KEY_PASS = os.environ.get('ANDROID_KEY_PASSWORD') or KEYSTORE_PASS
 
 
 def get_java_home():
@@ -42,9 +44,12 @@ def get_java_home():
     if 'JAVA_HOME' in os.environ and os.path.exists(os.environ['JAVA_HOME']):
         return os.environ['JAVA_HOME']
 
-    candidate = r'C:\Users\Aryan\.gradle\jdks\eclipse_adoptium-17-amd64-windows.2'
-    if os.path.exists(candidate):
-        return candidate
+    gradle_jdks_dir = os.path.join(os.path.expanduser('~'), '.gradle', 'jdks')
+    if os.path.isdir(gradle_jdks_dir):
+        for entry in sorted(os.listdir(gradle_jdks_dir), reverse=True):
+            candidate = os.path.join(gradle_jdks_dir, entry)
+            if os.path.isdir(candidate):
+                return candidate
 
     return None
 
@@ -69,11 +74,16 @@ def build_apk():
         raise SystemExit("Error: Could not locate JDK 17+. Please set JAVA_HOME.")
     print(f"[1/5] Using JDK: {java_home}")
 
+    if not KEYSTORE_ALIAS or not KEYSTORE_PASS:
+        raise SystemExit(
+            "Error: ANDROID_KEY_ALIAS and ANDROID_KEYSTORE_PASSWORD environment variables are required to sign release builds."
+        )
+
     env = os.environ.copy()
     env['JAVA_HOME'] = java_home
     env['ANDROID_KEYSTORE_PASSWORD'] = KEYSTORE_PASS
     env['ANDROID_KEY_ALIAS'] = KEYSTORE_ALIAS
-    env['ANDROID_KEY_PASSWORD'] = KEYSTORE_PASS
+    env['ANDROID_KEY_PASSWORD'] = KEY_PASS
 
     if not os.path.exists(KEYSTORE_PATH):
         raise SystemExit(f"Error: Release keystore not found at {KEYSTORE_PATH}")
@@ -119,7 +129,7 @@ def build_apk():
             '--ks', KEYSTORE_PATH,
             '--ks-key-alias', KEYSTORE_ALIAS,
             '--ks-pass', f'pass:{KEYSTORE_PASS}',
-            '--key-pass', f'pass:{KEYSTORE_PASS}',
+            '--key-pass', f'pass:{KEY_PASS}',
             APK_OUTPUT_PATH
         ]
         s_res = subprocess.run(sign_cmd, capture_output=True, text=True)

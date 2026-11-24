@@ -121,13 +121,14 @@ describe('PR #2: v2.1.0 PostgreSQL Schema & RLS Access Boundaries', () => {
     expect(definerMatches.length).toBe(rpcs.length);
     expect(searchPathMatches.length).toBe(rpcs.length);
 
+    const normalizedSql = sql.toLowerCase();
     for (const sig of rpcs) {
-      const escaped = sig.replace(/[()]/g, '\\$&');
-      expect(sql).toMatch(
-        new RegExp(`REVOKE ALL ON FUNCTION public\\.${escaped} FROM PUBLIC, anon, authenticated;`, 'i')
+      const lowerSig = sig.toLowerCase();
+      expect(normalizedSql).toContain(
+        `revoke all on function public.${lowerSig} from public, anon, authenticated;`
       );
-      expect(sql).toMatch(
-        new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${escaped} TO service_role;`, 'i')
+      expect(normalizedSql).toContain(
+        `grant execute on function public.${lowerSig} to service_role;`
       );
     }
   });

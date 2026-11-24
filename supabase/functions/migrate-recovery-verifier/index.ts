@@ -4,7 +4,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.8";
 import { timingSafeEqual } from "node:crypto";
-import { evaluateCors } from "../_shared/cors.ts";
+import { evaluateCorsRequest } from "../_shared/cors.ts";
 
 const MAX_FAILED_PER_ACCOUNT = 25;
 const MAX_FAILED_PER_USER = 20;
@@ -53,7 +53,7 @@ async function hashIp(clientIp: string, salt: string): Promise<string> {
 
 serve(async (req: Request) => {
   const origin = req.headers.get("Origin");
-  const cors = evaluateCors(origin, getCorsOptions());
+  const cors = evaluateCorsRequest(origin, getCorsOptions());
   if (!cors.allowed) {
     return new Response(JSON.stringify({ error: "MIGRATION_FAILED" }), {
       status: 403,

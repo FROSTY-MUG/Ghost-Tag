@@ -243,4 +243,17 @@ describe('Correction #2: Strict CORS Allowlist & Origin Enforcement', () => {
       bridge.stop();
     }
   });
+
+  test('8. Edge Functions importing ../_shared/cors.ts reference real exported symbol evaluateCorsRequest', () => {
+    const fnNames = ['recover-vault', 'migrate-recovery-verifier'];
+    for (const fn of fnNames) {
+      const src = fs.readFileSync(
+        path.join(ROOT, 'supabase/functions', fn, 'index.ts'),
+        'utf8'
+      );
+      expect(src).toMatch(/import\s*\{[^}]*\bevaluateCorsRequest\b[^}]*\}\s*from\s*["']\.\.\/_shared\/cors\.ts["']/);
+      expect(src).toMatch(/\bevaluateCorsRequest\(/);
+      expect(src).not.toMatch(/\bevaluateCors\(/);
+    }
+  });
 });

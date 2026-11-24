@@ -17,6 +17,7 @@ export * from './contracts/recovery';
 export * from './crypto/bulkEnvelope';
 export * from './crypto/aesGcm';
 export * from './crypto/keyWrap';
+export * from './crypto/wrappedDekCodec';
 
 // Cloud Sync
 export * from './cloud/supabaseClient';

@@ -42,6 +42,8 @@ export interface BulkFileRecord {
   readonly chunkCount: number;
   /** SHA-256 digest of each chunk's ciphertext (32 bytes per chunk). */
   readonly chunkHashes: Uint8Array[];
+  /** Original unpadded lengths of the data chunks (length K when erasure-coded). */
+  readonly chunkOriginalLengths?: readonly number[];
   /** SHA-256 digest of the complete file ciphertext (32 bytes). */
   readonly ciphertextSha256: Uint8Array;
   /** Erasure coding settings if redundancy was enabled for this file. */

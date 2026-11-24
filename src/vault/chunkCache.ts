@@ -2,15 +2,21 @@
  * @file chunkCache.ts
  * @summary Temporary Encrypted Chunk Cache with 72-Hour TTL.
  *
- * Implements persistent caching of scanned NFC chunks to enable asynchronous,
- * multi-session tag scanning. Chunks are cached locally and automatically
- * expired after 72 hours.
+ * Implements in-memory caching of scanned NFC chunks. Chunks are cached locally
+ * and automatically expire after 72 hours (CHUNK_CACHE_TTL_MS).
+ *
+ * Data Structure:
+ * - Nested index: vaultIdHex -> (globalChunkIndex -> CachedChunk). Per-vault
+ *   lookups and listings are O(1)/O(vault) instead of scanning every vault's
+ *   chunks with string-prefix scans.
  *
  * Security & Reliability:
  * - Duplicate Detection: Rejects duplicate scans of already-cached chunks with
  *   `CHUNK_ALREADY_CACHED`.
  * - Automatic Expiration: Purges cached chunks strictly after 72 hours (259,200,000 ms).
- * - Integrity Validation: Verifies chunk hash before caching.
+ * - Integrity Validation: Verifies chunk hash (constant-time) before caching.
+ *
+ * Note: This cache is purely volatile session state; no persistent cache exists.
  */
 
 import { CachedChunk, CHUNK_CACHE_TTL_MS } from '../contracts/bulkVault';
@@ -22,21 +28,39 @@ import {
 } from '../contracts/errors';
 import { computeChunkHash } from '../crypto/bulkEnvelope';
 
-export class ChunkCacheManager {
-  private cache: Map<string, CachedChunk> = new Map();
+/** Character table for fast lowercase hex encoding of 16-byte vault IDs. */
+const HEX_DIGITS = '0123456789abcdef';
 
-  /**
-   * Generates a unique cache key for a chunk: vaultIdHex:globalChunkIndex.
-   */
-  private makeKey(vaultId: Uint8Array, globalChunkIndex: number): string {
-    const vaultHex = Array.from(vaultId)
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
-    return `${vaultHex}:${globalChunkIndex}`;
+/** Converts a byte array to a lowercase hex string using a character table. */
+function toHexString(bytes: Uint8Array): string {
+  let hex = '';
+  for (let i = 0; i < bytes.length; i++) {
+    const b = bytes[i];
+    hex += HEX_DIGITS[b >> 4] + HEX_DIGITS[b & 0x0f];
   }
+  return hex;
+}
+
+/**
+ * Constant-time equality check of two same-length byte arrays.
+ */
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a[i] ^ b[i];
+  }
+  return diff === 0;
+}
+
+export class ChunkCacheManager {
+  /** Nested volatile index: vaultIdHex -> (globalChunkIndex -> CachedChunk). */
+  private readonly index: Map<string, Map<number, CachedChunk>> = new Map();
 
   /**
-   * Stores a scanned chunk in the cache with a 72-hour expiration timer.
+   * Stores a scanned chunk in the cache with a 72-hour expiration.
    * Throws `CHUNK_ALREADY_CACHED` if this chunk index is already cached.
    * Throws `CHUNK_HASH_MISMATCH` if chunk hash does not match chunk ciphertext.
    */
@@ -46,7 +70,7 @@ export class ChunkCacheManager {
   ): CachedChunk {
     this.purgeExpiredChunks();
 
-    // Verify chunk hash integrity
+    // Verify chunk hash integrity (constant-time comparison of 32-byte digests)
     const computedHash = computeChunkHash(chunk.ciphertext);
     if (computedHash.length !== chunk.chunkHash.length) {
       throw new GhostTagError({
@@ -56,19 +80,17 @@ export class ChunkCacheManager {
         severity: ErrorSeverity.ERROR,
       });
     }
-    for (let i = 0; i < computedHash.length; i++) {
-      if (computedHash[i] !== chunk.chunkHash[i]) {
-        throw new GhostTagError({
-          code: GhostTagErrorCode.CHUNK_HASH_MISMATCH,
-          userMessage: `Scanned chunk ${chunk.globalChunkIndex} failed SHA-256 hash verification`,
-          category: ErrorCategory.CRYPTO,
-          severity: ErrorSeverity.ERROR,
-        });
-      }
+    if (!bytesEqual(computedHash, chunk.chunkHash)) {
+      throw new GhostTagError({
+        code: GhostTagErrorCode.CHUNK_HASH_MISMATCH,
+        userMessage: `Scanned chunk ${chunk.globalChunkIndex} failed SHA-256 hash verification`,
+        category: ErrorCategory.CRYPTO,
+        severity: ErrorSeverity.ERROR,
+      });
     }
 
-    const key = this.makeKey(vaultId, chunk.globalChunkIndex);
-    if (this.cache.has(key)) {
+    const inner = this.getVaultIndex(vaultId);
+    if (inner.has(chunk.globalChunkIndex)) {
       throw new GhostTagError({
         code: GhostTagErrorCode.CHUNK_ALREADY_CACHED,
         userMessage: `Chunk #${chunk.globalChunkIndex} has already been scanned and cached`,
@@ -84,50 +106,50 @@ export class ChunkCacheManager {
       expiresAt: now + CHUNK_CACHE_TTL_MS,
     };
 
-    this.cache.set(key, cachedRecord);
+    inner.set(chunk.globalChunkIndex, cachedRecord);
     return cachedRecord;
   }
 
   /**
-   * Retrieves all unexpired cached chunks for a given vault.
+   * Retrieves all unexpired cached chunks for a given vault, sorted by index.
+   * O(number of cached chunks in this vault) — no scan across all vaults.
    */
   public getCachedChunks(vaultId: Uint8Array): CachedChunk[] {
     this.purgeExpiredChunks();
-    const vaultHex = Array.from(vaultId)
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
-    const result: CachedChunk[] = [];
-
-    for (const [key, chunk] of this.cache.entries()) {
-      if (key.startsWith(vaultHex + ':')) {
-        result.push(chunk);
-      }
+    const inner = this.index.get(toHexString(vaultId));
+    if (!inner) {
+      return [];
     }
-
-    return result.sort((a, b) => a.globalChunkIndex - b.globalChunkIndex);
+    return Array.from(inner.values()).sort(
+      (a, b) => a.globalChunkIndex - b.globalChunkIndex
+    );
   }
 
   /**
-   * Retrieves a specific cached chunk if present and unexpired.
+   * Retrieves a specific cached chunk if present and unexpired. O(1) lookup.
    */
   public getChunk(vaultId: Uint8Array, globalChunkIndex: number): CachedChunk | null {
     this.purgeExpiredChunks();
-    const key = this.makeKey(vaultId, globalChunkIndex);
-    return this.cache.get(key) ?? null;
+    return this.index.get(toHexString(vaultId))?.get(globalChunkIndex) ?? null;
   }
 
   /**
    * Automatically purges all cached chunks that have exceeded the 72-hour TTL.
-   * Returns the count of purged chunks.
+   * Also removes now-empty per-vault indexes. Returns the count of purged chunks.
    */
   public purgeExpiredChunks(): number {
     const now = Date.now();
     let purgedCount = 0;
 
-    for (const [key, chunk] of this.cache.entries()) {
-      if (now >= chunk.expiresAt) {
-        this.cache.delete(key);
-        purgedCount++;
+    for (const [vaultHex, inner] of Array.from(this.index.entries())) {
+      for (const [chunkIndex, chunk] of Array.from(inner.entries())) {
+        if (now >= chunk.expiresAt) {
+          inner.delete(chunkIndex);
+          purgedCount++;
+        }
+      }
+      if (inner.size === 0) {
+        this.index.delete(vaultHex);
       }
     }
 
@@ -147,17 +169,10 @@ export class ChunkCacheManager {
    */
   public clearCache(vaultId?: Uint8Array): void {
     if (!vaultId) {
-      this.cache.clear();
+      this.index.clear();
       return;
     }
-    const vaultHex = Array.from(vaultId)
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
-    for (const key of Array.from(this.cache.keys())) {
-      if (key.startsWith(vaultHex + ':')) {
-        this.cache.delete(key);
-      }
-    }
+    this.index.delete(toHexString(vaultId));
   }
 
   /**
@@ -165,7 +180,23 @@ export class ChunkCacheManager {
    */
   public get size(): number {
     this.purgeExpiredChunks();
-    return this.cache.size;
+    let total = 0;
+    for (const inner of this.index.values()) {
+      total += inner.size;
+    }
+    return total;
+  }
+
+  /**
+   * Returns the per-vault index map, creating it if absent.
+   */
+  private getVaultIndex(vaultId: Uint8Array): Map<number, CachedChunk> {
+    const vaultHex = toHexString(vaultId);
+    let inner = this.index.get(vaultHex);
+    if (!inner) {
+      inner = new Map<number, CachedChunk>();
+      this.index.set(vaultHex, inner);
+    }
+    return inner;
   }
 }
-

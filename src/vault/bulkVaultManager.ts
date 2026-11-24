@@ -38,6 +38,13 @@ export interface PreparedChunk {
 
 export class BulkVaultManager {
   /**
+   * Lazily built per-manifest indexes: vaultIdHex-independent tag UID -> globalChunkIndex.
+   * Keyed by manifest object identity so duplicate checks are O(1) per write instead of
+   * scanning the full tagMappings array on every record.
+   */
+  private readonly tagMappingIndexes = new WeakMap<BulkVaultManifest, Map<string, number>>();
+
+  /**
    * Initializes a new Bulk Vault manifest.
    */
   public createBulkVault(
@@ -132,6 +139,7 @@ export class BulkVaultManager {
       ciphertextSizeBytes: encryptedPkg.encryptedSizeBytes,
       chunkCount: totalFileChunks,
       chunkHashes,
+      chunkOriginalLengths: encoded.originalLengths,
       ciphertextSha256: encryptedPkg.ciphertextSha256,
       erasureCoding: erasureConfig,
       addedAt: Date.now(),
@@ -177,15 +185,28 @@ export class BulkVaultManager {
     fileChunkIndex: number
   ): BulkVaultManifest {
     const normUid = tagUidHex.toLowerCase();
-    const existing = manifest.tagMappings.find((m) => m.tagUidHex === normUid);
-    if (existing) {
+
+    // O(1) duplicate check via the lazily built per-manifest index.
+    let index = this.tagMappingIndexes.get(manifest);
+    if (!index) {
+      index = new Map<string, number>();
+      for (const mapping of manifest.tagMappings) {
+        index.set(mapping.tagUidHex.toLowerCase(), mapping.globalChunkIndex);
+      }
+      this.tagMappingIndexes.set(manifest, index);
+    }
+
+    const existingChunkIndex = index.get(normUid);
+    if (existingChunkIndex !== undefined) {
       throw new GhostTagError({
         code: GhostTagErrorCode.CHUNK_ALREADY_WRITTEN,
-        userMessage: `Physical tag ${normUid} is already registered in mapping for chunk #${existing.globalChunkIndex}`,
+        userMessage: `Physical tag ${normUid} is already registered in mapping for chunk #${existingChunkIndex}`,
         category: ErrorCategory.VAULT,
         severity: ErrorSeverity.ERROR,
       });
     }
+
+    index.set(normUid, globalChunkIndex);
 
     const mappingRecord: TagMappingRecord = {
       tagUidHex: normUid,
@@ -195,10 +216,12 @@ export class BulkVaultManager {
       writtenAt: Date.now(),
     };
 
-    return {
+    const updated: BulkVaultManifest = {
       ...manifest,
       tagMappings: [...manifest.tagMappings, mappingRecord],
       updatedAt: Date.now(),
     };
+    this.tagMappingIndexes.set(updated, index);
+    return updated;
   }
 }

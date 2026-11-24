@@ -7,7 +7,7 @@
 ## 1. Vault Concepts & Storage
 
 ### Q1: What is Ghost-Tag?
-**Answer**: Ghost-Tag is an open-source, air-gapped cryptographic vault system that stores encrypted data directly on commodity NFC tags (NTAG213, NTAG215, NTAG216). It uses AES-256-GCM authenticated encryption, Argon2id key derivation, and Cauchy-Reed-Solomon erasure coding to distribute data across multiple physical tags.  
+**Answer**: Ghost-Tag is designed for offline-first encrypted NFC vaults, with optional zero-knowledge cloud recovery. It turns ordinary NFC tags (NTAG213, NTAG215, NTAG216) into local-first encrypted vaults. It uses AES-256-GCM authenticated encryption, Argon2id key derivation, a KEK/DEK key hierarchy, BIP-39 recovery, and Cauchy-Reed-Solomon erasure coding to distribute encrypted data across multiple physical tags.  
 **Citation**: `README.md:3-7`, `src/contracts/envelope.ts:1-19`.
 
 ### Q2: What can I store on a Ghost-Tag?
@@ -111,7 +111,7 @@
 **Citation**: `supabase/README.md:10-25`, `web/supabase.js:40-80`.
 
 ### Q26: What do I need to create an account?
-**Answer**: A 12-word (web) or 24-word (native) BIP-39 recovery phrase and a master passphrase. The app derives a blinded `account_id` and recovery verifier locally.  
+**Answer**: Ghost-Tag uses 12-word BIP-39 recovery phrases as the primary recovery format. 24-word recovery support is retained for compatibility where implemented in native core. Combined with a master passphrase, the client derives a blinded `account_id` and recovery verifier locally.  
 **Citation**: `web/app.js:180-210`, `src/vault/recoveryManager.ts:40-70`.
 
 ### Q27: What happens if I forget my passphrase?

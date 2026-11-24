@@ -1,8 +1,10 @@
 # Ghost-Tag
 
-**Ghost-Tag** is an open-source, privacy-first system for turning ordinary NFC tags into encrypted, offline-capable vaults.
+**Ghost-Tag** is designed for offline-first encrypted NFC vaults, with optional zero-knowledge cloud recovery. It turns ordinary NFC tags into local-first encrypted NFC vaults.
 
 It combines AES-256-GCM authenticated encryption, Argon2id key derivation, a KEK/DEK key hierarchy, BIP-39 recovery, and Reed-Solomon erasure coding to distribute encrypted data across multiple NTAG tags.
+
+Ghost-Tag uses 12-word BIP-39 recovery phrases as the primary recovery format. 24-word recovery support is retained for compatibility where implemented.
 
 Ghost-Tag is designed for people who want sensitive data to remain under their control: encrypted locally, recoverable without trusting a cloud provider with plaintext, and physically portable.
 
@@ -442,4 +444,4 @@ Not yet. Ghost-Tag v2.1.0 is unreleased staging software. Physical Android, iOS,
 
 Ghost-Tag is released under the [MIT License](LICENSE).
 
-Ghost-Tag is an independent open-source project. It is not affiliated with, endorsed by, or sponsored by NXP Semiconductors or Apple Inc.
+Ghost-Tag is an independent open-source project. It is not affiliated with, endorsed by, or sponsored by NXP Semiconductors, Apple, Google, ACS, or any other hardware vendor.

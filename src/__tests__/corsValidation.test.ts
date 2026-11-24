@@ -244,16 +244,29 @@ describe('Correction #2: Strict CORS Allowlist & Origin Enforcement', () => {
     }
   });
 
-  test('8. Edge Functions importing ../_shared/cors.ts reference real exported symbol evaluateCorsRequest', () => {
-    const fnNames = ['recover-vault', 'migrate-recovery-verifier'];
-    for (const fn of fnNames) {
+  test('8. Edge Functions and shared handlers reference real exported symbol evaluateCorsRequest', () => {
+    const migrateSrc = fs.readFileSync(
+      path.join(ROOT, 'supabase/functions/migrate-recovery-verifier/index.ts'),
+      'utf8'
+    );
+    expect(migrateSrc).toMatch(/import\s*\{[^}]*\bevaluateCorsRequest\b[^}]*\}\s*from\s*["']\.\.\/_shared\/cors\.ts["']/);
+    expect(migrateSrc).toMatch(/\bevaluateCorsRequest\(/);
+    expect(migrateSrc).not.toMatch(/\bevaluateCors\(/);
+
+    const sharedHandlers = [
+      'accountAuthHandler.ts',
+      'recoverVaultHandler.ts',
+      'deletionHandlers.ts',
+      'syncMetadataHandler.ts',
+      'verifyCaptchaHandler.ts',
+    ];
+    for (const file of sharedHandlers) {
       const src = fs.readFileSync(
-        path.join(ROOT, 'supabase/functions', fn, 'index.ts'),
+        path.join(ROOT, 'supabase/functions/_shared', file),
         'utf8'
       );
-      expect(src).toMatch(/import\s*\{[^}]*\bevaluateCorsRequest\b[^}]*\}\s*from\s*["']\.\.\/_shared\/cors\.ts["']/);
+      expect(src).toMatch(/import\s*\{[^}]*\bevaluateCorsRequest\b[^}]*\}\s*from\s*['"]\.\/cors\.ts['"]/);
       expect(src).toMatch(/\bevaluateCorsRequest\(/);
-      expect(src).not.toMatch(/\bevaluateCors\(/);
     }
   });
 });

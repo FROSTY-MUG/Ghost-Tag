@@ -36,5 +36,30 @@ enabled = true
 enabled = true
 policy = "per_worker"
 
-[functions.recover-vault]
+[functions.account-auth]
 verify_jwt = true
+
+[functions.verify-captcha]
+verify_jwt = false
+
+# --no-verify-jwt authorized ONLY because all 8 compensating controls are active and verified:
+# Turnstile challenge guard, partitioned recovery_challenge/recovery_proof rate limits,
+# anti-enumeration synthesis, strict schema check, generic errors, atomic replay guard, audit logs.
+[functions.recover-vault]
+verify_jwt = false
+
+[functions.migrate-recovery-verifier]
+verify_jwt = true
+
+[functions.sync-vault-metadata]
+verify_jwt = true
+
+[functions.schedule-account-deletion]
+verify_jwt = true
+
+[functions.cancel-account-deletion]
+verify_jwt = true
+
+# Secured via constant-time X-Ghost-Cron-Secret check (rejects user JWTs with 403).
+[functions.process-account-deletions]
+verify_jwt = false

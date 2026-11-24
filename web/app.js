@@ -2266,7 +2266,7 @@
         <div class="file-actions">
           <button class="btn btn-secondary btn-sm" onclick="GhostApp.viewEntry(${idx})">View</button>
           <button class="btn btn-primary btn-sm" onclick="GhostApp.downloadEntry(${idx})">Download</button>
-          <button class="btn btn-danger btn-sm" onclick="GhostApp.promptDeleteEntry('${e.name}', ${idx})">Delete Entry</button>
+          <button class="btn btn-danger btn-sm" onclick="GhostApp.promptDeleteEntry(decodeURIComponent('${encodeURIComponent(String(e.name || '')).replace(/'/g, '%27')}'), ${idx})">Delete Entry</button>
         </div>
       </div>
     `).join('');

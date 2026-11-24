@@ -3,6 +3,9 @@
  * @summary Comprehensive unit test suite for Ghost-Tag Cryptographic Core.
  */
 
+declare const require: any;
+declare const __dirname: string;
+
 import {
   generateSecureRandom,
   generateNonce,
@@ -463,6 +466,18 @@ describe('Ghost-Tag Cryptographic Core Suite', () => {
       expect(() => deserializeWrappedDEK(new Uint8Array(56))).toThrow(/78 bytes/);
       expect(() => deserializeWrappedDEK(new Uint8Array(77))).toThrow(/78 bytes/);
       expect(() => deserializeWrappedDEK(new Uint8Array(79))).toThrow(/78 bytes/);
+    });
+
+    it('verifies docs/security.md documents canonical 32MB (32768 KiB) Argon2id KDF parameters', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const secDoc = fs.readFileSync(
+        path.resolve(__dirname, '../../docs/security.md'),
+        'utf8'
+      );
+      expect(secDoc).toMatch(/Argon2id/i);
+      expect(secDoc).toMatch(/32768/);
+      expect(secDoc).not.toMatch(/PBKDF2-SHA256/i);
     });
   });
 });

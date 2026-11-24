@@ -4,6 +4,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.8";
 import { timingSafeEqual } from "node:crypto";
+import { evaluateCorsRequest } from "../_shared/cors.ts";
 
 // Layered Rate Limiting Constants (15-minute sliding window)
 const MAX_FAILED_PER_ACCOUNT = 25;
@@ -15,26 +16,12 @@ const GLOBAL_ALERT_THRESHOLD = 500;
 const RFC4122_UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HEX64_REGEX = /^[0-9a-fA-F]{64}$/;
 
-// Restricted CORS whitelist
-const ALLOWED_ORIGINS = new Set([
-  "https://frosty-mug.github.io",
-  "http://localhost:8080",
-  "http://localhost:3000",
-  "http://127.0.0.1:8080",
-  "http://127.0.0.1:3000",
-]);
-
-function getCorsHeaders(origin: string | null): Record<string, string> {
-  const headers: Record<string, string> = {
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-    "Vary": "Origin",
+function getCorsOptions() {
+  return {
+    environment: Deno.env.get("GHOST_ENV") ?? "production",
+    allowLocalhostCors: Deno.env.get("ALLOW_LOCALHOST_CORS") === "true",
+    approvedProductionOrigins: Deno.env.get("APPROVED_CORS_ORIGINS") ?? "",
   };
-
-  if (origin && ALLOWED_ORIGINS.has(origin)) {
-    headers["Access-Control-Allow-Origin"] = origin;
-  }
-  return headers;
 }
 
 function hexToBytes(hex: string): Uint8Array {
@@ -72,22 +59,21 @@ async function hashIp(clientIp: string, salt: string): Promise<string> {
 
 serve(async (req: Request) => {
   const origin = req.headers.get("Origin");
+  const cors = evaluateCorsRequest(origin, getCorsOptions());
 
-  if (origin && !ALLOWED_ORIGINS.has(origin)) {
+  if (!cors.allowed) {
     return new Response(JSON.stringify({ error: "RECOVERY_FAILED" }), {
       status: 403,
-      headers: { "Content-Type": "application/json" },
+      headers: { ...cors.headers, "Content-Type": "application/json" },
     });
   }
 
-  const corsHeaders = getCorsHeaders(origin);
-
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return new Response("ok", { headers: cors.headers });
   }
 
   const responseHeaders = {
-    ...corsHeaders,
+    ...cors.headers,
     "Content-Type": "application/json",
   };
 
@@ -114,9 +100,7 @@ serve(async (req: Request) => {
       );
     }
 
-    // Zero-Knowledge Recovery: Does NOT require an authenticated owner session.
-    // The recovery phrase itself is the recovery credential.
-    // Optional authenticated user resolution (e.g. from anonymous signup or existing user session)
+    // Optional authenticated user resolution
     let authenticatedUserId: string | null = null;
     const authHeader = req.headers.get("Authorization");
     if (authHeader && authHeader.startsWith("Bearer ")) {
@@ -199,7 +183,7 @@ serve(async (req: Request) => {
       console.warn(`[GHOST_MONITOR_ALERT] Global recovery failures exceeded threshold: ${globalFailures}`);
     }
 
-    // Look up target vault row
+    // Look up target vault row via service_role (bypasses locked-down client RLS)
     const { data: vault, error: fetchError } = await adminClient
       .from("ghost_vaults")
       .select("account_id, owner_user_id, recovery_verifier, recovery_salt, recovery_kdf_version, encrypted_vault_blob, vault_version")
@@ -210,7 +194,6 @@ serve(async (req: Request) => {
     const dummyVerifierBytes = new Uint8Array(32);
 
     if (fetchError || !vault) {
-      // Maintained constant-time comparison to prevent account enumeration
       timingSafeEqual(Buffer.from(candidateVerifierBytes), Buffer.from(dummyVerifierBytes));
 
       return new Response(

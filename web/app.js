@@ -1772,7 +1772,7 @@
     document.getElementById('btnConfirmDeleteVault')?.addEventListener('click', async () => {
       hideModal('modalDeleteVault');
       if (state.account) {
-        await window.GhostSupabase.deleteRemoteVault(state.account.accountId);
+        await window.GhostSupabase.deleteEncryptedVault(state.account.accountId);
       }
       localStorage.removeItem(STORAGE_KEY_ACCOUNT);
       localStorage.removeItem(STORAGE_KEY_LOCAL_VAULT);
@@ -1793,7 +1793,7 @@
       const logs = getScanHistoryLogs();
       const report = {
         app: 'Ghost-Tag',
-        version: '2.0.5',
+        version: '2.1.0',
         exportedAt: new Date().toISOString(),
         totalScans: logs.length,
         records: logs

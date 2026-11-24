@@ -2291,12 +2291,23 @@
       window.location.href = 'technical.html#privacy';
     } else if (hash === 'source') {
       window.location.href = 'technical.html#source';
-    } else if (hash === 'encrypt' || hash === 'batch-write') {
+    } else if (hash === 'app') {
+      if (state.account) showView('view-app');
+      else showView('view-welcome');
+    } else if (hash === 'encrypt' || hash === 'batch-write' || hash === 'bulk' || hash === 'write') {
       if (state.account) showView('view-encrypt-scan');
       else showView('view-welcome');
-    } else if (hash === 'decrypt' || hash === 'batch-read') {
+    } else if (hash === 'decrypt' || hash === 'batch-read' || hash === 'scan') {
       if (state.account) showView('view-decrypt-scan');
       else showView('view-welcome');
+    } else if (hash === 'recovery') {
+      if (state.account) showView('view-recovery');
+      else showView('view-restore-account');
+    } else if (hash === 'settings') {
+      if (state.account) showView('view-settings');
+      else showView('view-welcome');
+    } else {
+      showView(state.account ? 'view-app' : 'view-landing');
     }
   }
 

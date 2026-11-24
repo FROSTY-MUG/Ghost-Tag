@@ -16,4 +16,5 @@ export * from './secureMemory';
 export * from './bulkEnvelope';
 export * from './erasureCoding';
 export * from './fileEncryption';
+export * from './wrappedDekCodec';
 

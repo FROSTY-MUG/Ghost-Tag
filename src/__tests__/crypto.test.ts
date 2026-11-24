@@ -36,6 +36,13 @@ import {
   bytesToHex,
 } from '../crypto/keyWrap';
 import {
+  WRAPPED_DEK_WIRE_SIZE,
+  serializeWrappedDEK,
+  deserializeWrappedDEK,
+  wrapAndSerializeDEK,
+  deserializeAndUnwrapDEK,
+} from '../crypto/wrappedDekCodec';
+import {
   zeroize,
   zeroizeAll,
   secureWipeBuffer,
@@ -415,6 +422,47 @@ describe('Ghost-Tag Cryptographic Core Suite', () => {
       const buf = new Uint8Array([10, 20, 30, 40]);
       secureWipeBuffer(buf);
       expect(buf.every((b) => b === 0)).toBe(true);
+    });
+  });
+
+  describe('WrappedDEK 78-Byte Canonical Codec & Magic Preservation', () => {
+    it('preserves canonical GTAG envelope magic header [0x47, 0x54, 0x41, 0x47]', () => {
+      expect(ENVELOPE_MAGIC).toBe('GTAG');
+      expect(Array.from(ENVELOPE_MAGIC_BYTES)).toEqual([0x47, 0x54, 0x41, 0x47]);
+    });
+
+    it('serializes and unwraps WrappedDEK in exact 78-byte format preserving 19B 0x57 AAD', () => {
+      const kek = generateDEK();
+      const dek = generateDEK();
+      const keyId = generateKeyId();
+      const kdfVersion = 2;
+
+      const wrapped = wrapDEK(kek, dek, keyId, kdfVersion);
+      const wire78 = serializeWrappedDEK(wrapped, kdfVersion);
+
+      expect(wire78.length).toBe(WRAPPED_DEK_WIRE_SIZE);
+      expect(wire78.length).toBe(78);
+      // Bytes 0..15 must match key_id prefix for DB constraint chk_vm_wrapped_dek_prefix
+      expect(Array.from(wire78.slice(0, 16))).toEqual(Array.from(keyId));
+      // Bytes 16..17 store kdfVersion LE
+      expect(wire78[16]).toBe(2);
+      expect(wire78[17]).toBe(0);
+
+      const roundTripped = deserializeWrappedDEK(wire78);
+      expect(roundTripped.keyId).toBe(wrapped.keyId);
+      expect(roundTripped.keyVersion).toBe(kdfVersion);
+      expect(unwrapDEK(kek, roundTripped)).toEqual(dek);
+
+      // Helper path compatibility
+      const directWire = wrapAndSerializeDEK(kek, dek, keyId, kdfVersion);
+      expect(directWire.length).toBe(78);
+      expect(deserializeAndUnwrapDEK(kek, directWire)).toEqual(dek);
+    });
+
+    it('rejects malformed or wrong-length serialized WrappedDEK buffers', () => {
+      expect(() => deserializeWrappedDEK(new Uint8Array(56))).toThrow(/78 bytes/);
+      expect(() => deserializeWrappedDEK(new Uint8Array(77))).toThrow(/78 bytes/);
+      expect(() => deserializeWrappedDEK(new Uint8Array(79))).toThrow(/78 bytes/);
     });
   });
 });

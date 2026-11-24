@@ -14,7 +14,7 @@ Android is established as the **canonical Ghost-Tag cryptographic reference impl
 - Argon2id RFC 9106 ($m=32768$ KiB, $t=3$, $p=2$, $h=32$, $v=0x13$, 32-byte salt) for `recovery_verifier` via an offline, self-contained WebAssembly bundle (`hash-wasm`).
 - Wire format alignment: Little-Endian multi-byte integers, canonical 26-byte AAD for v1 envelopes, 74-byte AAD for v2 bulk chunk envelopes, and record type `0x10` (`RECORD_TYPE_BULK_CHUNK`).
 
-A dedicated 59-test cross-platform compatibility test suite (`src/__tests__/crossPlatformCryptoCompatibility.test.ts`) verifies 30 explicit cryptographic and architectural invariants against deterministic golden reference fixtures. All 16 test suites and 280 unit tests in the project currently pass (`tsc --noEmit && jest`).
+All default workspace Jest tests (`26/26 suites, 347/347 tests` including `crossPlatformCryptoCompatibility.test.ts` historical Option A vector parity tests and `recoveryChallengeProof.test.ts` v2.1.0 challenge/proof tests) plus `desktop/test/pn532_serial.test.js` (`22/22 tests`) currently pass (`tsc --noEmit && jest`). Note that production v2.1.0 cloud recovery uses server-generated random `recovery_salt` (`account-auth`) and interactive `76B` HMAC challenge/proof verification (`recover-vault` + Turnstile), while Option A vectors remain strictly for deterministic local fixture testing.
 
 > [!IMPORTANT]
 > **Component Validation Status Disclosures**:

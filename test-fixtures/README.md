@@ -1,60 +1,19 @@
-# Ghost-Tag Cryptographic & Binary Envelope Test Fixtures
+# Ghost-Tag Cryptographic Reference Fixtures (`test-fixtures/`)
 
-## Overview
-The `test-fixtures/` directory houses canonical test vectors, reference envelopes, and deterministic verification vectors utilized across Android, iOS, Web, and Desktop test suites.
+## 1. Purpose
+Deterministic binary and JSON reference test vectors enabling cross-platform verification across TypeScript (`src/`), Web (`web/`), Desktop (`desktop/`), and iOS Swift scaffolding (`ios/`). Regenerated offline via [`../scripts/generate_compatibility_fixtures.js`](../scripts/generate_compatibility_fixtures.js).
 
----
+## 2. Fixture Inventory
 
-## Important Files
+| Path | Protocol Scope | Key Invariants Tested |
+| :--- | :--- | :--- |
+| [`crypto/aesGcmVectors.json`](crypto/aesGcmVectors.json) | Symmetric AEAD | NIST SP 800-38D AES-256-GCM test vectors with 12B IV and 16B tag |
+| [`envelopes/v1EnvelopeVectors.json`](envelopes/v1EnvelopeVectors.json) & [`envelopes/v1-reference.bin`](envelopes/v1-reference.bin) | Single-Tag `v1` | `GTAG` magic, version `0x01`, `54B` fixed overhead, `26B` AAD |
+| [`envelopes/v2BulkEnvelopeVectors.json`](envelopes/v2BulkEnvelopeVectors.json) & [`envelopes/v2-bulk-reference.bin`](envelopes/v2-bulk-reference.bin) | Bulk Distributed `v2` | `GTAG` magic, version `0x02`, `RECORD_TYPE = 0x10`, `134B` overhead, `74B` AAD (`0..73`), `32B` SHA-256 `CHUNK_HASH` (`74..105`) |
+| [`recovery/recoveryVectors.json`](recovery/recoveryVectors.json) | Cross-Platform Compatibility Vectors | Historical deterministic `Option A` reference vectors (`account_id`, `recovery_auth_secret`, `recovery_salt`, Argon2id `recovery_verifier` with `m=32768, t=3, p=2, h=32, v=0x13`) |
 
-```
-test-fixtures/
-├── crypto/
-│   └── aesGcmVectors.json             # RFC-compliant AES-256-GCM test vectors with known keys, IVs, AAD, and tags
-├── envelopes/
-│   ├── v1-reference.bin               # 83-byte canonical v1 binary envelope (54B overhead + 29B ciphertext)
-│   ├── v1EnvelopeVectors.json         # Parameterized single-tag envelope test vectors
-│   ├── v2-bulk-reference.bin          # 203-byte canonical v2 bulk envelope (134B overhead + 69B chunk payload)
-│   └── v2BulkEnvelopeVectors.json     # Parameterized bulk chunk envelope test vectors
-└── recovery/
-    └── recoveryVectors.json           # 12-word BIP-39 mnemonics, seeds, salts, and derived Argon2id verifiers
-```
+## 3. Historical Option A Vectors vs Production v2.1.0 Protocol
+- [`recovery/recoveryVectors.json`](recovery/recoveryVectors.json) captures **deterministic historical v2.0.5 Option A fixtures** so `crossPlatformCryptoCompatibility.test.ts` can verify byte-identical Argon2id and binary envelope parity across TypeScript and WebAssembly.
+- **Production v2.1.0 Supabase recovery** does **not** use phrase-derived salts: [`../supabase/functions/account-auth/`](../supabase/functions/account-auth/index.ts) generates a **server-random 32-byte CSPRNG `recovery_salt`**, derives keys with two-stage Argon2id, and verifies interactive **`76B` HMAC challenge proofs** (`recover-vault`) tested in [`../src/__tests__/recoveryChallengeProof.test.ts`](../src/__tests__/recoveryChallengeProof.test.ts).
 
----
-
-## Exact Specifications
-
-1. **v1 Single-Tag Reference Envelope (`v1-reference.bin`)**:
-   - Total length: 83 bytes
-   - Fixed overhead: 54 bytes
-   - Ciphertext length: 29 bytes
-   - Deterministic AAD: 26 bytes
-   - MIME Type: `application/vnd.ghost.secure`
-2. **v2 Bulk Reference Envelope (`v2-bulk-reference.bin`)**:
-   - Total length: 203 bytes
-   - Fixed overhead: 134 bytes ($74\text{ AAD} + 32\text{ Hash} + 12\text{ IV} + 16\text{ Tag}$)
-   - Chunk payload length: 69 bytes
-   - Deterministic AAD: 74 bytes (ends at byte 73)
-   - MIME Type: `application/vnd.ghost.bulk`
-
----
-
-## How to Test
-Fixtures are validated by:
-- TypeScript suite: `src/__tests__/crossPlatformCryptoCompatibility.test.ts`
-- iOS XCTest suite: `ios/GhostTagTests/CrossPlatformCryptoTests.swift`
-- Web syntax suite: `src/__tests__/webSyntaxAndBuild.test.ts`
-
-Run tests via:
-```bash
-npm test -- src/__tests__/crossPlatformCryptoCompatibility.test.ts
-```
-
----
-
-## Contributor Guidelines
-
-1. **Adding a Cryptographic Vector**:
-   - Vectors must be generated deterministically using `scripts/generate_compatibility_fixtures.js`.
-   - Never generate vectors using unseeded or variable random number generators.
-   - Any new envelope format must specify exact byte-level field offsets and Little-Endian encoding.
+See [`../FAQ.md`](../FAQ.md) and [`../docs/CANONICAL-SPECIFICATION.md`](../docs/CANONICAL-SPECIFICATION.md) for full derivations.

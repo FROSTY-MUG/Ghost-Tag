@@ -2,7 +2,7 @@
 
 > [!WARNING]
 > **DOCUMENT STATUS: HISTORICAL / SUPERSEDED**  
-> This specification document is retained for historical background. It has been formally superseded by the authoritative [CANONICAL-SPECIFICATION.md](file:///c:/Users/Aryan/Desktop/Projects/Ghost-Tag/docs/CANONICAL-SPECIFICATION.md).
+> This specification document is retained for historical background. It has been formally superseded by the authoritative [CANONICAL-SPECIFICATION.md](./CANONICAL-SPECIFICATION.md).
 > 
 > Key Architectural Clarifications:
 > - **Chunk Cache**: Scanned chunks are cached strictly in volatile RAM (`Map`) with a 72-hour expiration timer; there is **zero disk or database persistence** of scanned chunks.

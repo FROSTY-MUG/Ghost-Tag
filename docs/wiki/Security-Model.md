@@ -1,74 +1,21 @@
-# Security Model & Cryptography
+# Ghost-Tag Security Model (`v2.1.0`)
 
-Ghost-Tag is architected around a strict zero-knowledge, zero-leakage threat model.
+## 1. Cryptographic Primitives & Key Derivation
 
----
-
-## 1. Cryptographic Primitives
-
-| Primitive | Specification | Purpose |
+| Component | Algorithm & Parameters | Scope |
 | :--- | :--- | :--- |
-| **Symmetric Cipher** | AES-256-GCM | Encrypts chunks and wrapped DEKs with AEAD authentication |
-| **Nonce Generation** | 96-bit (12 bytes) CSPRNG | Unique nonce per chunk; strictly never reused |
-| **Integrity Digest** | SHA-256 (32 bytes) | Verifies ciphertext chunks and full reassembled files |
-| **Recovery Verifier (Canonical)** | Argon2id RFC 9106 ($m=32768$ KiB, $t=3$, $p=2$) | Memory-hard zero-knowledge recovery credential across Android, Web, and iOS (`recovery_kdf_version = 2`) |
-| **Recovery Verifier (Legacy Web)** | PBKDF2-HMAC-SHA256 (10,000 iterations) | Historical recovery verifier (`recovery_kdf_version = 1`), migratable to Argon2id |
-| **Local Passphrase KEK (Native)** | Argon2id RFC 9106 ($m=65536$ KiB, $t=3$, $p=4$) | Local storage key wrapping on Android native |
-| **Local Passphrase KEK (Web)** | PBKDF2-HMAC-SHA256 (100,000 iterations) | Local WebCrypto storage key wrapping on Web Companion |
-| **Seed Phrase Standard** | BIP-39 English | 128-bit entropy mapped to 12 words with 4-bit checksum |
+| **Primary Vault KEK (Native)** | Argon2id RFC 9106 (`16 MiB` Low-End, `32 MiB` Standard, `64 MiB` High-End; `16B` CSPRNG salt) | Derives 256-bit KEK from Master Passphrase |
+| **Cloud Recovery Auth / Verifier** | Two-stage Argon2id (`m=32768 KiB`, `t=3`, `p=2`, `h=32B`, `v=0x13`) + server CSPRNG `32B` `recovery_salt` | Android, Edge Functions, and Web offline WASM (`hash-wasm`) |
+| **Local Recovery KEK** | Argon2id RFC 9106 (`65536 KiB`, `t=5`, `p=4`, `32B` salt) | Unwraps local recovery DEK envelope (`RecoveryManager`) |
+| **Authenticated Encryption** | AES-256-GCM (`12B` CSPRNG nonce, `16B` constant-time tag) | Payload encryption & 19B-AAD DEK key wrapping |
+| **Erasure Coding** | Cauchy-Vandermonde Reed-Solomon over $\mathrm{GF}(2^8)$ (`0x11d`) | Tolerates up to $M$ missing/damaged bulk tags |
 
+## 2. Volatile Chunk Cache vs Zero Disk Leakage
+- `ChunkCacheManager` caches **encrypted** chunk ciphertext in a volatile in-memory `Map` (never plaintext SQLite/disk) with a strict `72-hour` (`259,200,000 ms`) TTL.
+- Native Android security layers (`FLAG_SECURE`, `AndroidKeyStore` TEE/StrongBox, C++ `mlock()`, `ptrace` anti-debug, `/proc/self/maps` hook scan, and 4-pass memory wipe with compiler barriers) defend active volatile keys.
 
----
+## 3. Supabase RLS Lockdown & Challenge-Proof Recovery
+- Direct client access to `ghost_vaults` and sensitive `user_accounts` columns is revoked (`20261125_lockdown_ghost_vaults.sql`, `20261126_v210_account_security_schema.sql`).
+- `recover-vault` enforces Cloudflare Turnstile verification (`verify-captcha`), atomic 15-minute advisory-locked rate limits, anti-enumeration uniform error shapes, and `76B` HMAC challenge/proof checks.
 
-## 2. Key Hierarchy
-
-```text
-Master Passphrase (User input, never stored)
-       │
-       ▼  (Argon2id or PBKDF2)
-Key Encryption Key (KEK - 256 bits, in-memory only)
-       │
-       ▼  (Unwraps via AES-256-GCM)
-Data Encryption Key (DEK - 256 bits, in-memory only)
-       │
-       ▼  (Encrypts chunks with unique 12B nonces)
-Encrypted NFC Tag Chunks (AES-256-GCM + 16B Auth Tag)
-```
-
----
-
-## 3. Threat Model & Countermeasures
-
-### Physical Tag Theft
-An attacker who finds or steals your NFC tags sees only high-entropy encrypted blobs wrapped in `application/vnd.ghost.bulk`. Without your master passphrase, brute-forcing AES-256-GCM is mathematically impossible.
-
-### Cloud Compromise (Supabase)
-Supabase acts solely as an encrypted metadata synchronization relay. It stores only:
-- `account_id` (UUID derived from one-way SHA-256)
-- `encrypted_vault_blob` (AES-256-GCM encrypted metadata)
-- `vault_version` and timestamps
-
-The cloud server never receives or stores:
-- Passphrases
-- Recovery phrases
-- KEK or DEK keys
-- Plaintext file names, contents, or URLs
-- Scanned NFC chunks
-
-### Tag Replay & Swapping Attacks
-Every chunk envelope includes:
-- `vault_id` (16 bytes)
-- `file_id` (16 bytes)
-- `global_chunk_index` (4 bytes LE)
-- Authenticated Additional Data (AAD) covering the entire header
-
-If an attacker tries to replace Tag 3 with a tag from another vault, the AAD verification fails and the chunk is immediately rejected.
-
----
-
-## 4. Elimination of Scanned-Chunk Cache
-
-In Ghost-Tag v2.0.5, **no scanned-chunk cache exists**:
-- Chunks reside strictly in volatile memory during an active scanning session.
-- No chunks are written to `localStorage`, `IndexedDB`, cookies, or disk caches.
-- Memory is zeroed upon session completion or user dismissal.
+See [`../../SECURITY.md`](../../SECURITY.md) and [`../../FAQ.md`](../../FAQ.md).

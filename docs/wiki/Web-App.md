@@ -1,29 +1,17 @@
-# Ghost-Tag Web Client
+# Ghost-Tag Web App (`v2.1.0` Staging)
 
-The Ghost-Tag Web Client is a lightweight, zero-installation companion app hosted on GitHub Pages:
-[https://frosty-mug.github.io/Ghost-Tag/](https://frosty-mug.github.io/Ghost-Tag/)
+The Ghost-Tag Web Companion provides offline-first client-side encryption, vendored `hash-wasm` Argon2id WASM recovery derivation, Cloudflare Turnstile-gated Supabase recovery, and hardware NFC operations.
+
+**Live URL**: [https://frosty-mug.github.io/Ghost-Tag/](https://frosty-mug.github.io/Ghost-Tag/)
 
 ---
 
-## 1. Compatibility & Browser Support
+## Browser & Hardware NFC Matrix
 
-The Web NFC API (`NDEFReader`) is required to read and write physical NFC tags from a browser.
-
-| Platform | Browser | Web NFC Support | Notes |
+| Platform | Browser | Hardware NFC Path | Behavior & Status |
 | :--- | :--- | :--- | :--- |
-| **Android** | Google Chrome | Supported | Requires HTTPS and user gesture |
-| **Android** | Chromium (Edge, Brave, Opera) | Supported | Web NFC flag enabled by default |
-| **Android** | Firefox / Samsung Internet | Unsupported | Web NFC not implemented |
-| **iOS / iPadOS** | Safari / Chrome / Any | Unsupported | iOS does not expose Web NFC in browsers |
-| **Windows / macOS / Linux** | Desktop Browsers | Emulation Mode | Full simulated Web NFC testing suite built-in |
+| **Android** | Google Chrome (`89+`) | Web NFC API (`NDEFReader`) | Works over HTTPS (`https://frosty-mug.github.io/Ghost-Tag/`); pending real Android Chrome hardware tap pass. |
+| **Windows / macOS / Linux** | Chrome / Edge / Chromium | **Ghost Bridge** (`ws://127.0.0.1:41789`) | Connects strictly to physical USB PC/SC or PN532 readers with CSPRNG `sessionToken` auth. **No simulated or synthetic transceiver exists.** |
+| **iOS** | Safari / Chrome iOS | **Not Supported** | Apple iOS exposes no Web NFC API to browsers; native iOS (`#25`) is deferred to `iOS Beta`. |
 
-> **Note on iOS**: Apple does not provide the Web NFC API in iOS WebKit. iOS users can open the site in recovery mode or wait for the dedicated Ghost-Tag iOS app.
-
----
-
-## 2. Security Properties
-
-- **Static Deployment**: The site contains no server-side executable code; all crypto runs client-side via Web Cryptography API (`crypto.subtle`).
-- **Zero Local Plaintext Persistence**: Passphrases and decrypted files reside purely in volatile memory. Decrypted files are wiped when you tap `Clear Temporary Data` or close the browser tab.
-- **Strict HTTPS**: Web NFC is strictly disabled by browsers on unencrypted connections. GitHub Pages enforces HTTPS with modern TLS certificates.
-- **No Scanned Chunk Cache**: Following Section 18 of the specification, scanned chunks are never stored in `localStorage` or `IndexedDB`.
+See [Ghost Bridge](Ghost-Bridge), [NFC Compatibility](NFC-Compatibility), and [`../../FAQ.md`](../../FAQ.md).

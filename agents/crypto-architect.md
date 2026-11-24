@@ -15,7 +15,7 @@ You are the principal cryptographic engineer for Ghost-Tag. Your duty is to desi
 - **Erasure Coding**: Cauchy-Vandermonde Reed-Solomon over $\text{GF}(2^8)$ with generator polynomial $x^8 + x^4 + x^3 + x^2 + 1$ (0x11D).
   - Any $K$ of $K+M$ chunks reconstruct original ciphertext.
 - **Key Wrapping**: AES-256-GCM key wrapping binding key ID and metadata.
-- **Disaster Recovery**: BIP39 24-word recovery phrase with dedicated recovery Argon2id salt.
+- **Disaster Recovery**: Canonical 12-word BIP-39 recovery phrase (`128-bit` entropy + `4-bit` checksum), retaining legacy 24-word local unwrapping compatibility, protected with a dedicated 32-byte recovery Argon2id salt.
 
 ## Invariants
 - Zero plaintext keys stored on disk.

@@ -124,8 +124,8 @@ When launching Ghost-Tag for the first time:
 ## 6. Emergency Recovery Flow
 
 1. User installs Ghost-Tag on a new or replaced phone.
-2. Selects "Recover Vault from 24-Word Phrase".
-3. Enters the 24 BIP39 recovery words.
+2. Selects "Recover Vault from 12-Word Phrase" (24-word local compat also supported offline).
+3. Enters the 12 BIP39 recovery words.
 4. Checksum is verified.
 5. Argon2id derives the dedicated Recovery KEK using the recovery envelope parameters.
 6. Recovery copies of all DEKs are unwrapped.
@@ -135,11 +135,11 @@ When launching Ghost-Tag for the first time:
 ## 7. Bulk Scanning v2: Multi-File Creation & Extra-Tag Exclusion Flow
 
 ```
-[Terminal Status Progression]
+[Illustrative Terminal Flow]
 [VAULT] Creating Bulk Vault: "Ops-Offline-Archive"
 [FILES] 3 files selected via SAF (1 PDF, 1 Video, 1 JSON) - Total: 3.8 MB
 [CALC] Encrypted size: 3,984,812 bytes
-[TAGS] Tag family: NTAG215 (Usable chunk payload: 370B)
+[TAGS] Tag family: NTAG215 (Usable chunk payload: 326B TagInfo / 333B apdu)
 [ERASURE] Adding 10% Reed-Solomon redundancy (K=108, M=11)
 [REQUIREMENT] Total tags required: 119 physical NFC tags
 [PROMPT] "Only 119 tags are required. Please set aside any surplus tags."
@@ -150,7 +150,7 @@ When launching Ghost-Tag for the first time:
 1. **File Selection**: User selects one or more arbitrary files (documents, images, videos, archives) using Android's Storage Access Framework (`ACTION_OPEN_DOCUMENT`).
 2. **Encrypted Size & Tag Calculation**:
    - Total encrypted bytes are calculated including envelope overhead (134 bytes per chunk).
-   - Ghost-Tag computes the required number of physical tags based on target tag family (e.g., NTAG215).
+   - Ghost-Tag computes the required number of physical tags based on target tag family (NTAG215/NTAG216; NTAG213 is excluded for v2 bulk).
 3. **Extra-Tag Exclusion Rule**:
    - If the user possesses 130 tags but only 119 are needed, the app instructs: *"Only 119 tags are required. Please set aside the other 11 tags. Scan the 119 required tags one by one."*
    - Ghost-Tag strictly refuses to write to surplus tags.
@@ -164,9 +164,9 @@ When launching Ghost-Tag for the first time:
 ## 8. Bulk Scanning v2: Random-Order Tag Scanning, 72h Cache & Reconstruction
 
 ```
-[Terminal Status Progression]
-[SCAN] Tag detected: Chunk #42 of 119 (File: recovery.pdf, 370B)
-[CACHE] Chunk #42 authenticated & cached in offline MMKV storage
+[Illustrative Terminal Flow]
+[SCAN] Tag detected: Chunk #42 of 119 (File: recovery.pdf, 326B)
+[CACHE] Chunk #42 authenticated & cached in volatile RAM ChunkCache (72h TTL)
 [COUNTDOWN] Cache TTL: 71h 59m remaining (Auto-purge on expiry)
 [PROGRESS] Collected 94 of 108 required data chunks (87%)
 ...
@@ -181,9 +181,9 @@ When launching Ghost-Tag for the first time:
    - User scans physical tags in any random, arbitrary order.
    - Ghost-Tag extracts the chunk envelope, authenticates the 74-byte AAD, and checks for duplicates.
    - Duplicate tags are rejected without state mutation.
-2. **72-Hour Encrypted Offline Cache**:
-   - Chunks are stored in local encrypted MMKV storage with a strict 72-hour Time-To-Live (TTL).
-   - Real-time countdown timer is displayed; if 72 hours elapse without completion, cached chunks are purged (`CACHE_EXPIRED`).
+2. **72-Hour Volatile Encrypted Chunk Cache**:
+   - Encrypted chunk buffers are cached in volatile in-memory `Map` storage (`ChunkCacheManager`) with a 72-hour Time-To-Live (TTL) during an active process session.
+   - If 72 hours elapse or the process closes without completion, cached chunks are purged (`CACHE_EXPIRED` or RAM deallocation) without affecting source tags.
 3. **Reconstruction Engine**:
    - Once at least $K$ valid chunks are collected for a file, Cauchy Reed-Solomon decoding solves for any missing or damaged tags using parity chunks.
    - Ciphertext chunks are concatenated and verified against the file's SHA-256 manifest hash.

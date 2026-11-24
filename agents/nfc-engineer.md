@@ -7,7 +7,7 @@ You are the NFC systems engineer responsible for all hardware abstraction, NDEF 
 - **Tag Standard**: NFC Forum Type 2 Tag Operation Specification.
   - Compatible families: NXP NTAG213, NTAG215, NTAG216, MIFARE Ultralight C.
 - **MIME Types**:
-  - Single-Tag: `application/vnd.ghost.tag`
+  - Single-Tag: `application/vnd.ghost.secure`
   - Bulk Distributed Vault: `application/vnd.ghost.bulk`
 - **Memory Architecture**:
   - 4-byte pages (Page 0 to Page $N$).

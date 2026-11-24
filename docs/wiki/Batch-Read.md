@@ -1,73 +1,17 @@
-# Batch Read
+# Batch Read (`v2.1.0` Random-Order Scan & Reconstruction)
 
-Ghost-Tag v2.0.5 allows users to scan physical NFC tags in any order, reassemble multi-chip chunks, authenticate the ciphertext, and decrypt the recovered entries with a single action.
+Ghost-Tag `v2.1.0` lets you scan distributed vault tags in **any order**.
 
-```
- +--------------------+       +--------------------+
- |   Tag 3 Scanned    |  ...  |   Tag 1 Scanned    |  (Any Order)
- +---------+----------+       +---------+----------+
-           |                            |
-           +--------------+-------------+
-                          |
-                  Volatile Assembly
-             (Indexed by globalChunkIndex)
-                          |
-              [ All Chips Scanned ]
-                          |
-                  Passphrase Unlock
-               (PBKDF2 / Argon2id KEK)
-                          |
- +------------------------v------------------------+
- |              Reassembled Payload                |
- |  [Text Note]  [Document.pdf]  [Photo]  [URL]    |
- +-------------------------------------------------+
+```text
+Random Tag Tap ─> Parse GTAG v2 (134B overhead, 74B AAD) ─> Verify 32B SHA-256 CHUNK_HASH
+      │
+      ▼
+Store Encrypted Chunk in Volatile RAM ChunkCacheManager (72h TTL Map, Duplicate-Safe)
+      │
+      ▼  (When >= K unique shards collected)
+Invert K x K Cauchy Sub-Matrix in GF(2^8) ─> Reassemble Ciphertext ─> AES-256-GCM Decrypt
 ```
 
----
-
-## 1. Overview of the Batch Read Flow
-
-1. **Tag Scanning (Order-Independent)**:
-   - The user opens **Decrypt** and starts scanning tags.
-   - Tags can be tapped in **any order** (e.g. Tag 4, Tag 1, Tag 3, Tag 2).
-   - Ghost-Tag parses each tag's `GTAG` envelope:
-     - Extracts `vaultId`, `fileId`, `globalChunkIndex`, and `totalVaultChunks`.
-     - Validates the 32-byte SHA-256 chunk hash against the ciphertext chunk.
-     - Places the chunk into volatile session memory (zero persistent cache).
-   - The UI shows real-time tally:
-     ```
-     SCANNED CHIPS: 3 / 4
-     COLLECTED CHUNKS: 0, 2, 3 (Chunk 1 missing)
-     ```
-
-2. **Completion Trigger**:
-   - When all required chunks are collected, or when the user taps **All Chips Scanned**, the **Decrypt Now** button becomes active.
-   - If missing chunks remain, Ghost-Tag displays:
-     ```
-     MORE TAGS NEEDED
-     Collected: 3 / 4 chunks
-     Missing: 1 chunk
-     Scan the remaining Ghost tags to decrypt the complete content.
-     ```
-
-3. **Passphrase Decryption**:
-   - The user enters their master vault passphrase.
-   - Ghost-Tag derives the AES-256-GCM key and authenticates the AAD and GCM tag.
-   - If passphrase or integrity fails: Displays **DECRYPTION FAILED** or **DATA TAMPERED OR INVALID**.
-   - If valid: Displays **DECRYPTION COMPLETE** and lists recovered entries.
-
-4. **Viewer, Download, & Individual Entry Deletion**:
-   - **View**: Inspect plaintext note or view recovered image/document in-browser.
-   - **Download**: Export the verified decrypted file to local storage.
-   - **Delete Entry**: On Android, prompts with the physical rewrite corruption warning before rewriting remaining chunks across the tags.
-   - **Clear Temporary Data**: Instantly purges all recovered plaintext and session chunks from RAM.
-
----
-
-## 2. Invariants & Security Guarantees
-
-- **No Scanned-Chunk Cache**: Chunks exist strictly in volatile RAM during the active session. If the user navigates away or closes the browser tab, all cached chunk bytes are immediately wiped.
-- **Double Cryptographic Verification**:
-  1. Per-chunk SHA-256 hash check prevents corrupt or misaligned sector reads.
-  2. End-to-end AES-256-GCM authentication prevents unauthorized tampering or forgery.
-- **Cross-Platform Compatibility**: A batch write created on an Android phone using the APK can be read and decrypted seamlessly by the web client (or desktop Ghost Bridge), and vice versa.
+- **Random Order**: `VAULT_ID`, `FILE_ID`, `GLOBAL_CHUNK_INDEX`, `TOTAL_VAULT_CHUNKS`, `FILE_CHUNK_INDEX`, and `TOTAL_FILE_CHUNKS` are AAD-bound in every tag header (`0..73`).
+- **Volatile RAM Cache**: `ChunkCacheManager` keeps encrypted chunks in volatile in-memory `Map` storage (`259,200,000 ms` / 72-hour TTL). Closing the app or letting TTL expire wipes RAM without touching data stored on physical tags.
+- **Fault Tolerance**: Any $K$ valid chunks of $K + M$ can reconstruct lost or damaged tags before decryption and SAF export.

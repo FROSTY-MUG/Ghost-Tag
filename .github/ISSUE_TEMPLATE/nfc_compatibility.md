@@ -10,7 +10,7 @@ assignees: 'FROSTY-MUG'
 - **NFC Tag Type / IC**: [e.g. NTAG213, NTAG215, NTAG216, MIFARE Ultralight EV1, ST25TV]
 - **Advertised Physical Capacity**: [e.g. 144 bytes, 504 bytes, 888 bytes]
 - **Device Model & Manufacturer**: [e.g. Google Pixel 8, Samsung Galaxy S23, OnePlus 11]
-- **Client Used**: [ ] Android APK (v2.0.5)  [ ] Web Client (Chrome on Android)
+- **Client Used**: [ ] Android APK (`v2.1.0` staging / `v2.0.6`)  [ ] Web Client (Chrome on Android)  [ ] Desktop Ghost Bridge (ACR122U / PN532)
 - **Android OS Version**: [e.g. Android 14, Android 13]
 
 ## Observed Behavior

@@ -1,42 +1,13 @@
-# NFC Compatibility Matrix
+# NFC Hardware Compatibility (`v2.1.0`)
 
-Ghost-Tag is engineered specifically for **NFC Forum Type 2 Tags** (ISO/IEC 14443-3A), the most ubiquitous and cost-effective NFC standard in the world.
+## Supported NFC Forum Type 2 Tags (`ISO 14443-3A`)
 
----
-
-## 1. Supported Chip Families
-
-| Chip Family | Total Memory | NDEF User Memory | Usable Ghost Payload | Typical Form Factors |
+| Chip Family | Total / User EEPROM | v1 Single-Tag (`54B` overhead) | v2 Bulk (`134B` overhead) | Support Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| **NTAG213** | 180 bytes | 144 bytes | **~96–100 bytes** | Micro-stickers, key tags |
-| **NTAG215** | 540 bytes | 504 bytes | **~450–460 bytes** | Standard NFC cards, coins |
-| **NTAG216** | 924 bytes | 888 bytes | **~830–844 bytes** | High-capacity badges, rings |
+| **NTAG213** | `180B` / `144B` | Yes (`52B` / `56B`) | **No (`0B`, `fits: false`)** | Fits short v1 secrets only; NDEF framing + 134B v2 overhead exceeds 144B user EEPROM. |
+| **NTAG215** | `540B` / `504B` | Yes (`404B` / `411B`) | Yes (`326B` / `333B`) | Recommended standard chip for v1 and v2 distributed vaults. |
+| **NTAG216** | `924B` / `888B` | Yes (`784B` / `795B`) | Yes (`706B` / `717B`) | Largest Type 2 chip; minimizes tag count in multi-tag bulk vaults. |
+| **MIFARE Classic** | Proprietary | Rejected | Rejected | Unsupported non-Type-2 protocol and legacy Crypto-1 cipher. |
+| **MIFARE Ultralight (64B)** | `64B` total | Rejected | Rejected | Insufficient EEPROM capacity (`< 54B` v1 / `< 134B` v2 overhead). |
 
----
-
-## 2. Automatic Hardware Detection
-
-Ghost-Tag **never** asks users to manually select their chip model. Instead, Ghost-Tag inspects the tag's Capability Container (CC byte page 03) during the initial NDEF handshake:
-
-```text
-Tag detected.
-Total storage: 504 bytes
-Writable storage: 496 bytes
-```
-
-### Detection Mechanics:
-- `CC[2]` contains the memory size byte (`size_byte * 8` bytes of memory).
-- If `CC[2] == 0x12` (18): Tag is **NTAG213** (144 bytes).
-- If `CC[2] == 0x3E` (62): Tag is **NTAG215** (504 bytes).
-- If `CC[2] == 0x6D` (109): Tag is **NTAG216** (888 bytes).
-
----
-
-## 3. Unsupported Tag Types
-
-| Tag Family | Reason for Exclusion |
-| :--- | :--- |
-| **MIFARE Classic 1K / 4K** | Proprietary Crypto-1 cipher; violates NFC Forum standard; incompatible with many modern Android NFC controllers. |
-| **MIFARE Ultralight (old 64B)** | Insufficient capacity (< 106 bytes overhead). |
-| **NFC Forum Type 4 (DESFire / SmartMX)** | Complex file system APDUs; unnecessary cost and overhead for basic distributed cold storage. |
-| **FeliCa (Type 3)** | High licensing costs and regional hardware constraints. |
+> Physical NFC tag testing against real Android NFC handsets, ACS ACR122U USB readers, and ESP32+PN532 hardware remains pending final hardware verification (`../../PROJECT-STATUS.md`).

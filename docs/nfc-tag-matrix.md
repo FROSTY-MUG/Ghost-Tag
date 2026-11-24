@@ -1,58 +1,20 @@
-# Ghost-Tag NFC Tag Hardware Matrix & Memory Layout
+# Ghost-Tag NFC Tag Compatibility & Capacity Matrix
 
-Ghost-Tag deliberately restricts its hardware target to **NFC Forum Type 2** tags (NXP NTAG21x and MIFARE Ultralight family) to provide reliable, standard-compliant NDEF operations without proprietary protocol vulnerabilities.
-
----
-
-## 1. Supported Tag Families & Capacities
-
-| Tag Hardware Family | Total Memory | User Memory Pages | Usable NDEF Space | Max Ghost-Tag Plaintext |
-| :--- | :--- | :--- | :--- | :--- |
-| **NTAG213** | 180 Bytes | Pages 4 .. 39 (144 Bytes) | 137 Bytes | **45 Bytes** |
-| **NTAG215** | 540 Bytes | Pages 4 .. 129 (504 Bytes) | 496 Bytes | **404 Bytes** |
-| **NTAG216** | 924 Bytes | Pages 4 .. 225 (888 Bytes) | 872 Bytes | **780 Bytes** |
-| **MIFARE Ultralight** | 64 Bytes | Pages 4 .. 15 (48 Bytes) | 48 Bytes | *Too small (< 54B overhead)* |
-| **MIFARE Ultralight C**| 192 Bytes | Pages 4 .. 39 (144 Bytes) | 137 Bytes | **45 Bytes** |
-| **MIFARE Ultralight EV1 (MF0UL11)** | 80 Bytes | Pages 4 .. 15 (48 Bytes) | 48 Bytes | *Too small (< 54B overhead)* |
-| **MIFARE Ultralight EV1 (MF0UL21)** | 164 Bytes | Pages 4 .. 33 (120 Bytes) | 113 Bytes | **21 Bytes** |
-
-> [!NOTE]
-> For general use, **NTAG215** (~404 bytes plaintext) and **NTAG216** (~780 bytes plaintext) are strongly recommended for secrets, recovery phrases, credentials, and configuration profiles.
+> **Honest Framing Rule**: Real NTAG21x capacity is strictly less than raw user EEPROM because Type 2 TLV containers and NDEF MIME headers (`application/vnd.ghost.secure` or `application/vnd.ghost.bulk`) consume framing bytes prior to Ghost-Tag envelope overhead (`54B` v1 / `134B` v2).
 
 ---
 
-## 2. Type 2 Tag Memory Map & Safe Page Addressing
+## 1. Supported Type 2 Tag Matrix
 
-Type 2 tags structure memory into 4-byte pages. Ghost-Tag enforces strict page addressing bounds:
-
-```
-Page Index   Size       Description                  Ghost-Tag Access Rule
---------------------------------------------------------------------------------------------------
-Page 0       4 Bytes    UID0..UID2, Manufacturer     READ-ONLY (Hardware write protected)
-Page 1       4 Bytes    UID3..UID6                   READ-ONLY (Hardware write protected)
-Page 2       4 Bytes    Internal / Static Lock Bits  READ-ONLY (Never overwrite to prevent bricking)
-Page 3       4 Bytes    Capability Container (CC)    READ-ONLY / PRESERVE (Defines NDEF size)
---------------------------------------------------------------------------------------------------
-Page 4       4 Bytes    Start of User Memory         WRITABLE (Start of NDEF data area)
-...          4 Bytes    User Data Pages              WRITABLE (Envelope payloads and sanitization)
-Page N       4 Bytes    End of User Memory           WRITABLE (Family-specific upper boundary)
---------------------------------------------------------------------------------------------------
-Page N+1 ..  4 Bytes    Dynamic Lock & Config Pages  FORBIDDEN (Never touch during write or wipe)
-```
-
-### Safety Rules:
-1. **Capability Container Protection**: Page 3 (`CC`) is never included in user data write or destructive wipe sweeps.
-2. **Lock Bit Preservation**: Ghost-Tag never sets OTP or permanent dynamic lock bits without explicit user request.
-3. **Destructive Overwrite Exclusions**: Wiping operates strictly within `[Page 4, Page N]`, ensuring tags remain re-writable.
+| Chip | Total EEPROM | User EEPROM | Page Count | v1 Max Ciphertext (`TagInfo.ts` / `apdu.js`) | v2 Bulk Max Ciphertext (`TagInfo.ts` / `apdu.js`) | Recommended Use |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **NTAG213** | `180B` | `144B` | Pages `0..44` (user `4..39`) | `52B` / `56B` | **Does Not Fit (`0B`)** | Short secrets/seeds (`v1` single-tag only; incompatible with `v2` bulk) |
+| **NTAG215** | `540B` | `504B` | Pages `0..134` (user `4..129`) | `404B` / `411B` | `326B` / `333B` | Standard v1 and v2 distributed bulk file vaults |
+| **NTAG216** | `924B` | `888B` | Pages `0..230` (user `4..225`) | `784B` / `795B` | `706B` / `717B` | Large v1 secrets and high-density v2 distributed bulk file vaults |
+| **MIFARE Classic** | Various | Proprietary | Non-Type-2 | **Rejected** | **Rejected** | Unsupported (legacy Crypto-1; non-NDEF Type 2 compliance) |
 
 ---
 
-## 3. Unsupported Hardware Architectures
-
-The following tag types are explicitly rejected upon detection with `TAG_UNSUPPORTED`:
-
-- **MIFARE Classic 1K / 4K**: Proprietary Crypto-1 cipher with known cryptographic breaks; non-compliant with standard Android NDEF API across all chipsets.
-- **MIFARE DESFire**: Complex multi-application file system requiring proprietary APDU authentication routines.
-- **Sony FeliCa (NFC Forum Type 3)**: Distinct RF framing and framing commands outside the Type 2 scope.
-- **ISO 15693 (NFC-V / Vicinity Cards)**: Long-range industrial tags with differing timing and memory boundaries.
-- **Card Emulation Modes**: Emulated cards are rejected to prevent replay and relay ambiguities.
+## 2. Page Preservation & Lock Safety
+1. **System & Lock Pages Preserved**: Multi-pass tag wiping (`src/nfc/tagWiper.ts`) overwrites writable user memory pages (`4`..end of user space) while preserving UID pages (`0..2`), Capability Container (`3`), and dynamic lock / configuration pages to avoid permanently bricking tags.
+2. **Hardware Validation Gate**: Capacity calculations and mocked NDEF read/write tests pass across `src/__tests__/nfc.test.ts`, `desktop/test/bridge.test.js`, and `desktop/test/pn532_serial.test.js`. Physical read/write testing against real `NTAG213` / `NTAG215` / `NTAG216` hardware remains an open release gate ([`../PROJECT-STATUS.md`](../PROJECT-STATUS.md), [`../FAQ.md`](../FAQ.md)).

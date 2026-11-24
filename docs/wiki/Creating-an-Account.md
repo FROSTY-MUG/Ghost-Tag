@@ -1,47 +1,10 @@
-# Creating an Account
+# Creating an Account (`v2.1.0`)
 
-Account creation is mandatory before encrypting or decrypting in Ghost-Tag.
+Ghost-Tag operates **100% offline by default**. Account setup establishes your local key hierarchy and Master Passphrase:
 
----
+1. **Master Passphrase (`>= 16` chars)**: Derives an ephemeral 256-bit KEK via RFC 9106 Argon2id (`16 / 32 / 64 MiB` profiles in `DEFAULT_KDF_PARAMETERS_BY_TIER` on native clients, with WebCrypto PBKDF2 local KEK compatibility where configured).
+2. **Canonical 12-Word BIP-39 Recovery Phrase**: `128` bits of CSPRNG entropy + `4`-bit SHA-256 checksum encoded across the English 2,048-word BIP-39 dictionary (`24-word` phrases are retained for legacy local unwrapping compatibility only).
+3. **Random 256-Bit DEKs**: Generated locally to encrypt payloads via AES-256-GCM and wrapped under the passphrase KEK (and optionally recovery KEK).
+4. **Opt-In Cloud Metadata Backup (`v2.1.0`)**: When explicitly enabled and Supabase is deployed, `account-auth` validates Cloudflare Turnstile (`verify-captcha`), generates a server-random **32-byte CSPRNG `recovery_salt`**, and stores only the client's two-stage Argon2id `recovery_verifier` (`m=32768, t=3, p=2`) and encrypted `encrypted_recovery_envelope`. Plaintext passphrases, BIP-39 words, and unwrapped DEKs never leave the device.
 
-## 1. Principles of Ghost Accounts
-
-- **Local-First**: Accounts are initialized in the browser or on the device without pinging a central server or identity provider.
-- **Anonymous**: No email, username, phone number, or KYC verification is required or accepted.
-- **Portable**: Your account identity is completely defined by your **12-word recovery phrase**. You can restore your identity onto any device at any time.
-
----
-
-## 2. Account Creation Flow
-
-### Step 1: Welcome Screen
-When you launch Ghost-Tag for the first time, you are presented with:
-```text
-Welcome to Ghost
-Create your anonymous Ghost account.
-Your recovery phrase is your identity.
-Your passphrase protects your encrypted data.
-[Create Account]  [I Already Have a Recovery Phrase]
-```
-
-### Step 2: Master Passphrase
-You are prompted to enter a master passphrase:
-- Must be at least **16 characters long**.
-- Never stored on disk or sent over the network.
-- Never logged or copied to the clipboard.
-- Used to derive the Key Encryption Key (KEK) via PBKDF2 (Web) or Argon2id (Android).
-
-### Step 3: 12-Word Recovery Phrase Generation
-Ghost-Tag generates a standard 12-word BIP-39 English phrase from 128 bits of high-entropy randomness generated via `crypto.getRandomValues()`.
-- You must write these words down offline on paper or metal.
-- Never take a screenshot or store them in cloud notes.
-
-### Step 4: Word Confirmation
-Ghost-Tag randomly challenges you to confirm three word positions (e.g. Word 4, Word 8, Word 11) to ensure you have saved the phrase accurately.
-
-### Step 5: Anonymous Cloud Sync Setup
-Once confirmed:
-- Ghost-Tag computes a deterministic UUIDv4:
-  `account_id = KDF(recovery_phrase, "ghost-account-id")`
-- Automatically signs into Supabase anonymously (`signInAnonymously()`).
-- Enables cross-device recovery of encrypted vault metadata without storing any secrets in the cloud.
+See [Recovery Phrase](Recovery-Phrase) and [Recovery](Recovery).

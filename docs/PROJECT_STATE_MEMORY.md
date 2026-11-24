@@ -1,4 +1,6 @@
-# GHOST-TAG v2.0.5: COMPREHENSIVE ENGINEERING DOSSIER & SYSTEM LAB REPORT
+# GHOST-TAG v2.0.5: HISTORICAL ENGINEERING DOSSIER (UPDATED WITH v2.1.0 NOTES)
+
+> **Historical Note**: This engineering dossier preserves the v2.0.5 baseline snapshot, annotated below where v2.1.0 superseded framed NTAG21x sizes, volatile chunk cache rules, or server-generated recovery salts. For active v2.1.0 ground truth, see [`../PROJECT-STATUS.md`](../PROJECT-STATUS.md) and [`CANONICAL-SPECIFICATION.md`](./CANONICAL-SPECIFICATION.md).
 
 ```
 ========================================================================================
@@ -106,7 +108,7 @@ The Ghost-Tag engineering contract mandates the following invariant rules:
 1. **Absolute Ban on Mock Data**: No simulated tags, no `Math.random()` fake UIDs, no fake capacities, no synthetic scan increments, and no simulated write successes. If physical hardware is absent, the system halts with the exact required banner.
 2. **Mandatory Account Creation**: Encryption and decryption flows are strictly locked until a local Ghost account is created or restored via a 12-word BIP-39 phrase.
 3. **Single Master Passphrase**: Vault encryption and decryption use the exact same user passphrase.
-4. **Zero Scanned-Chunk Cache**: The application enforces a strict volatile session policy. There is **no persistent 72-hour chunk cache**. All raw chunks are wiped from memory on tab close, lock, or navigation.
+4. **72-Hour Volatile RAM Scanned-Chunk Cache (`ChunkCacheManager`)**: Scanned chunks are cached strictly in volatile in-memory `Map` storage (zero disk/SQLite persistence) for up to 72 hours within an active session and purged automatically on expiration, tab close, or process exit.
 5. **Double Cryptographic Binding**: Payloads are authenticated at both the entire-file level and the individual-chunk level.
 6. **No Forbidden Operations**: Tag cloning, tag copying, tag locking (setting lock bits), MIFARE Classic key cracking, and "Tag Doctor" repair features are permanently forbidden.
 
@@ -167,9 +169,9 @@ The Ghost-Tag engineering contract mandates the following invariant rules:
 
 | Tag IC Family | Standard | Total EEPROM | User Writable | Ghost Fixed Overhead | Max Usable Ghost Storage |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **NTAG213** | ISO 14443-3A Type 2 | 180 Bytes | 144 Bytes | 134 Bytes | **10 Bytes** (Single tiny record) |
-| **NTAG215** | ISO 14443-3A Type 2 | 540 Bytes | 504 Bytes | 134 Bytes | **370 Bytes** per tag |
-| **NTAG216** | ISO 14443-3A Type 2 | 924 Bytes | 888 Bytes | 134 Bytes | **754 Bytes** per tag |
+| **NTAG213** | ISO 14443-3A Type 2 | 180 Bytes | 144 Bytes | 134 Bytes | **Incompatible with v2 bulk (`0B`, `fits: false`)** |
+| **NTAG215** | ISO 14443-3A Type 2 | 540 Bytes | 504 Bytes | 134 Bytes | **`326B` (`TagInfo.ts`) / `333B` (`apdu.js`)** |
+| **NTAG216** | ISO 14443-3A Type 2 | 924 Bytes | 888 Bytes | 134 Bytes | **`706B` (`TagInfo.ts`) / `717B` (`apdu.js`)** |
 
 ### 5.2 Canonical GTAG Binary Envelope Layout (Bulk Chunk v2)
 Every chunk written to an NFC tag is encapsulated in an NDEF MIME Media record under `application/vnd.ghost.bulk`. All multi-byte integer fields are encoded strictly in **Little-Endian** byte order.

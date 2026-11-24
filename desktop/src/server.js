@@ -248,8 +248,13 @@ class GhostBridgeServer {
       return;
     }
 
+    if (!this.actionHandlers.has(msg.action)) {
+      ws.send(JSON.stringify({ type: 'error', message: 'Unsupported Ghost Bridge action.' }));
+      return;
+    }
+
     const handler = this.actionHandlers.get(msg.action);
-    if (!handler) {
+    if (typeof handler !== 'function') {
       ws.send(JSON.stringify({ type: 'error', message: 'Unsupported Ghost Bridge action.' }));
       return;
     }

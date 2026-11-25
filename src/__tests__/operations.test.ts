@@ -3,6 +3,7 @@
  * @summary Unit and Integration Tests for Ghost-Tag Tag Operations Engine.
  */
 
+import { Platform } from 'react-native';
 import { ScanOperation } from '../operations/scanOperation';
 import { WriteOperation } from '../operations/writeOperation';
 import { WipeOperation } from '../operations/wipeOperation';
@@ -150,11 +151,19 @@ describe('Ghost-Tag Tag Operations Engine Suite', () => {
         techList: ['android.nfc.tech.MifareClassic'],
       };
 
-      const scanOp = new ScanOperation(vaultManager, mockReader, tagInfo);
-      const result = await scanOp.execute(unsupportedTag);
+      // Android-only behavior: iOS CoreNFC discovery events carry no SAK telemetry,
+      // so TagInfo cannot classify the tag and the scan is accepted on iOS instead.
+      const prevOS = Platform.OS;
+      Platform.OS = 'android';
+      try {
+        const scanOp = new ScanOperation(vaultManager, mockReader, tagInfo);
+        const result = await scanOp.execute(unsupportedTag);
 
-      expect(result.success).toBe(false);
-      expect(result.error?.code).toBe(GhostTagErrorCode.TAG_UNSUPPORTED);
+        expect(result.success).toBe(false);
+        expect(result.error?.code).toBe(GhostTagErrorCode.TAG_UNSUPPORTED);
+      } finally {
+        Platform.OS = prevOS;
+      }
     });
 
     it('fails gracefully when vault is locked and key cannot be unwrapped', async () => {

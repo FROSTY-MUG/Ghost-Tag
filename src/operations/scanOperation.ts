@@ -7,6 +7,7 @@
  *      -> ENVELOPE_PARSING -> KEY_RESOLVING -> DECRYPTING -> VERIFIED -> DISPLAYING
  */
 
+import { Platform } from 'react-native';
 import { ScanState, ScanContext } from '../contracts/states';
 import { GhostTagErrorCode, GhostTagError, ErrorCategory, ErrorSeverity } from '../contracts/errors';
 import { GhostTagEnvelope } from '../contracts/envelope';
@@ -64,7 +65,10 @@ export class ScanOperation {
       };
       this.notify(currentContext, onStateChange);
 
-      if (!identification.isSupported) {
+      // iOS: CoreNFC discovery events carry only the NDEF message (no SAK/ATQA/maxSize
+      // telemetry), so TagInfo cannot classify the tag — accept any CoreNFC-discovered
+      // tag and rely on envelope validation during read.
+      if (!identification.isSupported && Platform.OS !== 'ios') {
         throw new GhostTagError({
           code: GhostTagErrorCode.TAG_UNSUPPORTED,
           userMessage: `Unsupported tag architecture: ${identification.family}. Ghost-Tag only supports NTAG21x and MIFARE Ultralight Type 2 tags.`,

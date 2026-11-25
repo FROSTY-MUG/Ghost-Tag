@@ -32,7 +32,8 @@ import {
   ENVELOPE_FIXED_OVERHEAD_BYTES,
 } from '../contracts/envelope';
 import { ScanState, WriteState, WipeState } from '../contracts/states';
-import NfcManager, { NfcError, Ndef } from 'react-native-nfc-manager';
+import NfcManager, { NfcError, Ndef, NfcTech } from 'react-native-nfc-manager';
+import { Platform } from 'react-native';
 
 jest.mock('react-native-nfc-manager', () => {
   class NfcErrorBase extends Error {}
@@ -458,11 +459,36 @@ describe('Ghost-Tag Phase 4: NFC Hardware Abstraction Layer', () => {
         sak: 0x08,
       };
 
+      // Android-only behavior: iOS CoreNFC discovery events carry no SAK telemetry,
+      // so TagInfo cannot classify the tag and the read is accepted on iOS instead.
+      const prevOS = Platform.OS;
+      Platform.OS = 'android';
+      try {
+        const result = await reader.readTag(tag);
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.code).toBe(GhostTagErrorCode.TAG_UNSUPPORTED);
+          expect(result.state).toBe(ScanState.ERROR);
+        }
+      } finally {
+        Platform.OS = prevOS;
+      }
+    });
+
+    it('accepts CoreNFC tags without hardware telemetry on iOS', async () => {
+      // iOS discovery events carry only the NDEF message (no techTypes/sak/maxSize).
+      const envelope = createMockEnvelope(16);
+      const record = buildGhostTagNdefRecord(envelope);
+      const tag: NfcTag = {
+        id: '04A1B2C3D4E5F6',
+        ndefMessage: [record],
+      };
+
+      expect(Platform.OS).toBe('ios');
       const result = await reader.readTag(tag);
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.code).toBe(GhostTagErrorCode.TAG_UNSUPPORTED);
-        expect(result.state).toBe(ScanState.ERROR);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.rawEnvelope).toEqual(envelope);
       }
     });
 
@@ -714,14 +740,40 @@ describe('Ghost-Tag Phase 4: NFC Hardware Abstraction Layer', () => {
     });
 
     it('starts listening and registers Android foreground dispatch', async () => {
-      const callback = jest.fn();
-      await manager.startListening(callback);
+      const prevOS = Platform.OS;
+      Platform.OS = 'android';
+      try {
+        const callback = jest.fn();
+        await manager.startListening(callback);
 
-      expect(NfcManager.registerTagEvent).toHaveBeenCalled();
-      expect(NfcManager.setEventListener).toHaveBeenCalled();
+        expect(NfcManager.registerTagEvent).toHaveBeenCalled();
+        expect(NfcManager.setEventListener).toHaveBeenCalled();
 
-      await manager.stopListening();
-      expect(NfcManager.unregisterTagEvent).toHaveBeenCalled();
+        await manager.stopListening();
+        expect(NfcManager.unregisterTagEvent).toHaveBeenCalled();
+      } finally {
+        Platform.OS = prevOS;
+      }
+    });
+
+    it('starts listening via CoreNFC on iOS', async () => {
+      const prevOS = Platform.OS;
+      Platform.OS = 'ios';
+      try {
+        // Mock call history accumulates across tests in this suite
+        jest.clearAllMocks();
+        const callback = jest.fn();
+        await manager.startListening(callback);
+
+        expect(NfcManager.requestTechnology).toHaveBeenCalledWith(NfcTech.Ndef);
+        expect(NfcManager.registerTagEvent).not.toHaveBeenCalled();
+        expect(NfcManager.setEventListener).toHaveBeenCalled();
+
+        await manager.stopListening();
+        expect(NfcManager.cancelTechnologyRequest).toHaveBeenCalled();
+      } finally {
+        Platform.OS = prevOS;
+      }
     });
 
     it('handles operation timeouts via withTimeout', async () => {

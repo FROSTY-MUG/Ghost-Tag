@@ -1,6 +1,13 @@
 # Supabase Cloud Recovery & Metadata Backend
 
-> **Status Honesty**: Cloud sync and cross-device recovery are **optional** and **require internet connectivity** plus an operator-provisioned Supabase project. **Live deployment to hosted Supabase has not yet been executed**; schema and handlers are verified via mocked Jest security suites only. Without Supabase, all Ghost-Tag encryption, decryption, and NFC workflows run **100% offline**.
+> **Status Honesty**: Cloud sync and cross-device recovery are **optional** and **require internet connectivity** plus an operator-provisioned Supabase project. **Live deployment to hosted Supabase has not yet been executed** ([Issue #37](https://github.com/FROSTY-MUG/Ghost-Tag/issues/37)); schema and handlers are verified via mocked Jest security suites only. Without Supabase, all Ghost-Tag encryption, decryption, and NFC workflows run **100% offline**.
+
+## Target Hosting & Free-Tier Policy
+- **Target Project Name**: `Ghost-Tag Production`
+- **Target Region**: `ap-south-1` (South Asia — Mumbai, India; `ap-southeast-1` Singapore fallback)
+- **Email Verification**: **Disabled on Free Tier** — Supabase's built-in email provider is limited to `2` emails/hour without a custom SMTP provider. Ghost-Tag uses the **anonymous / phrase-based account flow** on the Free Tier.
+- **Database Backups & PITR**: **Unavailable automatically on Free Tier** — Automated daily backups require Supabase Pro (`$25/month`), and Point-in-Time Recovery (PITR) is a paid add-on (`~$100+/month`). On the Free Tier, operators must run manual `supabase db dump` exports.
+- **Turnstile Policy**: Enabled in **Managed** mode on `verify-captcha` and `recover-vault` only (never applied to offline NFC operations).
 
 ## Staged Database & Edge Functions (`supabase/`)
 - **4 PostgreSQL Migrations (`supabase/migrations/`)**:
@@ -14,5 +21,14 @@
   - `sync-vault-metadata`, `schedule-account-deletion`, `cancel-account-deletion`, `process-account-deletions`, `migrate-recovery-verifier`
 
 ## Required Operator Secrets (Never Commit to Git)
-Configured solely via `supabase secrets set` / `.env.local` (see [`supabase/README.md`](../../supabase/README.md)):
-`CLOUDFLARE_TURNSTILE_SECRET_KEY`, `AUDIT_HMAC_SALT`, `IP_HASH_SALT`, `SERVER_ENUMERATION_SECRET`, `DELETION_WORKER_CRON_SECRET`, `SUPABASE_SERVICE_ROLE_KEY` (plus config `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `GHOST_ENV`, `ALLOW_LOCALHOST_CORS`, `APPROVED_CORS_ORIGINS`).
+Configured solely via Supabase Edge Function secrets (`supabase secrets set`) or Supabase Dashboard (see [supabase/README.md](../../supabase/README.md)):
+- `CLOUDFLARE_TURNSTILE_SECRET_KEY`
+- `AUDIT_HMAC_SALT`
+- `IP_HASH_SALT`
+- `SERVER_ENUMERATION_SECRET`
+- `DELETION_WORKER_CRON_SECRET`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+Non-secret configuration: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `GHOST_ENV=production`, `ALLOW_LOCALHOST_CORS=false`, `APPROVED_CORS_ORIGINS=https://frosty-mug.github.io`.
+
+GitHub Actions deployment ([.github/workflows/supabase-deploy.yml](../../.github/workflows/supabase-deploy.yml)) uses encrypted repository/environment secrets: `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, `SUPABASE_DB_PASSWORD`, `DELETION_WORKER_CRON_SECRET`.

@@ -211,8 +211,8 @@ To prevent authenticated clients from reading or tampering with `recovery_verifi
 **Citations**: `supabase/migrations/`, `src/__tests__/rlsGhostVaults.test.ts`, `src/__tests__/rlsUserAccounts.test.ts`.
 
 ### Q43. Is Supabase already deployed for production v2.1.0?
-**No.** Schema migrations and Edge Functions exist and pass mocked/policy tests in the repository, but live deployment to a hosted Supabase project remains pending operator credentials and secrets.  
-**Citations**: `PROJECT-STATUS.md`, `supabase/README.md`.
+**No.** Schema migrations and Edge Functions exist and pass mocked/policy tests in the repository, but live deployment to a hosted Supabase project (`Ghost-Tag Production`, `ap-south-1` Mumbai target) remains pending project creation, Turnstile site key, operator secrets, and explicit authorization. On the Supabase Free Tier, email verification is **disabled** (built-in Auth email is limited to `2` emails/hour without custom SMTP, so Ghost-Tag uses the anonymous/phrase-based account flow), and automated daily backups / Point-in-Time Recovery (Pro/paid add-on) are unavailable without manual `supabase db dump` exports.  
+**Citations**: `PROJECT-STATUS.md`, `supabase/README.md`, `.github/workflows/supabase-deploy.yml`.
 
 ### Q44. How does account deletion work in v2.1.0?
 `deletionHandlers.ts` and `deletionPurgeWorker.test.ts` implement soft-deletion scheduling and delayed purge handling controlled exclusively via authenticated service-role Edge Functions (`account_status`, `deletion_scheduled_at`), preventing unprivileged direct column mutation.  

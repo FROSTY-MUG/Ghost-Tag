@@ -4,7 +4,7 @@
 
 # Ghost-Tag Wiki
 
-Welcome to the official **Ghost-Tag** (`v2.1.0` unreleased staging) wiki chapters. Notice that the latest published GitHub Release is **`v2.0.6`**; physical NFC handset, ACR122U, ESP32/PN532, iOS CoreNFC, and live hosted Supabase deployment remain open release gates ([`../../PROJECT-STATUS.md`](../../PROJECT-STATUS.md)).
+Welcome to the official **Ghost-Tag** (`v2.1.0` unreleased staging) wiki. Notice that the latest published GitHub Release is **`v2.0.6`**; physical NFC handset, ACR122U, ESP32/PN532, iOS CoreNFC, and live hosted Supabase deployment remain open release gates ([PROJECT-STATUS.md](../../PROJECT-STATUS.md)).
 
 > **Core Promise**:
 > Encrypted NFC storage.
@@ -14,38 +14,55 @@ Welcome to the official **Ghost-Tag** (`v2.1.0` unreleased staging) wiki chapter
 
 ## Implemented vs. Proposed & Offline vs. Cloud Boundaries
 - **Offline Implemented**: Client-side Argon2id / AES-256-GCM encryption (`54B` v1 single-tag & `134B` v2 Cauchy RS bulk), Android native UI/NDK (`emulator-verified`, physical NFC pending), Web Companion (`live GitHub Pages verified`, Chrome WebNFC hardware pending), and Desktop Ghost Bridge (`mock PC/SC + PN532 verified`, physical readers pending).
-- **Cloud-Dependent & Undeployed (`supabase/`)**: Opt-in cross-device recovery (`account-auth`, `recover-vault`, `verify-captcha`, `sync-vault-metadata`) is implemented and verified under mocked Jest suites, **not yet deployed to live hosted Supabase**.
+- **Cloud-Dependent & Undeployed (`supabase/`)**: Opt-in cross-device recovery (`account-auth`, `recover-vault`, `verify-captcha`, `sync-vault-metadata`) is implemented and verified under mocked Jest suites, **not yet deployed to live hosted Supabase** (Free Tier target `ap-south-1`, anonymous/phrase-based flow with email verification disabled).
 - **Deferred (`iOS Beta`)**: iOS CoreNFC PR `#25` remains deferred pending macOS build, entitlements, `.ipa` packaging fix, and physical iPhone testing.
 
 ---
 
-## Documentation Index (Canonical Chapters)
+## Complete Wiki Index (35 Pages)
 
-| Section | Focus & Verification State |
-| :--- | :--- |
-| **[Getting Started](Getting-Started.md)** | Offline setup, core concepts, and client selection |
-| **[Architecture](Architecture.md)** | Strict `contracts` -> core -> `operations` -> `ui` / native C++ topology |
-| **[Android Installation](Android-Installation.md)** | Signed APK installation (`v2.1.0` emulator-verified; physical handset pending) |
-| **[iOS Status](iOS-Status.md)** | `v2.1.0` Xcode foundation & deferred PR `#25` CoreNFC checklist (`iOS Beta`) |
-| **[Web App](Web-App.md)** | GitHub Pages companion, WASM Argon2id, and Web NFC boundaries |
-| **[Ghost Bridge](Ghost-Bridge.md)** | Authenticated `127.0.0.1:41789` PC/SC & ESP32/PN532 desktop bridge (hardware pending) |
-| **[Creating an Account](Creating-an-Account.md)** | Local `>=16`-char passphrase and identity initialization |
-| **[Recovery Phrase](Recovery-Phrase.md)** | Canonical 12-word BIP-39 phrase (`24`-word local unwrapping compat) |
-| **[Recovery System](Recovery.md)** | Offline restoration vs. `v2.1.0` Turnstile + HMAC challenge-proof recovery |
-| **[Supabase Backend](Supabase-Backend.md)** | Undeployed SQL migrations, RLS lockdown, and Edge Functions (`mock-tested`) |
-| **[Encrypt Flow](Encrypt.md)** | Single-tag `v1` (`54B`) encryption and read-back verification |
-| **[Decrypt Flow](Decrypt.md)** | Scanning tags in any order, constant-time GCM verification, and decryption |
-| **[Batch Write](Batch-Write.md)** | Multi-tag `v2` (`134B`) distribution with Cauchy RS (`NTAG215`/`NTAG216` only) |
-| **[Batch Read](Batch-Read.md)** | Order-independent scanning, 72h volatile RAM cache, and `K`-of-`K+M` reconstruction |
-| **[NFC Compatibility](NFC-Compatibility.md)** | Exact framed limits (`NTAG213` v1-only, `NTAG215`/`216` v1+v2) |
-| **[Technical Format](Technical-Format.md)** | Little-Endian `GTAG` headers, AAD offsets, and MIME types |
-| **[Security Model](Security-Model.md)** | Argon2id tiers, AES-256-GCM, C++ `mlock`/`ptrace`, and limitations |
-| **[Testing & CI](Testing-and-CI.md)** | Automated Jest/CodeQL/audit coverage vs. unexecuted hardware tests |
-| **[Security Reporting](Security-Reporting.md)** | Private coordinated disclosure & zero-secrets rules (`72h` SLA) |
-| **[Contributing](Contributing.md)** | PR workflow, branch protection, and verification gates |
-| **[Roadmap](Roadmap.md)** | Physical hardware gate, live Supabase gate, `iOS Beta`, and `v2.2+` |
-| **[Release History](Release-History.md)** | Published `v2.0.6` baseline vs. unreleased `v2.1.0` staging state |
-| **[FAQ](FAQ.md)** | Pointer to root [`../../FAQ.md`](../../FAQ.md) (`70` cited Q&As) |
+| Category | Page | Focus & Verification State |
+| :--- | :--- | :--- |
+| **Overview** | **[What Is Ghost-Tag](What-Is-Ghost-Tag.md)** | Core purpose, what you can store, and explicit non-goals |
+| **Overview** | **[Getting Started](Getting-Started.md)** | Offline setup, core concepts, and client selection |
+| **Overview** | **[Architecture](Architecture.md)** | Strict `contracts` → core → `operations` → `ui` / native C++ topology |
+| **Security** | **[Security Model](Security-Model.md)** | Argon2id tiers, AES-256-GCM, C++ `mlock`/`ptrace`, and limitations |
+| **Security** | **[Threat Model](Threat-Model.md)** | Protected assets, trust boundaries, and out-of-scope risks |
+| **Security** | **[Encryption](Encryption.md)** | Argon2id + AES-256-GCM + `v1`/`v2` envelope framing |
+| **Security** | **[Key Hierarchy](Key-Hierarchy.md)** | Passphrase, master key, per-envelope IV, and recovery verifier |
+| **Accounts** | **[Creating an Account](Creating-an-Account.md)** | Local `>=16`-char passphrase and identity initialization |
+| **Accounts** | **[Passphrase](Passphrase.md)** | 16-character minimum, local-only derivation, zero fallback |
+| **Accounts** | **[Recovery](Recovery.md)** | Offline restoration vs. `v2.1.0` Turnstile + HMAC challenge-proof recovery |
+| **Accounts** | **[Recovery Phrase](Recovery-Phrase.md)** | Canonical 12-word BIP-39 phrase (`24`-word local unwrapping compat) |
+| **NFC** | **[NFC Tags](NFC-Tags.md)** | ISO 14443-A NTAG213/215/216 overview & NDEF MIME format |
+| **NFC** | **[NFC Compatibility](NFC-Compatibility.md)** | Exact framed limits (`NTAG213` v1-only, `NTAG215`/`216` v1+v2) |
+| **NFC** | **[Technical Format](Technical-Format.md)** | Little-Endian `GTAG` headers, AAD offsets, and MIME types |
+| **Vaults** | **[Single-Tag Vaults](Single-Tag-Vaults.md)** | Ghost `v1` (`54B` overhead) single-tag storage |
+| **Vaults** | **[Multi-Tag Vaults](Multi-Tag-Vaults.md)** | Ghost `v2` (`134B` overhead) order-independent multi-tag storage |
+| **Vaults** | **[Reed-Solomon Erasure Coding](Reed-Solomon-Erasure-Coding.md)** | Cauchy `K`-of-`K+M` parity reconstruction over `GF(2^8)` |
+| **Vaults** | **[Bulk Verification](Bulk-Verification.md)** | `32B` SHA-256 `CHUNK_HASH` and read-back verification |
+| **Vaults** | **[Encrypt Flow](Encrypt.md)** | Single-tag `v1` encryption and read-back verification |
+| **Vaults** | **[Decrypt Flow](Decrypt.md)** | Tag scanning, constant-time GCM verification, and decryption |
+| **Vaults** | **[Batch Write](Batch-Write.md)** | Multi-tag `v2` distribution (`NTAG215`/`NTAG216` only) |
+| **Vaults** | **[Batch Read](Batch-Read.md)** | Order-independent scanning and 72h volatile RAM cache |
+| **Platforms** | **[Android Installation](Android-Installation.md)** | Signed APK installation (`v2.1.0` emulator-verified; physical handset pending) |
+| **Platforms** | **[iOS Status](iOS-Status.md)** | `v2.1.0` Xcode foundation & deferred PR `#25` CoreNFC checklist (`iOS Beta`) |
+| **Platforms** | **[Web App](Web-App.md)** | GitHub Pages companion, WASM Argon2id, and Web NFC boundaries |
+| **Platforms** | **[Ghost Bridge](Ghost-Bridge.md)** | Authenticated `127.0.0.1:41789` PC/SC & ESP32/PN532 desktop bridge (hardware pending) |
+| **Cloud** | **[Supabase Backend](Supabase-Backend.md)** | Undeployed SQL migrations, RLS lockdown, Free-Tier policy (`mock-tested`) |
+| **Cloud** | **[Cloud Recovery](Cloud-Recovery.md)** | Turnstile + `76B` HMAC challenge/proof flow (`mock-tested`) |
+| **Cloud** | **[Account Deletion](Account-Deletion.md)** | 48-hour grace period & `process-account-deletions` worker (`mock-tested`) |
+| **Quality** | **[Testing & CI](Testing-and-CI.md)** | Automated Jest/CodeQL/audit coverage vs. unexecuted hardware tests |
+| **Quality** | **[Physical Hardware Validation](Physical-Hardware-Validation.md)** | Verified vs. pending physical NFC/ACR122U/PN532/iOS gates |
+| **Quality** | **[Known Limitations](Known-Limitations.md)** | Hardware, recovery, and Supabase Free-Tier boundaries |
+| **Project** | **[Roadmap](Roadmap.md)** | `Planned`/`Blocked`/`Proposed` matrix for `v2.1.0` and `v2.2+` |
+| **Project** | **[Future Prospects](Future-Prospects.md)** | Exploratory long-term ideas (no committed timelines) |
+| **Project** | **[Contributing](Contributing.md)** | PR workflow, branch protection, and verification gates |
+| **Project** | **[Security Reporting](Security-Reporting.md)** | Private coordinated disclosure & zero-secrets rules (`72h` SLA) |
+| **Project** | **[Release History](Release-History.md)** | Published `v2.0.6` baseline vs. unreleased `v2.1.0` staging state |
+| **Support** | **[FAQ](FAQ.md)** | Pointer to root [FAQ.md](../../FAQ.md) |
+| **Support** | **[Glossary](Glossary.md)** | Canonical cryptography, NFC, and architecture terms |
+| **Support** | **[Troubleshooting](Troubleshooting.md)** | Common NFC, bridge, and recovery diagnostics |
 
 ---
 

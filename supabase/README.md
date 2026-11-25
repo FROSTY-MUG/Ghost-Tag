@@ -29,6 +29,11 @@ Opt-in, zero-knowledge Supabase PostgreSQL schema, hardened Row-Level Security (
   - `SERVER_ENUMERATION_SECRET` (deterministic anti-enumeration challenge salt synthesis)
   - `DELETION_WORKER_CRON_SECRET` (`X-Ghost-Cron-Secret` constant-time cron guard)
   - `SUPABASE_SERVICE_ROLE_KEY` (service-role database access inside Edge Functions only)
-- **Required Non-Secret Env Config**: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `GHOST_ENV`, `ALLOW_LOCALHOST_CORS`, `APPROVED_CORS_ORIGINS`.
-- **Live Cloud Deployment Status**: Migrations and Edge Functions are staged in Git; **live deployment to hosted Supabase (`supabase db push` / `supabase functions deploy`) remains pending** operator secrets and explicit authorization.
+- **Required Non-Secret Env Config**: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `GHOST_ENV=production`, `ALLOW_LOCALHOST_CORS=false`, `APPROVED_CORS_ORIGINS=https://frosty-mug.github.io`.
+- **Target Hosting & Free-Tier Policy**:
+  - **Target Project / Region**: `Ghost-Tag Production` in `ap-south-1` (Mumbai, India; `ap-southeast-1` Singapore fallback).
+  - **Email Verification**: Disabled on the Supabase Free Tier (built-in Auth email is capped at `2` emails/hour without custom SMTP); Ghost-Tag uses the anonymous/phrase-based account flow.
+  - **Backups & PITR**: Automated daily backups (Pro) and Point-in-Time Recovery (paid add-on) are unavailable on the Free Tier; operators must run manual `supabase db dump` exports.
+- **GitHub Actions Deployment**: [`.github/workflows/supabase-deploy.yml`](../.github/workflows/supabase-deploy.yml) (`workflow_dispatch` gated with `confirm_deploy=DEPLOY`) requires encrypted GitHub secrets `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, `SUPABASE_DB_PASSWORD`, and `DELETION_WORKER_CRON_SECRET`.
+- **Live Cloud Deployment Status**: Migrations and Edge Functions are staged in Git; **live deployment to hosted Supabase (`supabase db push` / `supabase functions deploy`) remains pending** project creation, Turnstile site key, operator secrets, and explicit authorization.
 - Never commit `.env` files, service-role keys, or secrets ([`../SECURITY.md`](../SECURITY.md), [`../FAQ.md`](../FAQ.md)).

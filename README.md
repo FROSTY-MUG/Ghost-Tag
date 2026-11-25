@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="web/assets/logo.svg" alt="Ghost-Tag Brutalist Logo" width="72" height="72" />
+</p>
+
 # Ghost-Tag (`v2.1.0` Staging)
 
 > **Zero-knowledge, local-first NFC encryption across physical NTAG213, NTAG215, and NTAG216 tags — backed by Argon2id, AES-256-GCM, Cauchy Reed-Solomon over $\mathrm{GF}(2^8)$, native C++17 memory defense, and authenticated local desktop PC/SC + PN532 hardware bridges.**
@@ -6,17 +10,33 @@
 
 ---
 
+## Who Ghost-Tag Is For & Explicit Boundaries
+
+### Intended Audience & Core Use Cases
+- Privacy-conscious individuals, researchers, and engineers storing sensitive text notes, configuration secrets, or fragmented files onto physical NFC Forum Type 2 chips (`NTAG213` for compact `v1` records; `NTAG215` / `NTAG216` for multi-tag `v2` vaults with optional Reed-Solomon parity recovery).
+- Users needing **offline-first encryption** where keys live exclusively in client memory and physical tags carry only authenticated binary ciphertext.
+
+### What Ghost-Tag Does **Not** Do
+- **Does not simulate or fake NFC hardware** in Android, Web, or Desktop runtime flows (`simulate_tag` is rejected cleanly across Ghost Bridge and UI clients).
+- **Does not fit `v2` bulk chunks onto NTAG213** (`NTAG213` holds `v1` single-tag records up to `52B` mobile / `56B` bridge; `v2` bulk returns `0B` usable / `fits: false`).
+- **Does not store passphrases, raw KEKs, DEKs, or decrypted plaintext** on disk logs or cloud tables; if both your passphrase and 12-word BIP-39 recovery phrase are lost, ciphertext cannot be recovered.
+- **Does not protect an active root-compromised host OS**, guarantee silicon-level EEPROM forensic erasure, or currently support shipping iOS hardware writes (iOS PR `#25` is deferred to `iOS Beta`).
+- **Cloud metadata sync requires explicit Supabase configuration and internet connectivity**; without Supabase credentials, all core local encryption, decryption, and NFC workflows remain 100% offline.
+
+---
+
 ## Table of Contents
 1. [Core Capabilities](#core-capabilities)
-2. [Architecture & Binary Diagrams](#architecture--binary-diagrams)
+2. [Architecture, User Flow, Encryption & Recovery Diagrams](#architecture-user-flow-encryption--recovery-diagrams)
 3. [Cryptographic Primitives & Key Hierarchy](#cryptographic-primitives--key-hierarchy)
 4. [Binary Envelope Formats & NTAG21x Capacities](#binary-envelope-formats--ntag21x-capacities)
-5. [Cross-Platform Clients & Hardware Policy](#cross-platform-clients--hardware-policy)
+5. [Implemented vs. Proposed & Verification Matrix](#implemented-vs-proposed--verification-matrix)
 6. [Cloud Metadata & v2.1.0 Challenge-Proof Recovery](#cloud-metadata--v210-challenge-proof-recovery)
-7. [Repository Map (All 11 Documented Folders)](#repository-map-all-11-documented-folders)
-8. [Verification, Tests & Coverage](#verification-tests--coverage)
-9. [Pull Request & Security Status](#pull-request--security-status)
-10. [Quick Links & Governance](#quick-links--governance)
+7. [Known Security, Hardware, Recovery & Cloud Limitations](#known-security-hardware-recovery--cloud-limitations)
+8. [Repository Map](#repository-map)
+9. [Verification, Tests & Coverage](#verification-tests--coverage)
+10. [Pull Request & Security Status](#pull-request--security-status)
+11. [Quick Links & Vulnerability Reporting](#quick-links--vulnerability-reporting)
 
 ---
 
@@ -29,7 +49,7 @@
 
 ---
 
-## Architecture & Binary Diagrams
+## Architecture, User Flow, Encryption & Recovery Diagrams
 
 ### 1. Subsystem Architecture & Two-Tier Key Hierarchy
 
@@ -84,9 +104,25 @@ sequenceDiagram
     Recover-->>Client: Return encrypted_recovery_envelope (plaintext keys remain strictly client-side)
 ```
 
----
+### 4. End-to-End User Flow (Local Offline & Opt-In Cloud)
 
-## Cryptographic Primitives & Key Hierarchy
+```mermaid
+flowchart TD
+    Start["Launch App (Android / Web Companion)"] --> Choice{"Account State"}
+    Choice -->|"New User"| Pass["Create >=16-Char Passphrase"]
+    Pass --> Phrase["Generate 12-Word BIP-39 Phrase & Confirm 3 Words"]
+    Phrase --> Ready["Vault Unlocked in Volatile Memory"]
+    Choice -->|"Existing Local"| Unlock["Enter Passphrase -> Unwrap DEK via Argon2id"]
+    Unlock --> Ready
+    Choice -->|"New Device"| Rec["Enter 12-Word Recovery Phrase"]
+    Rec --> Ready
+    Ready --> Action{"Action"}
+    Action -->|"Write v1 / v2"| Enc["Encrypt Chunks + Optional RS Parity -> Physical NFC Tap + Read-Back Verify"]
+    Action -->|"Read / Decrypt"| Scan["Scan Tags in Any Order -> 72h Volatile RAM Cache -> Reconstruct & Decrypt"]
+    Action -->|"Lock / Timeout"| Wipe["Zeroize Volatile Buffers (secureWipe / mlock Purge)"]
+```
+
+---
 - **Symmetric AEAD**: AES-256-GCM with 12-byte (96-bit) CSPRNG nonces and 16-byte (128-bit) constant-time tags (`src/crypto/aesGcm.ts`).
 - **Primary KDF Profiles (`DEFAULT_KDF_PARAMETERS_BY_TIER` in `src/contracts/keyHierarchy.ts`)**:
   - `LOW_END`: `16,384 KiB` (`16 MiB`), `t = 2`, `p = 1`, `v = 0x13`
@@ -115,14 +151,17 @@ All envelopes begin with 4-byte ASCII magic `"GTAG"` (`0x47, 0x54, 0x41, 0x47`) 
 
 ---
 
-## Cross-Platform Clients & Hardware Policy
+## Implemented vs. Proposed & Verification Matrix
 
-| Surface | Path | Current Verification Status |
-| :--- | :--- | :--- |
-| **Android App** | [`android/`](android/README.md) | Gradle compiles (`BUILD SUCCESSFUL`; `:app:testDebugUnitTest NO-SOURCE`); emulator launch clean (`Medium_Phone_API_37.0`); **physical handset NFC pending**. |
-| **Web Companion** | [`web/`](web/README.md) | Vite (`6.4.6`) production build & `0`-vuln audit pass; Chromium SPA showcase verified; Android Chrome physical Web NFC pending. |
-| **Desktop Ghost Bridge** | [`desktop/`](desktop/README.md) | Standalone + Jest HTTP/WS `sessionToken`/origin tests & `22` PN532 serial tests pass; **physical ACR122U & ESP32/PN532 hardware pending**. |
-| **iOS Foundation** | [`ios/`](ios/README.md) | `MARKETING_VERSION = 2.1.0` (`CURRENT_PROJECT_VERSION = 7`); PR `#25` CoreNFC deferred to `iOS Beta` (macOS + physical iPhone required). |
+| Surface / Capability | State | Transport / Offline Model | Test & Hardware Evidence |
+| :--- | :--- | :--- | :--- |
+| **Core Crypto, Envelopes & Cauchy RS (`src/`)** | Implemented | 100% Offline | Verified via Jest (`347/347` tests across `26` suites; NFC mocked via `__mocks__/react-native-nfc-manager.ts`). |
+| **Android App (`android/`)** | Implemented | 100% Offline (opt-in Cloud Sync optional) | Gradle compiles cleanly (`:app:testDebugUnitTest NO-SOURCE`); emulator launch clean (`Medium_Phone_API_37.0`); **physical handset launch & NFC pending**. |
+| **Web Companion (`web/`)** | Implemented | 100% Offline locally; Chrome WebNFC requires HTTPS | Vite `6.4.6` build & `0`-vuln audit pass; live GitHub Pages (`technical.html`, `#loadingScreen`, skeletons, `390x844` mobile) verified in Chrome; **physical Android Chrome WebNFC pending**. |
+| **Desktop Ghost Bridge (`desktop/`)** | Implemented | Local loopback (`ws://127.0.0.1:41789`) | Standalone & `22` Jest PN532 serial tests pass with mock PC/SC & `MockSerialPort`; **physical ACR122U & ESP32/PN532 hardware pending**. |
+| **Opt-In Cloud Recovery (`supabase/`)** | Staged in Git (Undeployed) | Internet required when opted in | Migrations `20261115`–`20261126` & `8` Edge Functions pass mocked Jest policy/RLS tests; **live hosted Supabase deploy pending**. |
+| **iOS Target (`ios/`, PR `#25`)** | Deferred (`iOS Beta`) | Offline CoreNFC | `project.pbxproj` synced to `2.1.0` (build `7`); PR `#25` deferred pending macOS Xcode, entitlements, `.ipa` `os.walk` fix, and physical iPhone validation. |
+| **Toolchain Upgrades (`#21` Vite 8, `#9` TS 7)** | Deferred (`v2.2+`) | Build-time only | Intentionally deferred until `@typescript-eslint` and Vite ESM plugin/config migration align cleanly. |
 
 ---
 
@@ -133,21 +172,31 @@ All envelopes begin with 4-byte ASCII magic `"GTAG"` (`0x47, 0x54, 0x41, 0x47`) 
 
 ---
 
-## Repository Map (All 11 Documented Folders)
+## Known Security, Hardware, Recovery & Cloud Limitations
+
+- **Security Boundaries**: Client-side memory encryption, `mlock()`, `ptrace` probes, and `FLAG_SECURE` cannot protect secrets on a root-compromised or unlocked device, nor can static Type 2 NDEF payloads prevent physical UID-independent byte cloning (`AES-256-GCM` protects confidentiality and tamper detection only). See [`SECURITY.md`](SECURITY.md).
+- **Hardware & RF Limits**: `NTAG213` (`144B` user memory) fits `v1` single-tag payloads only and **cannot fit** `134B` `v2` bulk chunks (`0B` usable / `fits: false`). Real RF verification on physical Android handsets, ACS ACR122U, ESP32/PN532, and iPhone CoreNFC remains open. Destructive overwrite cleans writable NDEF pages but cannot guarantee silicon-level forensic erasure.
+- **Recovery Boundaries**: Cross-platform `v2.1.0` cloud recovery requires an exact 12-word English BIP-39 phrase (`24`-word phrases remain local-only offline unwrapping). If both local passphrase and recovery phrase are lost, ciphertext is unrecoverable.
+- **Cloud Dependencies**: Live Supabase migrations and Edge Functions remain undeployed; until deployed and integration-tested, opt-in cloud backup/recovery runs offline (`Offline (Local Only)`) unless pointed at an operator-provisioned Supabase project.
+
+---
+
+## Repository Map
 
 | Directory | Documentation | Contents |
 | :--- | :--- | :--- |
-| Root `/` | [`README.md`](README.md) & [`FAQ.md`](FAQ.md) | Repository portal, canonical overview, and 70-question cited FAQ |
+| Root `/` | [`README.md`](README.md) & [`FAQ.md`](FAQ.md) | Repository portal, diagrams, and 70 evidence-cited Q&As |
 | `src/` | [`src/README.md`](src/README.md) | Shared TypeScript core, contracts, crypto, NFC, ops, security, vault, cloud, React Native UI |
 | `android/` | [`android/README.md`](android/README.md) | Kotlin security modules, C++17 NDK core, Gradle build, adaptive branding |
 | `desktop/` | [`desktop/README.md`](desktop/README.md) | Ghost Bridge WS/HTTP PC/SC server (`127.0.0.1:41789`), APDU framing, PN532/ESP32 firmware |
 | `web/` | [`web/README.md`](web/README.md) | Vite MPA web showcase, WASM Argon2id, Turnstile, Web NFC + Ghost Bridge client |
-| `supabase/` | [`supabase/README.md`](supabase/README.md) | PostgreSQL migrations, RLS hardening, and Edge Functions (`verify-captcha`, `account-auth`, `recover-vault`, `sync-metadata`) |
+| `supabase/` | [`supabase/README.md`](supabase/README.md) | PostgreSQL migrations, RLS hardening, and 8 Edge Functions (`verify-captcha`, `account-auth`, `recover-vault`, `sync-vault-metadata`, deletion workers) |
 | `ios/` | [`ios/README.md`](ios/README.md) | Swift cryptographic foundation and deferred PR `#25` CoreNFC roadmap |
 | `scripts/` | [`scripts/README.md`](scripts/README.md) | CI security/quality agents, APK packaging (env-var signed), branding asset generators |
-| `tests/` | [`tests/README.md`](tests/README.md) | Static unused-code scanner and Jest test suite inventory |
+| `tests/` | [`tests/README.md`](tests/README.md) | Static unused-code scanner (`scan-unused.cjs`) |
 | `test-fixtures/` | [`test-fixtures/README.md`](test-fixtures/README.md) | Deterministic golden cross-platform crypto reference vectors |
-| `docs/` | [`docs/README.md`](docs/README.md) | Engineering specs, ADRs (`0001`–`0004`), security audit log, and 18 wiki chapters |
+| `docs/` | [`docs/README.md`](docs/README.md) | Engineering specs, ADRs (`0001`–`0004`), security audit log, and wiki chapters |
+| `agents/` | [`agents/README.md`](agents/README.md) | Autonomous security, QA, crypto, and NFC verification role charters |
 
 ---
 
@@ -164,16 +213,17 @@ All envelopes begin with 4-byte ASCII magic `"GTAG"` (`0x47, 0x54, 0x41, 0x47`) 
 ---
 
 ## Pull Request & Security Status
-- **Merged**: PR `#24` (`bulk-scanning-v2`), PR `#2` (`prettier` `3.10.1`), PR `#34` (CodeQL `#75`/`#76`/`#78` fix, `desktop/**` CodeQL workflow trigger, UI stub elimination, script credential cleanup, Xcode version sync).
-- **Deferred (`defer_with_documented_plan`)**: PR `#25` (`ios/ghost-tag-support` -> `iOS Beta`), PR `#21` (`vite` `8.3.8` in `/web` -> `v2.2+`), PR `#9` (`typescript` `7.0.2` -> `v2.2+`).
-- **Code Scanning**: Open CodeQL alerts on `desktop/src/server.js` (`#75`, `#76`, and `#78`) were fixed in source without suppression comments.
+- **Merged**: PR `#24` (`bulk-scanning-v2`), PR `#2` (`prettier` `3.10.1`), PR `#34` (CodeQL `#75`/`#76`/`#78` fix, `desktop/**` CodeQL workflow trigger, UI stub elimination, script credential cleanup, Xcode version sync), PR `#35` (FAQ relocation & doc sync), PR `#40` (CodeQL note `#79` fix), PR `#41` (`web/technical.html` `v1`/`v2` capacity table).
+- **Deferred (`Keep open / defer`)**: PR `#25` (`ios/ghost-tag-support` -> `iOS Beta`, Issue `#38`), PR `#21` (`vite` `8.3.8` in `/web` -> `v2.2+`, Issue `#39`), PR `#9` (`typescript` `7.0.2` -> `v2.2+`, Issue `#39`).
+- **Code Scanning**: Open CodeQL, Dependabot, and secret-scanning alerts are `0`.
 
 ---
 
-## Quick Links & Governance
+## Quick Links & Vulnerability Reporting
+- **Report a Security Vulnerability**: Do **not** open a public issue or paste secrets; follow private coordinated disclosure via [GitHub Security Advisories](https://github.com/FROSTY-MUG/Ghost-Tag/security/advisories/new) (`72-hour` acknowledgement SLA — see [`SECURITY.md`](SECURITY.md)).
 - [`FAQ.md`](FAQ.md) — 70 evidence-cited Q&As
 - [`PROJECT-STATUS.md`](PROJECT-STATUS.md) — Component verification & release blocker matrix
 - [`CHANGELOG.md`](CHANGELOG.md) & [`RELEASE-NOTES.md`](RELEASE-NOTES.md) — Version history & `v2.1.0` staging summary
 - [`SECURITY.md`](SECURITY.md) & [`SUPPORT.md`](SUPPORT.md) — Threat disclosure policy & support channels
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) & [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) — PR workflow & branch protection rules
-- [`AGENT.md`](AGENT.md) & [`agents/`](agents/) — Autonomous agent roles and verification contracts
+- [`AGENT.md`](AGENT.md) & [`agents/`](agents/README.md) — Autonomous agent roles and verification contracts

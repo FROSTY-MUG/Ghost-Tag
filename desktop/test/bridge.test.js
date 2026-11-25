@@ -5,7 +5,7 @@
 
 const assert = require('assert');
 const http = require('http');
-const { GhostBridgeServer, PORT, HOST } = require('../src/server');
+const { GhostBridgeServer, HOST } = require('../src/server');
 const { buildMimeNdefMessage, APDU, readTagCapability, calculateTagCapacity } = require('../src/apdu');
 
 function testApdu() {

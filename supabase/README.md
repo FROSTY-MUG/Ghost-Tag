@@ -20,7 +20,15 @@ Opt-in, zero-knowledge Supabase PostgreSQL schema, hardened Row-Level Security (
 - [`schedule-account-deletion`](functions/schedule-account-deletion/index.ts), [`cancel-account-deletion`](functions/cancel-account-deletion/index.ts), [`process-account-deletions`](functions/process-account-deletions/index.ts): Service-role controlled deletion lifecycle (`_shared/deletionHandlers.ts`).
 - [`migrate-recovery-verifier`](functions/migrate-recovery-verifier/index.ts): Legacy `v1` verifier migration handler retained for backward schema transition.
 
-## 4. Security Verification & Deployment Status
+## 4. Runtime Secrets & Deployment Status
 - **Automated Policy Tests**: Verified locally via Jest (`rlsUserAccounts`, `rlsGhostVaults`, `rateLimitAndSchema`, `antiEnumeration`, `recoveryChallengeProof`, `captchaAndAuthResponsibility`, `corsValidation`, `auditSanitizer`, `deletionPurgeWorker`, `supabaseSecurity`, `supabaseSync`).
-- **Live Cloud Deployment Status**: Migrations and Edge Functions are staged in Git; **live deployment to hosted Supabase (`supabase db push` / `supabase functions deploy`) remains pending** operator secrets (`IP_HASH_SALT`, `TURNSTILE_SECRET_KEY`, `CAPTCHA_TOKEN_HMAC_KEY`, `SUPABASE_SERVICE_ROLE_KEY`).
+- **Required Supabase Edge Function Secrets** ([`functions/_shared/supabaseEdgeRuntime.ts`](functions/_shared/supabaseEdgeRuntime.ts) & [`functions/migrate-recovery-verifier/index.ts`](functions/migrate-recovery-verifier/index.ts)):
+  - `CLOUDFLARE_TURNSTILE_SECRET_KEY` (fail-closed Turnstile widget verification)
+  - `AUDIT_HMAC_SALT` (HMAC audit salt; falls back to `IP_HASH_SALT` where applicable)
+  - `IP_HASH_SALT` (required by legacy `migrate-recovery-verifier` and audit IP hashing)
+  - `SERVER_ENUMERATION_SECRET` (deterministic anti-enumeration challenge salt synthesis)
+  - `DELETION_WORKER_CRON_SECRET` (`X-Ghost-Cron-Secret` constant-time cron guard)
+  - `SUPABASE_SERVICE_ROLE_KEY` (service-role database access inside Edge Functions only)
+- **Required Non-Secret Env Config**: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `GHOST_ENV`, `ALLOW_LOCALHOST_CORS`, `APPROVED_CORS_ORIGINS`.
+- **Live Cloud Deployment Status**: Migrations and Edge Functions are staged in Git; **live deployment to hosted Supabase (`supabase db push` / `supabase functions deploy`) remains pending** operator secrets and explicit authorization.
 - Never commit `.env` files, service-role keys, or secrets ([`../SECURITY.md`](../SECURITY.md), [`../FAQ.md`](../FAQ.md)).

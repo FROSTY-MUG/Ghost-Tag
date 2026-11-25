@@ -29,8 +29,11 @@
 | PR | Title / Scope | Resolution | Evidence & Next Action |
 | :--- | :--- | :--- | :--- |
 | **#24** | Bulk Scanning v2 (`Skeletor-Pirate`) | ✅ **Merged** | Audited and merged on `main` (`bulkVaultVerification.test.ts` verified). |
-| **#2** | Bump `prettier` `2.8.8 -> 3.10.1` (`dependabot`) | ✅ **Merged** | Rebased onto `main`, verified in isolated worktree (`lint`/`typecheck`/`test`), passed all 4 required CI checks, squashed. |
-| **#34** | Fix CodeQL `#75/#76/#78`, remove UI stubs, sync scripts/iOS `pbxproj` | ✅ **Merged** | Resolved all CodeQL alerts cleanly, removed fake UI timeouts/sample payloads, verified all 4 required CI checks, squashed. |
+| **#2** | Bump `prettier` `2.8.8 -> 3.10.1` (`dependabot`) | ✅ **Merged** | Rebased onto `main`, verified in isolated worktree (`lint`/`typecheck`/`test`), passed all 4 required CI checks, squashed (`8e2ebd8`). |
+| **#34** | Fix CodeQL `#75/#76/#78`, remove UI stubs, sync scripts/iOS `pbxproj` | ✅ **Merged** | Resolved all CodeQL alerts cleanly, removed fake UI timeouts/sample payloads, verified all 4 required CI checks, squashed (`585f76c`). |
+| **#35** | Relocate `FAQ.md` to root & sync `v2.1.0` docs across repo | ✅ **Merged** | Relocated FAQ (`70` Q&As), updated diagrams & folder READMEs (`6f12fc1`). |
+| **#40** | Remove unused `PORT` import in `desktop/test/bridge.test.js` | ✅ **Merged** | Eliminated CodeQL note alert `#79` (`5b03daf`). |
+| **#41** | Fix `web/technical.html` `v1`/`v2` framed NTAG21x capacity table | ✅ **Merged** | Fixed stale `54B` math, deployed to live GitHub Pages (`58bf98c`). |
 | **#25** | iOS CoreNFC scaffolding (`ios/ghost-tag-support`, `Skeletor-Pirate`) | ⏸️ **Deferred (`iOS Beta`)** | Merge conflicts + duplicate #24 commit; missing `GhostTag.entitlements`; `scripts/package_release_ipa.py` directory-only zip bug; legacy single-POST recovery client; requires macOS + physical iPhone. |
 | **#21** | Bump `vite` `6.4.6 -> 8.3.8` in `/web` (`dependabot`) | ⏸️ **Deferred (`v2.2+`)** | Conflicts on `web/package.json` (omits `hash-wasm`); Vite 8 emits CJS `configLoader` deprecation warnings on `web/vite.config.ts`. |
 | **#9** | Bump `typescript` `6.0.3 -> 7.0.2` (`dependabot`) | ⏸️ **Deferred (`v2.2+`)** | Fails `npm run lint` (exit 2, `@typescript-eslint/parser` peer `<6.1.0`) and `tsc -p tsconfig.build.json --noEmit` (exit 1, `TS5108`). |
@@ -41,7 +44,7 @@
 1. **Android Physical-Device Gate**: Verify real `NTAG213` (v1), `NTAG215` (v1 + v2 bulk), and `NTAG216` (v1 + v2 bulk) NFC reads/writes + `logcat` on physical Android hardware.
 2. **Desktop Hardware Reader Gate**: Verify live PC/SC reads/writes on a physical ACS ACR122U reader and UART framing on physical ESP32 + PN532 hardware.
 3. **Web NFC on Chrome Android**: Execute live physical tap read/write over HTTPS (`https://frosty-mug.github.io/Ghost-Tag/`) using real Android Chrome hardware.
-4. **Live Supabase Deployment**: Apply `20261115`–`20261126` migrations, deploy all Edge Functions, configure `IP_HASH_SALT` / `TURNSTILE_SECRET_KEY` / `CAPTCHA_TOKEN_HMAC_KEY`, and verify live Turnstile + challenge/proof recovery.
+4. **Live Supabase Deployment**: Apply `20261115`–`20261126` migrations, deploy all 8 Edge Functions, configure `CLOUDFLARE_TURNSTILE_SECRET_KEY`, `AUDIT_HMAC_SALT`, `IP_HASH_SALT`, `SERVER_ENUMERATION_SECRET`, `DELETION_WORKER_CRON_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`, plus `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `GHOST_ENV`, `ALLOW_LOCALHOST_CORS`, and `APPROVED_CORS_ORIGINS`, then verify live Turnstile + challenge/proof recovery.
 5. **Project Board Auth Refresh (Operator Local Step)**: OAuth CLI token currently carries `gist, read:org, repo, workflow, write:packages` (missing `read:project` and `project`); run `gh auth refresh -s project,read:project` interactively to publish GitHub Projects v2 board alongside tracked Issues.
 
 ---

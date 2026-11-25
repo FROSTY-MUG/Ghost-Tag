@@ -76,6 +76,43 @@
       overflow-x: auto;
       margin-bottom: 16px;
     }
+    .tech-table-wrap {
+      overflow-x: auto;
+      margin: 12px 0 16px;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      background: var(--bg-surface);
+    }
+    .tech-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      text-align: left;
+    }
+    .tech-table th,
+    .tech-table td {
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--border-subtle);
+      vertical-align: top;
+    }
+    .tech-table th {
+      color: var(--text-primary);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .tech-table tr:last-child td {
+      border-bottom: none;
+    }
+    .badge-warn {
+      color: #fca5a5;
+      font-weight: 600;
+    }
+    .badge-ok {
+      color: var(--accent-green);
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
@@ -136,13 +173,50 @@ ENCRYPTED_CHUNK (Variable Length Ciphertext)
 AES_GCM_AUTH_TAG (16B Authentication Tag)
       </div>
 
-      <h3>MIME Type & Chip Geometry</h3>
+      <h3>MIME Types &amp; Framed Chip Capacity</h3>
       <ul>
-        <li><strong>Standard MIME Type</strong>: <code>application/vnd.ghost.bulk</code></li>
-        <li><strong>NTAG213</strong>: 180B Total, 144B NDEF, 54B Header, 90B Max Usable Storage</li>
-        <li><strong>NTAG215</strong>: 540B Total, 504B NDEF, 54B Header, 450B Max Usable Storage</li>
-        <li><strong>NTAG216</strong>: 924B Total, 888B NDEF, 54B Header, 834B Max Usable Storage</li>
+        <li><strong>Single-Tag MIME Type (<code>v1</code>)</strong>: <code>application/vnd.ghost.secure</code> (28B MIME string; <code>54B</code> fixed envelope overhead: <code>26B</code> AAD + <code>12B</code> nonce + <code>16B</code> GCM tag).</li>
+        <li><strong>Bulk Distributed MIME Type (<code>v2</code>)</strong>: <code>application/vnd.ghost.bulk</code> (26B MIME string; <code>134B</code> fixed envelope overhead: <code>74B</code> AAD + <code>32B</code> SHA-256 <code>CHUNK_HASH</code> + <code>12B</code> nonce + <code>16B</code> GCM tag).</li>
+        <li><strong>NDEF Framing Overhead</strong>: NFC Forum Type 2 NDEF TLV framing (<code>0x03</code> length + <code>0xFE</code> terminator + 4B page alignment) and NDEF MIME record headers (<code>31B</code>/<code>34B</code> for <code>v1</code>, <code>29B</code>/<code>32B</code> for <code>v2</code>) further reduce usable payload space below raw chip EEPROM.</li>
+        <li><strong>NTAG213 Compatibility</strong>: Supports <code>v1</code> single-tag envelopes only (<code>52B</code> conservative mobile / <code>56B</code> exact bridge framing). It <strong>cannot fit</strong> a <code>v2</code> bulk envelope (<code>0B</code> usable, <code>fits: false</code>); <code>NTAG215</code> or <code>NTAG216</code> tags are required for <code>v2</code> bulk vaults.</li>
       </ul>
+
+      <div class="tech-table-wrap">
+        <table class="tech-table">
+          <thead>
+            <tr>
+              <th>Chip</th>
+              <th>EEPROM / NDEF</th>
+              <th>v1 Single (54B)</th>
+              <th>v2 Bulk (134B)</th>
+              <th>v2 Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>NTAG213</strong></td>
+              <td>180B / 144B (137B)</td>
+              <td>52B / 56B</td>
+              <td>0B</td>
+              <td><span class="badge-warn">Not Compatible (<code>fits: false</code>)</span></td>
+            </tr>
+            <tr>
+              <td><strong>NTAG215</strong></td>
+              <td>540B / 504B (492B)</td>
+              <td>404B / 411B</td>
+              <td>326B / 333B</td>
+              <td><span class="badge-ok">Supported</span></td>
+            </tr>
+            <tr>
+              <td><strong>NTAG216</strong></td>
+              <td>924B / 888B (872B)</td>
+              <td>784B / 795B</td>
+              <td>706B / 717B</td>
+              <td><span class="badge-ok">Supported</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </section>
 
     <!-- SECTION 2: SECURITY -->
